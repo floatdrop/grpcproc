@@ -165,8 +165,14 @@ message Envelope {                                   // one flat message, decode
   failure alone drops that link and the next send dials again. Then every
   monitor that crossed the link fires `Down{noconnection}` and every pending
   call fails with `ErrNoConnection`: the peer may have handled it. A new
-  inbound stream from the peer waits until then, so the old session's
-  `Down`s come before anything the new one carries. Calls
+  link with the peer, either way, waits until then, so the old session's
+  `Down`s come before anything the new one carries, and a call or a watch
+  is recorded only once the link it goes on is known: one that waited for
+  a dial while the old session ended went on the new one, and its end does
+  not fail it. One aimed at a process of an incarnation the peer has since
+  left then reaches the new one, which answers `noproc`, as it does for any
+  PID from before a restart. A dial opened in a session that ended while it
+  was under way is dialed again for its callers, once. Calls
   still queued on the broken link, never written, fail at once as `Unsent`
   instead, and their messages, like those in a frame being written, become
   dead letters. Only a `LinkError` whose `Unsent` is set is known safe to
@@ -234,7 +240,9 @@ message Envelope {                                   // one flat message, decode
   monitor that never fires. Ending the peer's link, with a status that says
   this node cannot reach it back, makes it see this node as unreachable, as
   Erlang's single connection would: its calls fail and its monitors fire with
-  `noconnection`.
+  `noconnection`. The link cut is the one the call or the watch came by,
+  which each remembers: one that has replaced it since belongs to a session
+  that is owed nothing.
 - **A graceful `Stop` flushes before it closes.** Processes exit first and
   their `Down{shutdown}` envelopes are queued; then every outbound link
   flushes and half-closes at once, each is waited on until its peer ends the
@@ -653,7 +661,12 @@ it is what lets a tracer build causal chains without the
 application threading a context through every handler: `OnReceive` stamps
 the consumer span, and everything the handler sends is its child.
 `JoinHooks` combines several; metadata threads through them in order and
-`Done`s run in reverse.
+`Done`s run in reverse. `OnLinkUp` and `OnLinkDown` are per session, not
+per link: up when the first link with a peer comes up, either way, down
+when the peer is declared down, in that order however the two race, so
+while the node runs, a count of links up less links down is the peers it has
+a session with. `Stop` ends its sessions without announcing it, and waits
+for every link-up still being announced: no hook runs once it returns.
 
 Nil by default; a nil check per message when unset. This is the same shape as
 `grpc.StatsHandler`, and it is what every observability feature in other
@@ -670,7 +683,8 @@ frameworks reduces to:
 ### Events
 
 `node.Subscribe(ctx, buffer) <-chan Event` streams spawns, exits (with the
-reason), links up and down, and dead letters. Publishing never blocks the
+reason), sessions with peers beginning and ending (link-up, link-down, as
+`OnLinkUp` and `OnLinkDown`), and dead letters. Publishing never blocks the
 node: a full subscriber loses the event and the next one it receives carries
 `Missed`, the count lost in between. With no subscriber, the cost is one
 atomic load at each point that would publish. The list of subscribers is

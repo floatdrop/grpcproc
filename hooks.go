@@ -56,6 +56,11 @@ type Hooks interface {
 	// that could not be sent at all is not one: its sender gets the error.
 	// body is nil for a message that could not be decoded.
 	OnDeadLetter(from, to PID, body proto.Message, reason string)
+	// OnLinkUp runs when a session with peer begins: its first link, either
+	// way, comes up. OnLinkDown runs when the session ends: the peer is
+	// declared down, and err says why. Each session's OnLinkUp comes before
+	// its OnLinkDown, and a link that breaks and comes back while the other
+	// way stays up is neither.
 	OnLinkUp(peer NodeID)
 	OnLinkDown(peer NodeID, err error)
 }

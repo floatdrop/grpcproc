@@ -253,8 +253,23 @@ type dialOp struct {
 
 // getOut returns the link to peer, dialing if there is none. Concurrent
 // callers share one dial, which runs on its own goroutine: a caller whose ctx
-// ends stops waiting, and the dial goes on for the others.
+// ends stops waiting, and the dial goes on for the others. A dial whose link
+// was opened in a session that ended meanwhile is dialed again for its
+// callers, once: that session was not theirs. (A peer's Hello counts at least
+// as many ended sessions as the dial said, so the second dial goes through
+// unless yet another session ends meanwhile, or the peer is not one.)
 func (n *Node) getOut(ctx context.Context, peer string) (*outLink, error) {
+	if peer == "" {
+		return nil, errors.New("grpcproc: empty destination node")
+	}
+	l, err := n.getOutOnce(ctx, peer)
+	if errors.Is(err, errSessionEnded) {
+		l, err = n.getOutOnce(ctx, peer)
+	}
+	return l, err
+}
+
+func (n *Node) getOutOnce(ctx context.Context, peer string) (*outLink, error) {
 	// A send over a live link only reads, so it shares n.mu.
 	n.mu.RLock()
 	l, err := n.outTo(peer)
@@ -370,7 +385,7 @@ func (n *Node) finishDial(peer string, d *dialOp) {
 		why = err.Error() // outside n.mu: the Resolver's or an interceptor's error
 	}
 	var discard *outLink
-	refused := false
+	refused, began := false, false
 	n.mu.Lock()
 	if err == nil {
 		// Judged while the dial still holds the peer's senders back: links
@@ -414,6 +429,10 @@ func (n *Node) finishDial(peer string, d *dialOp) {
 			answers = nil
 			l.reconnects = n.dials[peer]
 			n.dials[peer]++
+			began = n.in[peer] == nil
+			if began {
+				n.announcing[peer]++
+			}
 			n.out[peer] = l
 		}
 	}
@@ -435,6 +454,8 @@ func (n *Node) finishDial(peer string, d *dialOp) {
 	}
 	if err == nil {
 		l.start()
+	}
+	if began {
 		n.linkUp(l.peer)
 	}
 	d.l, d.err = l, err
@@ -591,7 +612,7 @@ func (l *inLink) deliver(n *Node, f *grpcprocv1.Frame) bool {
 		return false
 	}
 	for _, env := range f.GetEnvelopes() {
-		n.dispatch(l.peer.Name, l.policy, env)
+		n.dispatch(l, l.peer.Name, l.policy, env)
 	}
 	_, body := frameOf(f.GetEnvelopes())
 	l.messages.Add(uint64(len(f.GetEnvelopes())))
@@ -688,6 +709,10 @@ func (n *Node) serveLink(stream grpc.BidiStreamingServer[grpcprocv1.Frame, grpcp
 			break
 		}
 	}
+	began := n.out[peer.Name] == nil
+	if began {
+		n.announcing[peer.Name]++
+	}
 	n.in[peer.Name] = l
 	n.settling[peer.Name]++ // until it is announced
 	// The peer reached this node, which shows it is up, not that this node
@@ -699,7 +724,9 @@ func (n *Node) serveLink(stream grpc.BidiStreamingServer[grpcprocv1.Frame, grpcp
 	n.mu.Unlock()
 	func() {
 		defer n.settle(peer.Name) // even if a hook panics and an interceptor recovers
-		n.linkUp(peer)
+		if began {
+			n.linkUp(peer)
+		}
 	}()
 
 	// Recv cannot be interrupted, so it runs on its own goroutine, which also
@@ -821,10 +848,16 @@ func (n *Node) supersede(peer NodeID, session uint64, replace bool) (dropped boo
 }
 
 // admit judges the incarnation a dial reached, before its link goes in: the
-// links with an older one go first. Called with n.mu held, which it lets go
-// of while it drops links.
+// links with an older one go first. It waits, as an inbound link does, until
+// no change to the peer's links is under way: a session whose end is still
+// being carried out has yet to fail its calls and fire its monitors, which
+// must not reach what goes on the new link. Called with n.mu held, which it
+// lets go of while it waits and while it drops links.
 func (n *Node) admit(peer NodeID, session uint64) error {
 	for {
+		for n.settling[peer.Name] > 0 && !n.stopped {
+			n.settled.Wait()
+		}
 		if dropped, err := n.supersede(peer, session, false); !dropped {
 			return err
 		}
@@ -953,14 +986,34 @@ func (n *Node) peerDown(id NodeID, err error) {
 	n.linkDown(id, err)
 }
 
+// linkUp announces that a session with peer began: its first link, either
+// way, came up. Its end is announced once (linkDown), when the peer is
+// declared down; a link that breaks and comes back within the session is
+// neither. The caller counted it in n.announcing, under n.mu, in the
+// critical section that installed the link.
 func (n *Node) linkUp(peer NodeID) {
+	defer func() { // even if a hook panics
+		n.mu.Lock()
+		if n.announcing[peer.Name]--; n.announcing[peer.Name] == 0 {
+			delete(n.announcing, peer.Name)
+		}
+		n.mu.Unlock()
+		n.settled.Broadcast()
+	}()
 	if n.hooks != nil {
 		n.hooks.OnLinkUp(peer)
 	}
 	n.subs.publish(Event{Kind: EventLinkUp, Peer: peer})
 }
 
+// linkDown announces that the session with peer ended, after its start if
+// that is still being announced.
 func (n *Node) linkDown(peer NodeID, err error) {
+	n.mu.Lock()
+	for n.announcing[peer.Name] > 0 {
+		n.settled.Wait()
+	}
+	n.mu.Unlock()
 	if n.hooks != nil {
 		n.hooks.OnLinkDown(peer, err)
 	}

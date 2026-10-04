@@ -84,7 +84,7 @@ func (a Addr[M]) globalName() string    { return a.global }
 //	reserved, err := stock.Reserve(ctx, p, &Reserve{Sku: "apple", Qty: 2})
 func (a Addr[M]) Call[R proto.Message](ctx context.Context, from Caller, req M) (R, error) {
 	o := from.origin(ctx)
-	return typed[R](o.n.doCall(ctx, o.from, o.p, a.dest(), req, o.md, 0))
+	return typed[R](o.n.doCall(ctx, o.from, o.p, a.dest(), req, o.md, 0, nil))
 }
 
 // CallMonitor is Call, from a process that monitors the process the callee
@@ -140,10 +140,8 @@ func (o origin) callWatch(ctx context.Context, to dest, req proto.Message, link 
 	n := o.n
 	to = n.resolveDest(to)
 	ref := Ref{Node: n.id.Name, ID: n.nextRef.Add(1)}
-	if !p.awaitWatch(ref, to.pid.Node, link) {
-		return Ref{}, ErrNoProc
-	}
-	err := take(n.doCall(ctx, o.from, p, to, req, o.md, ref.ID))
+	await := func() bool { return p.awaitWatch(ref, to.pid.Node, link) }
+	err := take(n.doCall(ctx, o.from, p, to, req, o.md, ref.ID, await))
 	p.settleWatch(ref, err == nil)
 	if err != nil {
 		return Ref{}, err

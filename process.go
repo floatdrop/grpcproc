@@ -1,6 +1,7 @@
 package grpcproc
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -33,6 +34,9 @@ type item struct {
 	// deadline is when a call's caller stops waiting for the reply, in unix
 	// nanos; 0 for a caller with no deadline, and for a plain message.
 	deadline int64
+	// via is the inbound link a peer's call came by, which its answer cuts
+	// if it cannot go back (see routeOrCut).
+	via *inLink
 }
 
 type inspectReq struct {
@@ -76,7 +80,7 @@ type proc struct {
 	// (see WatchedBy).
 	mu       sync.Mutex
 	exited   bool
-	watchers map[Ref]PID           // who monitors me, or is linked to me
+	watchers map[Ref]watcher       // who monitors me, or is linked to me
 	monitors map[Ref]monitorTarget // whom I monitor
 	links    map[Ref]monitorTarget // whom I am linked to: one per target
 	awaiting map[Ref]*awaited      // watches my calls asked for, until they are answered
@@ -96,6 +100,15 @@ type openCall struct {
 type answerTo struct {
 	ch      chan<- callResult
 	watched PID
+	via     *inLink // the inbound link a peer's call came by
+}
+
+// watcher is who watches a process: its PID, and for a process of a peer,
+// the inbound link the watch came by, which its Down cuts if it cannot go
+// back (see routeOrCut).
+type watcher struct {
+	pid PID
+	via *inLink
 }
 
 // awaited is a watch a call of the process asked for, with CallMonitor or
@@ -445,16 +458,16 @@ func spawn[M proto.Message](n *Node, fn func(*Process[M]) error, opts []SpawnOpt
 	}
 	var ref Ref
 	if err == nil && parent != nil {
-		watch := func(watched, watcher *proc, into *map[Ref]monitorTarget) Ref {
+		watch := func(watched, by *proc, into *map[Ref]monitorTarget) Ref {
 			r := Ref{Node: n.id.Name, ID: n.nextRef.Add(1)}
 			if *into == nil {
 				*into = map[Ref]monitorTarget{}
 			}
 			(*into)[r] = monitorTarget{pid: watched.pid}
 			if watched.watchers == nil {
-				watched.watchers = map[Ref]PID{}
+				watched.watchers = map[Ref]watcher{}
 			}
-			watched.watchers[r] = watcher.pid
+			watched.watchers[r] = watcher{pid: by.pid}
 			return r
 		}
 		if monitor {
@@ -563,7 +576,7 @@ func (p *proc) SendTo(to Target, msg proto.Message) error {
 // CallTo calls an untyped target, such as a Msg's From, from the process, as
 // Addr.Call does a typed one, and types the reply as R.
 func (p *Process[M]) CallTo[R proto.Message](ctx context.Context, to Target, req proto.Message) (R, error) {
-	return typed[R](p.n.doCall(ctx, p.pid, p.proc, destOf(to), req, p.outgoing(MetadataFrom(ctx)), 0))
+	return typed[R](p.n.doCall(ctx, p.pid, p.proc, destOf(to), req, p.outgoing(MetadataFrom(ctx)), 0, nil))
 }
 
 // SendAfter sends m to a typed address after d, as this process. The timer
@@ -643,33 +656,45 @@ func (p *proc) Link(target Target) {
 	}
 	t := monitorTarget{pid: pid, name: name, global: global}
 	ref := Ref{Node: p.n.id.Name, ID: p.n.nextRef.Add(1)}
-	p.mu.Lock()
-	if _, linked := p.linkTo(t); linked || p.exited {
-		p.mu.Unlock()
-		return
-	}
-	if p.links == nil {
-		p.links = map[Ref]monitorTarget{}
-	}
-	p.links[ref] = t
-	p.mu.Unlock()
 	// On the wire a link is a monitor: only this node tells its Down from a
 	// monitor's, so peers need nothing new.
-	p.placeWatch(target, ref)
+	p.placeWatch(target, ref, func() bool {
+		if _, linked := p.linkTo(t); linked {
+			return false
+		}
+		if p.links == nil {
+			p.links = map[Ref]monitorTarget{}
+		}
+		p.links[ref] = t
+		return true
+	})
 }
 
-// Unlink removes p's link to target. An Exited already in the mailbox stays
-// there.
+// Unlink removes p's link to target. A global name is not looked up again:
+// the links placed by it go, whichever process it led to, since the name
+// may have moved on since. An Exited already in the mailbox stays there.
 func (p *proc) Unlink(target Target) {
-	target, global := p.n.resolveTarget(target)
-	pid, name := target.target()
-	t := monitorTarget{pid: pid, name: name, global: global}
+	var match func(monitorTarget) bool
+	if g, ok := target.(globalTarget); ok && g.globalName() != "" {
+		global := g.globalName()
+		match = func(l monitorTarget) bool { return l.global == global }
+	} else {
+		target, global := p.n.resolveTarget(target)
+		pid, name := target.target()
+		t := monitorTarget{pid: pid, name: name, global: global}
+		match = func(l monitorTarget) bool { return l == t }
+	}
+	unlinked := map[Ref]monitorTarget{}
 	p.mu.Lock()
-	ref, linked := p.linkTo(t)
-	delete(p.links, ref)
+	for ref, l := range p.links {
+		if match(l) {
+			unlinked[ref] = l
+			delete(p.links, ref)
+		}
+	}
 	p.mu.Unlock()
-	if linked {
-		_ = p.n.demonitor(p.pid, t, ref.ID)
+	for ref, l := range unlinked {
+		_ = p.n.demonitor(p.pid, l, ref.ID)
 	}
 }
 
@@ -703,35 +728,58 @@ func (p *proc) Monitor(target Target) Ref {
 	target, global := p.n.resolveTarget(target)
 	pid, name := target.target()
 	ref := Ref{Node: p.n.id.Name, ID: p.n.nextRef.Add(1)}
-	p.mu.Lock()
-	if p.exited {
-		p.mu.Unlock()
-		return ref
-	}
-	if p.monitors == nil {
-		p.monitors = map[Ref]monitorTarget{}
-	}
-	p.monitors[ref] = monitorTarget{pid: pid, name: name, global: global}
-	p.mu.Unlock()
-	p.placeWatch(target, ref)
+	t := monitorTarget{pid: pid, name: name, global: global}
+	p.placeWatch(target, ref, func() bool {
+		if p.monitors == nil {
+			p.monitors = map[Ref]monitorTarget{}
+		}
+		p.monitors[ref] = t
+		return true
+	})
 	return ref
 }
 
 // placeWatch sends p's monitor of target, or its link, which is the same on
-// the wire. One that cannot be sent is Down at once, with noconnection. If p
-// exited while it was on its way, p's exit may have taken it back before it
-// arrived, and it would stay on target: it is taken back again, after it.
-func (p *proc) placeWatch(target Target, ref Ref) {
+// the wire, once record has recorded it; record runs with p.mu held while p
+// has not exited, and reports false to place nothing. A watch of a peer's
+// process is recorded only once the link it goes on is known: a session with
+// the peer that ends while it waits for a dial is not one it went on, so its
+// end does not fire it. One that cannot be sent is Down at once, with
+// noconnection. If p exited while it was on its way, p's exit may have taken
+// it back before it arrived, and it would stay on target: it is taken back
+// again, after it.
+func (p *proc) placeWatch(target Target, ref Ref, record func() bool) {
+	n := p.n
 	pid, _ := target.target()
-	if err := p.n.monitor(p.pid, target, ref.ID); err != nil {
-		p.n.deliverDown(pid, p.pid, ref.ID, ReasonNoConnection)
-		return
-	}
 	p.mu.Lock()
 	exited := p.exited
 	p.mu.Unlock()
 	if exited {
-		_ = p.n.demonitor(p.pid, target, ref.ID)
+		return
+	}
+	var l *outLink
+	var err error
+	if pid.Node != n.id.Name {
+		l, err = n.getOut(context.Background(), pid.Node)
+	}
+	p.mu.Lock()
+	placed := !p.exited && record()
+	p.mu.Unlock()
+	if !placed {
+		return
+	}
+	if err == nil {
+		err = n.monitor(p.pid, target, ref.ID, l)
+	}
+	if err != nil {
+		n.deliverDown(pid, p.pid, ref.ID, ReasonNoConnection)
+		return
+	}
+	p.mu.Lock()
+	exited = p.exited
+	p.mu.Unlock()
+	if exited {
+		_ = n.demonitor(p.pid, target, ref.ID)
 	}
 }
 
@@ -767,7 +815,7 @@ func (p *proc) queueCall(it item, reply chan<- callResult) bool {
 	if p.open == nil {
 		p.open = map[openCall]answerTo{}
 	}
-	p.open[openCall{it.from, it.ref}] = answerTo{ch: reply}
+	p.open[openCall{it.from, it.ref}] = answerTo{ch: reply, via: it.via}
 	return true
 }
 
@@ -804,9 +852,9 @@ func (p *proc) watchFor(c openCall, w *proc) error {
 		return ErrNoProc
 	}
 	if w.watchers == nil {
-		w.watchers = map[Ref]PID{}
+		w.watchers = map[Ref]watcher{}
 	}
-	w.watchers[Ref{Node: c.from.Node, ID: c.ref}] = c.from
+	w.watchers[Ref{Node: c.from.Node, ID: c.ref}] = watcher{pid: c.from, via: a.via}
 	a.watched = w.pid
 	p.open[c] = a
 	return nil
@@ -1070,14 +1118,14 @@ func (p *proc) logLevel() slog.Level {
 	return slog.LevelInfo
 }
 
-func (p *proc) addWatcher(ref Ref, w PID) bool {
+func (p *proc) addWatcher(ref Ref, w watcher) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.exited {
 		return false
 	}
 	if p.watchers == nil {
-		p.watchers = map[Ref]PID{}
+		p.watchers = map[Ref]watcher{}
 	}
 	p.watchers[ref] = w
 	return true
@@ -1125,13 +1173,13 @@ func (p *proc) peerDown(peer string) (downs []Down, exits []Exited) {
 	for ref, t := range p.monitors {
 		if t.pid.Node == peer {
 			delete(p.monitors, ref)
-			downs = append(downs, Down{Ref: ref, PID: t.pid, Name: t.name, Reason: ReasonNoConnection})
+			downs = append(downs, Down{Ref: ref, PID: t.pid, Name: cmp.Or(t.name, t.global), Reason: ReasonNoConnection})
 		}
 	}
 	for ref, t := range p.links {
 		if t.pid.Node == peer {
 			delete(p.links, ref)
-			exits = append(exits, Exited{PID: t.pid, Name: t.name, Reason: ReasonNoConnection})
+			exits = append(exits, Exited{PID: t.pid, Name: cmp.Or(t.name, t.global), Reason: ReasonNoConnection})
 		}
 	}
 	for ref := range p.watchers {
@@ -1236,7 +1284,7 @@ func (p *proc) terminate(reason string) {
 		n.subs.publish(Event{Kind: EventExit, Process: info, Reason: reason})
 	}
 	for ref, w := range watchers {
-		_ = n.down(p.pid, w, ref.ID, reason, false)
+		_ = n.down(p.pid, w.pid, ref.ID, reason, w.via, false)
 	}
 	for ref, t := range monitors {
 		_ = n.demonitor(p.pid, t, ref.ID)

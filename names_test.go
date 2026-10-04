@@ -127,6 +127,57 @@ func TestGlobal(t *testing.T) {
 	})
 }
 
+// A monitor or a link placed by a global name names it in the Down or the
+// Exited its node's loss brings, as in those its holder's exit brings.
+func TestGlobalWatchesNameTheGlobalOnNoConnection(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := grpcproctest.New(t, "a", "b")
+		a, b := c.Node("a"), c.Node("b")
+		ledger, ch := holding(t, b, "ledger")
+		claim(t, ch)
+		w, msgs := watcher(t, a)
+		w.SetTrapExit(true)
+		w.Monitor(grpcproc.Global{Name: "ledger"})
+		w.Link(grpcproc.Global{Name: "ledger"})
+		waitWatchers(t, b, ledger.PID(), 2)
+		c.Partition("a", "b")
+		for range 2 { // the monitor's Down, the link's Exited
+			switch m := recv(t, msgs); {
+			case m.Down != nil && m.Down.Reason == grpcproc.ReasonNoConnection && m.Down.Name == "ledger":
+			case m.Exited != nil && m.Exited.Reason == grpcproc.ReasonNoConnection && m.Exited.Name == "ledger":
+			default:
+				t.Fatalf("after the partition: %+v %+v", m.Down, m.Exited)
+			}
+		}
+	})
+}
+
+// Unlinking a global name takes back the link it placed after the name has
+// moved to another process: the one it led to no longer ends the linker.
+func TestUnlinkAGlobalThatMoved(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := grpcproctest.New(t, "a", "b")
+		a, b := c.Node("a"), c.Node("b")
+		first, ch := holding(t, b, "ledger")
+		held := claim(t, ch)
+		w, msgs := watcher(t, a)
+		w.SetTrapExit(true)
+		w.Link(grpcproc.Global{Name: "ledger"})
+		waitWatchers(t, b, first.PID(), 1)
+		if err := held.Release(ctx(t)); err != nil {
+			t.Fatal(err)
+		}
+		_, ch = holding(t, b, "ledger")
+		claim(t, ch)
+		w.Unlink(grpcproc.Global{Name: "ledger"})
+		waitWatchers(t, b, first.PID(), 0)
+		if err := a.Exit(ctx(t), first.PID(), "done"); err != nil {
+			t.Fatal(err)
+		}
+		noMore(t, msgs)
+	})
+}
+
 // A claim of a held name fails with the holder, and the error matches
 // ErrTaken on another node too, where only its text arrives.
 func TestClaimTaken(t *testing.T) {
