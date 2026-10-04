@@ -132,7 +132,7 @@ export const guidesBlockingIO: Doc = {
 						<C>Send</C> and <C>Call</C>, or the node's <C>SendTo</C> and <C>CallTo</C>, work from
 						any goroutine. An HTTP or gRPC handler is such code: it calls the process that does the
 						work and writes the answer, with the request's context bounding the wait, as{' '}
-						<A to="shop/services/#edge">the shop's web front</A> does. A process per connection is
+						<A to="tutorial/conversations/#edge">the tutorial's web front</A> does. A process per connection is
 						for what a server library does not already handle: a raw socket, a pipe, a device.
 					</p>
 					<Aside title="Coming from Ergo">

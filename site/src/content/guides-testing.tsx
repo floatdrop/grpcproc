@@ -1,4 +1,4 @@
-import ordersTest from '../../../examples/guide/internal/orders/orders_test.go?raw';
+import conversationsTest from '../../../examples/guide/internal/conversations/conversations_test.go?raw';
 import supervisor from '../../../examples/supervisor/main.go?raw';
 import restartTest from '../../../examples/supervisor/restart_test.go?raw';
 import shopTest from '../../../examples/testing/shop_test.go?raw';
@@ -18,7 +18,7 @@ export const guidesTesting: Doc = {
 			A multi-node scenario runs as a plain <C>go test</C>, with no sockets and no registry. The
 			code is from <Ext href={file('examples/testing/shop_test.go')}>examples/testing</Ext> and the
 			tutorial's{' '}
-			<Ext href={file('examples/guide/internal/orders/orders_test.go')}>orders service</Ext>.
+			<Ext href={file('examples/guide/internal/conversations/conversations_test.go')}>conversations service</Ext>.
 		</p>
 	),
 	sections: [
@@ -139,23 +139,23 @@ shop, warehouse := c.Node("shop"), c.Node("warehouse")`}</Code>
 					<p>
 						Most tests need one node. An actor that calls other actors takes their addresses, and
 						a test puts fakes behind them: plain process functions, registered under the names the
-						contracts give, on the node the actor was told to use. The tutorial's orders desk calls
-						the inventory and the payments; its test composes the platform and the orders module
-						alone, then spawns a stock and a cashier of its own:
+						contracts give, on the node the actor was told to use. In the tutorial a conversation
+						calls a model and a sandbox; its test composes the platform and the conversations
+						module alone, then spawns a model and a sandbox of its own:
 					</p>
-					<Code caption="examples/guide/internal/orders/orders_test.go">{region(ordersTest, /^\/\/ The desk alone/, /^}/)}</Code>
+					<Code caption="examples/guide/internal/conversations/conversations_test.go">{region(conversationsTest, /^\/\/ The conversations alone/, /^}/)}</Code>
 					<p>
-						The stock always says yes, and reports what it is asked to release on a channel; the
-						cashier is the test's parameter. One test gives it a cashier that declines, and expects
-						the items back:
+						The model is the test's parameter, and reports what it is asked on a channel; the
+						sandbox takes every call and answers none. One test has the model ask for a tool, and
+						expects the conversation to give up on the sandbox at its deadline and tell the model:
 					</p>
-					<Code caption="examples/guide/internal/orders/orders_test.go">{region(ordersTest, /^func TestADeclinedCardGivesTheItemsBack/, /^}/)}</Code>
+					<Code caption="examples/guide/internal/conversations/conversations_test.go">{region(conversationsTest, /^\/\/ A tool that does not answer in time/, /^}/)}</Code>
 					<p>
-						The other gives it a cashier that exits without answering, so the desk's call fails
-						with <C>ErrNoProc</C>. The card may have been charged, so the desk must keep the items
-						reserved, and the test checks that nothing was released:
+						Another lets a conversation go idle, waits for its process to end, speaks to it again,
+						and reads from the channel that the new process showed the model what was said to the
+						old one:
 					</p>
-					<Code caption="examples/guide/internal/orders/orders_test.go">{region(ordersTest, /^\/\/ A cashier that takes the charge and answers nothing/, /^}/)}</Code>
+					<Code caption="examples/guide/internal/conversations/conversations_test.go">{region(conversationsTest, /^\/\/ A conversation nobody speaks to/, /^}/)}</Code>
 					<p>
 						A fake is a process function, a dozen lines here. One that must answer on another node
 						is the same function spawned on another node of a <C>grpcproctest</C> cluster.

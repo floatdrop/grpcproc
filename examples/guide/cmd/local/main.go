@@ -1,16 +1,16 @@
-// Command local runs the whole shop as one program, the way a developer
+// Command local runs the whole runtime as one program, the way a developer
 // runs it: one node, every service on it. It composes the same modules that
-// cmd/front, cmd/warehouse and cmd/billing split between three nodes.
+// cmd/gateway, cmd/gpu and cmd/sandbox split between their nodes.
 package main
 
 import (
-	"github.com/floatdrop/grpcproc/examples/guide/internal/inventory"
-	"github.com/floatdrop/grpcproc/examples/guide/internal/orders"
-	"github.com/floatdrop/grpcproc/examples/guide/internal/payments"
+	"github.com/floatdrop/grpcproc/examples/guide/internal/conversations"
+	"github.com/floatdrop/grpcproc/examples/guide/internal/models"
 	"github.com/floatdrop/grpcproc/examples/guide/internal/platform"
+	"github.com/floatdrop/grpcproc/examples/guide/internal/tools"
 	"github.com/floatdrop/grpcproc/examples/guide/internal/web"
 )
 
 func main() {
-	platform.Run(inventory.Module, payments.Module, orders.Module, web.Module)
+	platform.Run(models.Module, tools.Module, conversations.Module, web.Module)
 }

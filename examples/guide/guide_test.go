@@ -25,11 +25,12 @@ import (
 	"golang.yandex/di"
 
 	"github.com/floatdrop/grpcproc"
-	"github.com/floatdrop/grpcproc/examples/guide/internal/inventory"
-	"github.com/floatdrop/grpcproc/examples/guide/internal/orders"
-	"github.com/floatdrop/grpcproc/examples/guide/internal/payments"
+	"github.com/floatdrop/grpcproc/examples/guide/internal/conversations"
+	"github.com/floatdrop/grpcproc/examples/guide/internal/models"
 	"github.com/floatdrop/grpcproc/examples/guide/internal/platform"
+	"github.com/floatdrop/grpcproc/examples/guide/internal/tools"
 	"github.com/floatdrop/grpcproc/examples/guide/internal/web"
+	conversationsv1 "github.com/floatdrop/grpcproc/examples/guide/proto/conversations/v1"
 )
 
 var update = flag.Bool("update", false, "rewrite testdata/ from what the programs do")
@@ -39,21 +40,26 @@ var update = flag.Bool("update", false, "rewrite testdata/ from what the program
 // it here, or the tests, and the output the guide shows, describe programs
 // that are not the ones that run.
 var (
-	local     = []di.Module{inventory.Module, payments.Module, orders.Module, web.Module}
-	front     = []di.Module{orders.Module, web.Module}
-	warehouse = []di.Module{inventory.Module}
-	billing   = []di.Module{payments.Module}
+	local   = []di.Module{models.Module, tools.Module, conversations.Module, web.Module}
+	gateway = []di.Module{conversations.Module, web.Module}
+	gpu     = []di.Module{models.Module}
+	sandbox = []di.Module{tools.Module}
 )
 
 // compose is platform.Run without the program: the same composition, a
-// silent logger, and an HTTP port the system picks.
-func compose(cfg platform.Config, services []di.Module) *di.Scope {
+// silent logger, and an HTTP port the system picks. more adjusts it: a model
+// that does not pause between tokens, say.
+func compose(cfg platform.Config, services []di.Module, more ...di.Module) *di.Scope {
 	cfg.Listen = cmp.Or(cfg.Listen, "127.0.0.1:0")
 	cfg.HTTP = "127.0.0.1:0"
 	app := di.New()
 	platform.Compose(app, cfg, slog.New(slog.DiscardHandler), services...)
+	app.Use(more...)
 	return app
 }
+
+// fast has the script say its tokens with no wait between them.
+func fast(s *di.Scope) { s.Value(models.Pace(0)).Override() }
 
 func start(t *testing.T, app *di.Scope) {
 	t.Helper()
@@ -70,7 +76,7 @@ func start(t *testing.T, app *di.Scope) {
 	})
 }
 
-var mains = map[string][]di.Module{"local": local, "front": front, "warehouse": warehouse, "billing": billing}
+var mains = map[string][]di.Module{"local": local, "gateway": gateway, "gpu": gpu, "sandbox": sandbox}
 
 func TestWiringValidates(t *testing.T) {
 	for name, services := range mains {
@@ -110,16 +116,115 @@ func TestCopiesMatchTheMains(t *testing.T) {
 
 // The module report the guide shows is this test's output.
 func TestModulesMatchTheGuide(t *testing.T) {
-	golden(t, "modules.txt", compose(platform.Config{Node: "shop"}, local).Modules())
+	golden(t, "modules.txt", compose(platform.Config{Node: "local"}, local).Modules())
 }
 
-// order posts to the web front's handler, and returns the status and body.
-func order(t *testing.T, app *di.Scope, body string) (int, string) {
+// say posts to the web front's handler, and returns the status and body.
+func say(t *testing.T, app *di.Scope, id, text string) (int, string) {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/orders", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/conversations/"+id, strings.NewReader(text))
 	app.Get[*http.Server]().Handler.ServeHTTP(rec, req)
 	return rec.Code, strings.TrimSpace(rec.Body.String())
+}
+
+// follow subscribes a process of n to a conversation, as the web front does
+// for a browser, and returns its events until the test ends.
+func follow(t *testing.T, n *grpcproc.Node, where, id string) <-chan *conversationsv1.Event {
+	t.Helper()
+	events := make(chan *conversationsv1.Event, 256)
+	ready := make(chan error, 1)
+	follower, err := n.Spawn(func(p *grpcproc.Process[*conversationsv1.Event]) error {
+		_, err := conversationsv1.Conversation(where, id).Follow(p.Context(), p)
+		ready <- err
+		for err == nil {
+			var m grpcproc.Msg[*conversationsv1.Event]
+			if m, err = p.Receive(); err == nil && m.Down == nil {
+				events <- m.Body
+			}
+		}
+		return err
+	}, grpcproc.WithLabel("follower"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = n.Exit(context.Background(), follower.PID(), grpcproc.ReasonNormal) })
+	if err := <-ready; err != nil {
+		t.Fatal(err)
+	}
+	return events
+}
+
+// transcript reads events until turns turns have ended, and writes them as
+// a reader would see them: the tokens of an answer on one line, and a line
+// for everything else.
+func transcript(t *testing.T, events <-chan *conversationsv1.Event, turns int) string {
+	t.Helper()
+	var b strings.Builder
+	line := false // in the middle of a line of tokens
+	end := func() {
+		if line {
+			b.WriteString("\n")
+		}
+		line = false
+	}
+	for turns > 0 {
+		select {
+		case e := <-events:
+			switch k := e.Kind.(type) {
+			case *conversationsv1.Event_Said:
+				end()
+				fmt.Fprintf(&b, "> %s\n", k.Said)
+			case *conversationsv1.Event_Token:
+				b.WriteString(k.Token)
+				line = true
+				continue
+			case *conversationsv1.Event_Tool:
+				end()
+				fmt.Fprintf(&b, "  [tool] %s %s\n", k.Tool.Name, k.Tool.Args)
+			case *conversationsv1.Event_Ran:
+				end()
+				fmt.Fprintf(&b, "  [ran] %s%s\n", k.Ran.Output, failed(k.Ran.Failed))
+			case *conversationsv1.Event_Retrying:
+				end()
+				fmt.Fprintf(&b, "  [starting over] %s\n", k.Retrying)
+			case *conversationsv1.Event_Done:
+				end()
+				fmt.Fprintf(&b, "  [turn %d done]\n", e.Turn)
+				turns--
+			case *conversationsv1.Event_Failed:
+				end()
+				fmt.Fprintf(&b, "  [turn %d failed] %s\n", e.Turn, k.Failed)
+				turns--
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("no more events; so far:\n%s", b.String())
+		}
+	}
+	return b.String()
+}
+
+func failed(why string) string {
+	if why == "" {
+		return ""
+	}
+	return "failed: " + why
+}
+
+// settled waits until n runs no generation and no tool call: their
+// processes end a moment after they answer.
+func settled(t *testing.T, n *grpcproc.Node) {
+	t.Helper()
+	for range 500 {
+		busy := slices.ContainsFunc(n.Processes(), func(p grpcproc.ProcessInfo) bool {
+			return p.Label == "generation" || strings.HasPrefix(p.Label, "tool:")
+		})
+		if !busy {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("a generation or a tool call is still running")
 }
 
 // tree draws what a node runs, from its processes' parents.
@@ -139,7 +244,7 @@ func tree(n *grpcproc.Node) string {
 			if i == len(kids)-1 {
 				branch, next = "└── ", "    "
 			}
-			_, _ = fmt.Fprintf(w, "%s%s%s\t%s\n", indent, branch, p.Name, p.Label)
+			_, _ = fmt.Fprintf(w, "%s%s%s\t%s\n", indent, branch, cmp.Or(p.Name, "·"), p.Label)
 			walk(p.PID, indent+next)
 		}
 	}

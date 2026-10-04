@@ -1,0 +1,58 @@
+// The conversations service's contract: what a conversation's process
+// accepts, what it publishes, and how one is opened. Another service depends
+// on this package, never on the service.
+syntax = "proto3";
+
+package conversations.v1;
+
+import "guide/proto/tools/v1/tools.proto";
+
+option go_package = "github.com/floatdrop/grpcproc/examples/guide/proto/conversations/v1;conversationsv1";
+
+// Open is what the conversations supervisor starts a conversation from.
+message Open {
+  string id = 1;
+}
+
+// Request is everything a conversation's process accepts.
+message Request {
+  oneof op {
+    // A call, answered with Said.
+    Say say = 1;
+  }
+}
+
+// Say is what the user said. It is answered as its turn begins; the answer
+// itself is published, as it comes, on the conversation's topic.
+message Say {
+  string text = 1;
+}
+
+message Said {
+  // Which turn of the conversation this is, from 1.
+  uint64 turn = 1;
+}
+
+// Event is what a conversation publishes on its topic.
+message Event {
+  uint64 turn = 1;
+  // Which try at an answer a token belongs to, or a retrying begins: see
+  // models.v1.Generate.
+  uint64 attempt = 9;
+  oneof kind {
+    // What the user said: the turn begins.
+    string said = 8;
+    // The next piece of what the assistant says.
+    string token = 2;
+    // The model asked for a tool, which is now called.
+    tools.v1.Run tool = 3;
+    // What the tool answered.
+    tools.v1.Ran ran = 4;
+    // The answer starts over, and why: the node generating it was lost.
+    string retrying = 5;
+    // The turn is over.
+    bool done = 6;
+    // The turn failed, and why.
+    string failed = 7;
+  }
+}

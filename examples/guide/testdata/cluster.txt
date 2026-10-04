@@ -1,14 +1,22 @@
-warehouse
+gateway
+├── root                               supervisor
+│   └── conversations                  supervisor
+│       └── conversation/1             conversation
+│           └── conversation/1/events  pubsub.topic
+└── ·                                  follower
+
+gpu-1
+└── root            supervisor
+    └── models-sup  supervisor
+        └── models  *modelsv1.Generate
+            └── ·   generation
+
+gpu-2
+└── root            supervisor
+    └── models-sup  supervisor
+        └── models  *modelsv1.Generate
+
+sandbox
 └── root           supervisor
-    └── inventory  supervisor
-        └── stock  *inventoryv1.Command
-
-billing
-└── root             supervisor
-    └── payments     supervisor
-        └── cashier  *paymentsv1.Charge
-
-front
-└── root          supervisor
-    └── orders    supervisor
-        └── desk  *ordersv1.Place
+    └── tools-sup  supervisor
+        └── tools  *toolsv1.Run

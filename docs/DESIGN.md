@@ -76,7 +76,7 @@ grpcproc/saga                optional: durable sagas, an fsm machine and its dat
 grpcproc/etcd     (nested module)   Resolver + Registrar + Membership on etcd leases
 grpcproc/otel     (nested module)   Hooks implementation: OTel metrics + trace propagation
 grpcproc/tools    (nested module)   grpcprocctl over the Inspector: CLI, Graphviz, MCP server, web UI
-grpcproc/examples (nested module)   runnable examples and the shop the site's tutorial builds
+grpcproc/examples (nested module)   runnable examples and the agent runtime the site's tutorial builds
 grpcproc/benchmarks (nested module) grpcproc against GoAkt, Hollywood, Proto.Actor and Ergo
 site/                            the documentation site
 ```
@@ -301,7 +301,7 @@ message Envelope {                                   // one flat message, decode
   so work for a caller that gave up, a deferred reply's above all, can stop.
   It is not applied to the callee's own sends and calls, as metadata is:
   a callee may have to finish what it started for a caller that stopped
-  waiting (the shop's desk takes an order whose client hung up), so it
+  waiting (an order is still taken when its client hung up), so it
   passes the message's context on when it wants the bound. Cancellation does
   not travel, only the deadline.
 
@@ -1370,9 +1370,9 @@ c.Names(); c.CutNames("b"); c.RestoreNames("b")
 ## Sagas (`grpcproc/saga`)
 
 A saga is work that spans services and outlasts a process: reserve, charge,
-ship, and undo what was done when a later step cannot be. The shop's order
-desk is one in memory, and what it cannot settle it logs for whoever
-reconciles orders. `grpcproc/saga` keeps each run in a store, so that a
+ship, and undo what was done when a later step cannot be. Done in memory by
+one process, it is lost with that process, and what was half done is left
+for whoever reconciles orders. `grpcproc/saga` keeps each run in a store, so that a
 crash, a restart or a lost node is followed by the run going on from where
 it was. It is a package of the core, built on the public API and `fsm`.
 
@@ -1560,8 +1560,7 @@ OpenTelemetry are.
   participants that answers a repeated key with the stored reply and refuses
   a lower fence; steps that run side by side; retention of finished runs;
   dropping the signals no state of a run will take;
-  `grpcprocctl saga` and a view in the web UI; and the shop's order desk
-  rewritten as one.
+  `grpcprocctl saga` and a view in the web UI.
 - **Process groups**, Erlang's `pg` and Akka's Receptionist: the live
   members of a group, found and watched. Pub/sub topics already monitor their
   subscribers through a relay per node, so it is a thin module.

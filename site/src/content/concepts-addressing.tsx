@@ -1,4 +1,4 @@
-import inventoryAddress from '../../../examples/guide/proto/inventory/v1/address.go?raw';
+import conversationsAddress from '../../../examples/guide/proto/conversations/v1/address.go?raw';
 import quickstart from '../../../examples/quickstart/main.go?raw';
 
 import { Code, region } from '../code.tsx';
@@ -198,20 +198,21 @@ r, err := grpcproc.AddrOf[*roomspb.Command](grpcproc.Global{Name: "room:42"}).
 						wrapping <C>Call</C> and <C>Send</C> in a method per operation on an address type of its
 						own:
 					</p>
-					<Code caption="examples/guide/proto/inventory/v1/address.go">
-						{`${region(inventoryAddress, /^\/\/ StockAddr addresses/, /^type StockAddr/)}
+					<Code caption="examples/guide/proto/conversations/v1/address.go">
+						{`${region(conversationsAddress, /^\/\/ ConversationAddr addresses/, /^}/)}
 
-${region(inventoryAddress, /^\/\/ Reserve takes items/, /^}/)}`}
+${region(conversationsAddress, /^\/\/ Say tells the conversation/, /^}/)}`}
 					</Code>
 					<p>
-						A caller then writes <C>stock.Reserve(ctx, p, req)</C> from a handler, or{' '}
-						<C>stock.Reserve(ctx, node, req)</C> from anywhere else, and names neither the reply nor
-						the oneof. The sender is an argument rather than part of the address because who sends
+						A caller then writes <C>c.Say(ctx, p, text)</C> from a handler, or{' '}
+						<C>c.Say(ctx, node, text)</C> from anywhere else, and names neither the reply nor
+						the oneof. A method is also the place for what every caller must do first: this one
+						starts the conversation's process if none runs. The sender is an argument rather than part of the address because who sends
 						matters: a process's call carries the metadata of the message it is handling, and an
 						actor keeps its addresses in fields but has its process only inside a handler. The type
 						embeds <C>Addr</C>, so it is still a <C>Target</C> with its raw <C>Call</C> and{' '}
 						<C>Send</C>.{' '}
-						<A to="shop/#contracts">The shop</A>'s contracts are written this way.
+						<A to="tutorial/#contracts">The tutorial</A>'s contracts are written this way.
 					</p>
 				</>
 			)

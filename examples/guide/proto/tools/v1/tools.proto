@@ -1,0 +1,25 @@
+// The tools service's contract: what its runner accepts and answers.
+// Another service depends on this package, never on the service.
+syntax = "proto3";
+
+package tools.v1;
+
+option go_package = "github.com/floatdrop/grpcproc/examples/guide/proto/tools/v1;toolsv1";
+
+// Run asks for one call of a tool. It is a call, answered with Ran, and its
+// deadline is the tool's.
+message Run {
+  // The tool's name: calc, sleep.
+  string name = 1;
+  // What it is given, as the model wrote it.
+  string args = 2;
+}
+
+// Ran is the runner's answer: what the tool returned, or why it did not. A
+// tool that fails, crashes or is not there is part of the answer; an error
+// means the runner did not answer.
+message Ran {
+  string output = 1;
+  // Why there is no output. Empty when there is.
+  string failed = 2;
+}
