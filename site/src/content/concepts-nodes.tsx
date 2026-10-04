@@ -33,6 +33,7 @@ export const conceptsNodes: Doc = {
 	Name:        "warehouse",
 	Resolver:    grpcproc.StaticResolver{"shop": "10.0.0.7:9000"},
 	DialOptions: []grpc.DialOption{grpc.WithTransportCredentials(creds)},
+	Admit:       grpcproc.AdmitTLS(nil), // a peer's certificate must name its node
 })
 node.Register(grpcServer) // grpcproc.v1.Node, next to your services
 err = node.Start(ctx)     // once the server serves

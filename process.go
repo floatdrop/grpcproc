@@ -151,7 +151,8 @@ type spawnOpts struct {
 
 // WithName registers the process under name on its node before it runs.
 // The name is held until the process exits; while another process holds it,
-// spawning fails with ErrNameTaken.
+// spawning fails with ErrNameTaken. A name must be valid UTF-8 and at most
+// 16 KiB, so that peers can address it.
 func WithName(name string) SpawnOption { return func(o *spawnOpts) { o.name = name } }
 
 // WithLabel tags the process with a low-cardinality label, the key metrics
@@ -231,6 +232,7 @@ func (h *heldCall) check(n *Node) error {
 var (
 	errNoParent      = errors.New("grpcproc: LinkParent and LinkChild need a parent: spawn with Process.Spawn")
 	errMailboxLimit  = errors.New("grpcproc: WithMailboxLimit needs n >= 0")
+	errBadName       = errors.New("grpcproc: a process name must be valid UTF-8 and at most 16 KiB")
 	errHeldElsewhere = errors.New("grpcproc: the call's watch goes on a process of the node that holds it")
 	errAnswered      = errors.New("grpcproc: the call is answered already, so its watch cannot be placed")
 	errWatchPlaced   = errors.New("grpcproc: the call's watch is placed already")
@@ -308,6 +310,12 @@ func (m Msg[M]) Context(parent context.Context) (context.Context, context.Cancel
 // (which answers ErrNoProc) or its node's Stop gave up on it
 // (ErrNodeStopped). An error answer takes back the watch the caller asked
 // for, if it was placed (see WatchedBy).
+//
+// The error says what became of the answer, which is given either way: a
+// reply to a peer's caller that does not encode, or is larger than
+// Config.MaxMessageSize (ErrTooLarge), reaches the caller as that error
+// instead, and a reply that cannot be routed cuts the link the call came by,
+// failing the caller with ErrNoConnection.
 func (m Msg[M]) Reply(resp proto.Message, err error) error {
 	if m.ref == 0 {
 		return ErrNotCall
@@ -408,6 +416,8 @@ func spawn[M proto.Message](n *Node, fn func(*Process[M]) error, opts []SpawnOpt
 		return Addr[M]{}, Ref{}, errNoParent
 	case o.mailboxLimit < 0:
 		return Addr[M]{}, Ref{}, errMailboxLimit
+	case !validName(o.name):
+		return Addr[M]{}, Ref{}, errBadName
 	}
 	// The process holding the call WatchedBy places a watch for is locked
 	// beside the parent, when it is another one.

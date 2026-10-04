@@ -9,6 +9,7 @@
 //		Name:      "orders-1",
 //		Advertise: "10.0.0.5:9000",
 //		Resolver:  cluster, Registrar: cluster, Membership: cluster,
+//		Admit:     grpcproc.AdmitTLS(nil), // peers' certificates name their nodes
 //	})
 //
 // Each node is one key, <prefix>/nodes/<name>, holding its name,

@@ -789,7 +789,7 @@ func TestSpecs(t *testing.T) {
 		"a negative MinClusterSize, Elec": {Cluster: "x", Singleton: ok, GhostTTL: -1},
 		"is not among the Voters":         {Cluster: "x", Singleton: ok, Voters: []string{"b"}},
 	} {
-		n, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}})
+		n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}})
 		if err != nil {
 			t.Fatal(err)
 		}

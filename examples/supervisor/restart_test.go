@@ -16,7 +16,7 @@ import (
 // synctest.Wait returns once the restart it caused has settled.
 func TestRestartsThreeTimesAMinute(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		node, err := grpcproc.NewNode(grpcproc.Config{Name: "shop", Resolver: grpcproc.StaticResolver{}})
+		node, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "shop", Resolver: grpcproc.StaticResolver{}})
 		if err != nil {
 			t.Fatal(err)
 		}

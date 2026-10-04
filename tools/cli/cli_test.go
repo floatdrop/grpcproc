@@ -215,7 +215,7 @@ func TestRealDial(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := grpc.NewServer()
-	n, _ := grpcproc.NewNode(grpcproc.Config{Name: "solo", Resolver: grpcproc.StaticResolver{}})
+	n, _ := grpcproc.NewNode(grpcproc.Config{Admit: func(context.Context, grpcproc.NodeID) (grpcproc.Policy, error) { return nil, nil }, Name: "solo", Resolver: grpcproc.StaticResolver{}})
 	n.Register(srv)
 	inspect.New(n).Register(srv)
 	go func() { _ = srv.Serve(ln) }()

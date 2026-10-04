@@ -245,6 +245,7 @@ func node(t *testing.T, c *grpcprocetcd.Cluster, name string) *grpcproc.Node {
 	}
 	srv := grpc.NewServer()
 	n, err := grpcproc.NewNode(grpcproc.Config{
+		Admit:       func(context.Context, grpcproc.NodeID) (grpcproc.Policy, error) { return nil, nil },
 		Name:        name,
 		Advertise:   ln.Addr().String(),
 		Resolver:    c,

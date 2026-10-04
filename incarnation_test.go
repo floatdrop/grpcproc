@@ -41,7 +41,8 @@ func (w *twins) start(name string, inc uint64, configure ...func(*grpcproc.Confi
 	addr := fmt.Sprintf("%s-%d", name, inc) // not name#inc: # starts a URL's fragment
 	ln := bufconn.Listen(1 << 20)
 	cfg := grpcproc.Config{
-		Name: name, Incarnation: inc,
+		Admit: grpcproc.AdmitAll,
+		Name:  name, Incarnation: inc,
 		Resolver: grpcproc.ResolverFunc(func(_ context.Context, peer string) (string, error) {
 			w.mu.Lock()
 			defer w.mu.Unlock()

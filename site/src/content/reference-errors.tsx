@@ -47,6 +47,15 @@ export const referenceErrors: Doc = {
 								</>
 							],
 							[
+								<C>ErrTooLarge</C>,
+								<>
+									A message or a call to another node encodes larger than{' '}
+									<C>Config.MaxMessageSize</C> allows, gRPC's 4 MiB receive limit unless raised: it was
+									never sent. From a <C>Call</C> it can also be the callee's reply that was too large, as
+									a <C>*RemoteError</C>: the call was handled, and <C>Reply</C> returned the same error.
+								</>
+							],
+							[
 								<C>ErrMailboxFull</C>,
 								<>
 									A <C>Call</C> to a process whose mailbox holds as much as <C>WithMailboxLimit</C>{' '}

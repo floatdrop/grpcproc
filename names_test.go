@@ -414,7 +414,7 @@ func newFakeNames() *fakeNames {
 
 func fakeNode(t *testing.T, names grpcproc.Names) *grpcproc.Node {
 	t.Helper()
-	n, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}, Names: names, DialTimeout: time.Second, Logger: slog.New(slog.DiscardHandler)})
+	n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Names: names, DialTimeout: time.Second, Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatal(err)
 	}

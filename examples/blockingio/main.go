@@ -84,7 +84,7 @@ func serve(c net.Conn) func(*grpcproc.Process[*connpb.Event]) error {
 
 func main() {
 	ctx := context.Background()
-	node, err := grpcproc.NewNode(grpcproc.Config{Name: "edge", Resolver: grpcproc.StaticResolver{}})
+	node, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "edge", Resolver: grpcproc.StaticResolver{}})
 	check(err)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	check(err)

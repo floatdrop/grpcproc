@@ -324,7 +324,7 @@ func TestEncodeErrors(t *testing.T) {
 
 func TestCopyLocal(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		n, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}, CopyLocal: true})
+		n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, CopyLocal: true})
 		if err != nil {
 			t.Fatal(err)
 		}

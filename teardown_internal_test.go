@@ -34,7 +34,8 @@ func bufconnPair(t *testing.T, hooks Hooks, dialing func()) (a, b *Node) {
 			return lns[addr].DialContext(ctx)
 		})
 		n, err := NewNode(Config{
-			Name: name, Incarnation: 1, Hooks: hooks,
+			Admit: AdmitAll,
+			Name:  name, Incarnation: 1, Hooks: hooks,
 			Resolver:    StaticResolver{"a": "passthrough:///a", "b": "passthrough:///b"},
 			DialOptions: []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), dial},
 		})

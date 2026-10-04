@@ -19,7 +19,7 @@ import (
 // the test lets it.
 func TestNodeInSynctestBubble(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		n, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}})
+		n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -75,12 +75,12 @@ func TestNodeInSynctestBubble(t *testing.T) {
 // none of the new one's processes.
 func TestIncarnationsGrowWhileTheClockStandsStill(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		first, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}})
+		first, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		_ = first.Stop(context.Background())
-		again, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}})
+		again, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -36,6 +36,7 @@ node, err := grpcproc.NewNode(grpcproc.Config{
 	Registrar:  cluster,
 	Membership: cluster,
 	Names:      cluster.Names(), // global names, optional
+	Admit:      grpcproc.AdmitTLS(nil),
 })
 err = node.Start(ctx) // registers; Stop withdraws`}</Code>
 					<p>

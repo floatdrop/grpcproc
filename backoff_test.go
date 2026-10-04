@@ -279,7 +279,7 @@ func TestDialBackoffProbesAlone(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var calls atomic.Int32
 		entered, release := make(chan struct{}), make(chan struct{})
-		n, err := grpcproc.NewNode(grpcproc.Config{Name: "a", DialBackoff: 3200 * time.Millisecond,
+		n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", DialBackoff: 3200 * time.Millisecond,
 			Resolver: grpcproc.ResolverFunc(func(context.Context, string) (string, error) {
 				if calls.Add(1) == 2 {
 					close(entered)

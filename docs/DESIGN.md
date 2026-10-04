@@ -33,6 +33,7 @@ node, err := grpcproc.NewNode(grpcproc.Config{
     Advertise:   "10.0.0.5:9000",           // where *your* gRPC server listens
     Resolver:    grpcprocetcd.New(cli, "/grpcproc"), // required; grpcproc.StaticResolver for a fixed map
     DialOptions: []grpc.DialOption{grpc.WithTransportCredentials(creds)},
+    Admit:       grpcproc.AdmitTLS(nil),   // required: a peer's certificate must name its node
     Logger:      slog.Default(),
     Hooks:       otelHooks, // grpcprocotel.New(): optional, see Observability
 })
@@ -145,9 +146,28 @@ message Envelope {                                   // one flat message, decode
 ```
 
 - **A frame per write.** A link's writer sends everything queued since its
-  last write as one gRPC message, split at about 1 MiB (well under gRPC's
-  default 4 MiB limit), so under load many envelopes share the per-message
+  last write as one gRPC message, split at 1 MiB or `Config.MaxMessageSize`,
+  whichever is less, so under load many envelopes share the per-message
   cost of gRPC; at low load a frame holds one envelope and nothing waits.
+- **Nothing goes on a link that its peer would refuse.** A peer ends a link
+  that sends it a frame past its server's `grpc.MaxRecvMsgSize`, or one
+  that does not decode, and with it every call and monitor on the link,
+  for one message no one else sent. So it is checked before it is queued,
+  where its sender can be told: a message or a call that encodes larger
+  than `Config.MaxMessageSize` (4 MiB by default, gRPC's own), metadata
+  included, fails with `ErrTooLarge`, and one whose metadata is not valid
+  UTF-8, which protobuf requires of a string, fails to encode; neither is
+  sent. An answer cannot be refused, or a caller would wait for ever and a
+  monitor never fire, so it is made to fit instead: a reply that does not
+  encode or fit is answered as that error (`ErrTooLarge`, which `Reply`
+  returns too), and exit reasons travel as valid UTF-8, cut at 16 KiB. A
+  process name that could not travel, invalid UTF-8 or longer than 16 KiB,
+  is one `WithName` refuses, so no process holds it: it travels as no name,
+  and the peer answers as for a process that does not exist, never as for
+  another one. Local sends are not limited. The limit is what this node
+  sends, which every peer's server must take; nothing tells a node its
+  peers' limits, so a larger one is raised on every server before it is
+  raised in any config.
 - **No node names per envelope.** Every envelope on a link goes from a
   process of the node that opened it to one of the node that accepted it,
   so PIDs travel as incarnation and id; the reader fills the node names in
@@ -258,9 +278,9 @@ message Envelope {                                   // one flat message, decode
   the dial, and written first, in order, once it is up.
 - **Node identity travels in the stream's metadata** (`name`, `incarnation`,
   protocol version). `Config.Admit(ctx, peer NodeID) (Policy, error)`, with
-  the peer's transport credentials in ctx (`grpc/peer`), lets mTLS
-  deployments refuse a node whose certificate does not match the name it
-  claims, and says what an admitted one may ask (see Admission).
+  the peer's transport credentials in ctx (`grpc/peer`), refuses a node
+  whose certificate does not name it (`AdmitTLS`), and says what an
+  admitted one may ask (see Admission).
 - **Connections to one peer can have options of their own.**
   `Config.DialOptionsFor(peer)` adds to `DialOptions` for that peer's link
   and for `Node.Dial`, after them, so that they win: the credentials of
@@ -456,7 +476,9 @@ monitor, which each side already handles alone.
 type Op uint8 // OpSend, OpCall, OpMonitor (a link travels as one), OpExit
 type Policy func(op Op, name string) bool
 
-Admit func(ctx context.Context, peer NodeID) (Policy, error) // in Config
+Admit func(ctx context.Context, peer NodeID) (Policy, error) // in Config, required
+func AdmitTLS(pol Policy) func(context.Context, NodeID) (Policy, error)
+func AdmitAll(context.Context, NodeID) (Policy, error)
 func Export(names ...string) Policy
 ```
 
@@ -465,12 +487,31 @@ included, which a process cannot trap: right for the nodes of one
 installation, wrong for a partner's or a tenant's. So `Admit` both refuses
 a link and, when it admits one, returns what the peer may ask over it.
 
+- **Required.** The node's service is mounted on the application's gRPC
+  server, which may face more than the cluster. A peer is who its
+  metadata says, so one admitted without proof may claim any node's name,
+  with an incarnation newer than the real node's, which then cannot link
+  until `Membership` or `Disconnect` lets it; and it may exit any
+  process. So `NewNode` refuses a config without `Admit`, and the choice
+  is written down: `AdmitTLS(pol)` admits a peer whose verified client
+  certificate names its node, exactly, as a DNS subject alternative name
+  or an IP one of the address the name is, with no wildcard, since a node
+  name is a name, not a host to match; and `AdmitAll` every peer, for a
+  network where whoever reaches the server is trusted. Erlang asks for a
+  cookie for the same reason; Proto.Actor checks nothing.
+- **Admission is of who dials.** A dialer takes the node the server names
+  in its `Hello`; that it is the node meant is for the dial's credentials,
+  as for any gRPC client: `DialOptionsFor(peer)` gives each peer's TLS a
+  `ServerName` of the node's name, so its server certificate must name it.
+  The library does not check it itself, since server certificates commonly
+  name hosts, not nodes.
+
 - **One hook, once per link.** Whether a peer may link and what it may do
   come from the same evidence, its certificate or its name, so they are one
   decision, made where the link is accepted; two hooks would read the
   certificate twice and could disagree. The `Policy` is kept on the inbound
-  link and judges every envelope the peer sends on it; a nil one, as a nil
-  `Admit`, is a nil check per envelope and nothing else.
+  link and judges every envelope the peer sends on it; a nil one is a nil
+  check per envelope and nothing else.
 - **By the name of the process.** A request by name is judged by that name,
   one by PID by the name the process was spawned with, "" if none. A name
   is what a node offers others; a PID is not a capability, since
@@ -1133,7 +1174,7 @@ leader's singleton, and its state the singleton's.
   `ElectionTimeout` goes up. `Lease.Term` is the fencing token for external
   resources; `Confirm` makes leadership wait for an external lock.
 
-## Global names (core built; the etcd store next)
+## Global names
 
 A process's name is its node's: `Named[M]("warehouse", "stock")` reaches it
 only if the caller knows the node. A global name belongs to the
@@ -1169,7 +1210,7 @@ type NameLister interface{ List(prefix string, limit int) []GlobalName } // opti
 // grpcproctest: an in-memory store every test cluster's nodes share
 c.Names(); c.CutNames("b"); c.RestoreNames("b")
 
-// grpcproc/etcd (next, once a core with Names is released): *Cluster is a Names
+// grpcproc/etcd: Cluster.Names() is a Names
 ```
 
 - **The core keeps the claims; a store keeps the names.** What a claim
@@ -1321,7 +1362,7 @@ c.Names(); c.CutNames("b"); c.RestoreNames("b")
   `ProcessInfo.Globals`, since the core keeps the claims; the MCP server
   and the web UI show the same. A node without `Names` has none to show,
   and its Inspector answers `FailedPrecondition`. The Inspector's RPCs are
-  in the core; `grpcprocctl` follows with the etcd store.
+  in the core; `grpcprocctl names` reads them.
 
 ## What was rejected, and why
 
@@ -1375,9 +1416,6 @@ OpenTelemetry are.
   Temporal's replay of a history, whose determinism rules forbid the
   `select` and goroutines processes are written with. The leader takes over
   the sagas of a node that left. Steps' timeouts need durable timers (below).
-- **Global names on etcd**: the core and `grpcproctest` have them (see
-  Global names); the etcd store, `grpcprocctl names` and the MCP and web
-  views follow a release of the core.
 - **Process groups**, Erlang's `pg` and Akka's Receptionist: the live
   members of a group, found and watched. Pub/sub topics already monitor their
   subscribers through a relay per node, so it is a thin module.

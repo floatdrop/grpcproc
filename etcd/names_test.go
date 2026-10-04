@@ -89,7 +89,8 @@ func namesNode(t *testing.T, c *grpcprocetcd.Cluster, name string) *grpcproc.Nod
 	ln := listen(t)
 	srv := grpc.NewServer()
 	n, err := grpcproc.NewNode(grpcproc.Config{
-		Name: name, Advertise: ln.Addr().String(),
+		Admit: func(context.Context, grpcproc.NodeID) (grpcproc.Policy, error) { return nil, nil },
+		Name:  name, Advertise: ln.Addr().String(),
 		Resolver: c, Registrar: c, Membership: c, Names: c.Names(),
 		DialOptions: []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())},
 		Logger:      slog.New(slog.DiscardHandler),

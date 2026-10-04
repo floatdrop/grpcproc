@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/floatdrop/grpcproc"
 	"github.com/floatdrop/grpcproc/grpcproctest"
@@ -424,6 +425,25 @@ func TestCall(t *testing.T) {
 	})
 }
 
+// A body too large for a link to another node can never be sent: no retry
+// helps, so it is no Unavailable.
+func TestCallTooLarge(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := grpcproctest.NewWith(t, []grpcproctest.Option{
+			grpcproctest.WithServices(func(n *grpcproc.Node, s *grpc.Server) { inspect.New(n).Register(s) }),
+			grpcproctest.WithConfig(func(_ string, cfg *grpcproc.Config) { cfg.MaxMessageSize = 64 << 10 }),
+		}, "a", "b")
+		e, err := c.Node("b").Spawn[proto.Message](func(p *grpcproc.Process[proto.Message]) error { _, err := p.Receive(); return err })
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := anypb.New(wrapperspb.Bytes(make([]byte, 100<<10)))
+		// Node a calls b's process itself, over the link, rather than forward.
+		_, err = client(c, "a").Call(t.Context(), &inspectv1.CallRequest{Node: "a", Target: byPID(e.PID()), Body: body})
+		code(t, err, codes.InvalidArgument)
+	})
+}
+
 func TestReadOnly(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := cluster(t, []inspect.Option{inspect.ReadOnly()}, "a")
@@ -691,7 +711,7 @@ func TestWatchEndsWithUnavailableWhenNodeStops(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// A node on its own, not behind a gRPC server that would cancel the
 		// stream first: only the node stopping can end this Watch.
-		n, err := grpcproc.NewNode(grpcproc.Config{Name: "solo", Resolver: grpcproc.StaticResolver{}})
+		n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "solo", Resolver: grpcproc.StaticResolver{}})
 		if err != nil {
 			t.Fatal(err)
 		}

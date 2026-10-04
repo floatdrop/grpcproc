@@ -9,9 +9,11 @@ import (
 	"maps"
 	"math"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -145,13 +147,17 @@ type Config struct {
 	// override them: the credentials of another installation, whose nodes
 	// present certificates of another CA, say.
 	DialOptionsFor func(peer string) []grpc.DialOption
-	// Admit, if set, runs for every inbound link before it is accepted, with
-	// the peer's transport credentials in ctx (grpc/peer) and the identity it
+	// Admit runs for every inbound link before it is accepted, with the
+	// peer's transport credentials in ctx (grpc/peer) and the identity it
 	// claims. An error refuses the link: the peer's dial fails with
 	// PermissionDenied. Otherwise the Policy it returns judges everything the
 	// peer asks over the link, for as long as the link lasts: messages,
-	// calls, monitors and links, exits. A nil Policy lets everything through,
-	// as a nil Admit does.
+	// calls, monitors and links, exits; a nil Policy lets everything through.
+	//
+	// It is required, since a peer that is let in may exit any process, and
+	// claim any node name: AdmitTLS admits a peer whose verified certificate
+	// names its node, and AdmitAll every peer, for a network where whoever
+	// reaches the server is trusted.
 	Admit func(ctx context.Context, peer NodeID) (Policy, error)
 	// Logger defaults to slog.Default().
 	Logger *slog.Logger
@@ -193,6 +199,15 @@ type Config struct {
 	// the default, is no bound: a send never fails for a slow peer, and the
 	// link holds whatever the peer has not yet taken.
 	MaxQueued int
+	// MaxMessageSize is the largest message this node sends a peer, encoded,
+	// metadata included. Every peer's server must take it, through its
+	// grpc.MaxRecvMsgSize, or it ends the link the message came on, and with
+	// it every call and monitor there. A message or a call that encodes
+	// larger fails at once with ErrTooLarge, and is never sent; a reply that
+	// large reaches its caller as ErrTooLarge instead. Local sends are not
+	// limited. Default 4 MiB, gRPC's own limit; at least 64 KiB. To raise it,
+	// raise grpc.MaxRecvMsgSize on every node's server first.
+	MaxMessageSize int
 	// MaxQueuedBytes bounds the link to each peer as MaxQueued does, by the
 	// bytes of the message bodies it holds (LinkInfo.QueuedBytes, counted as
 	// Bytes is): a message or a call fails while they come to this much, so
@@ -308,11 +323,17 @@ func outcome(body proto.Message, status grpcprocv1.Status, errText string) callR
 
 // NewNode validates cfg and returns a node that is not yet started.
 func NewNode(cfg Config) (*Node, error) {
-	if cfg.Name == "" {
-		return nil, errors.New("grpcproc: Config.Name is required")
+	if cfg.Name == "" || !validName(cfg.Name) {
+		return nil, errors.New("grpcproc: Config.Name is required, valid UTF-8 and at most 16 KiB")
 	}
 	if cfg.Resolver == nil {
 		return nil, errors.New("grpcproc: Config.Resolver is required")
+	}
+	if cfg.Admit == nil {
+		return nil, errors.New("grpcproc: Config.Admit is required: AdmitTLS admits peers whose certificates name them, AdmitAll every peer")
+	}
+	if cfg.MaxMessageSize != 0 && cfg.MaxMessageSize < minMessageSize {
+		return nil, fmt.Errorf("grpcproc: Config.MaxMessageSize is %d, less than %d", cfg.MaxMessageSize, minMessageSize)
 	}
 	if cfg.Incarnation == 0 {
 		cfg.Incarnation = nextIncarnation()
@@ -321,6 +342,7 @@ func NewNode(cfg Config) (*Node, error) {
 	cfg.Logger = cmp.Or(cfg.Logger, slog.Default())
 	cfg.DialTimeout = cmp.Or(cfg.DialTimeout, 5*time.Second)
 	cfg.DialBackoff = cmp.Or(cfg.DialBackoff, 5*time.Second)
+	cfg.MaxMessageSize = cmp.Or(cfg.MaxMessageSize, 4<<20)
 	ctx, cancel := context.WithCancel(context.Background())
 	n := &Node{
 		cfg:      cfg,
@@ -919,7 +941,7 @@ func (n *Node) send(ctx context.Context, from PID, sender *proc, to dest, body p
 	}
 	env := wire(grpcprocv1.Kind_KIND_SEND, from, pid, name)
 	env.Metadata = md
-	if err := encodeBody(env, body); err != nil {
+	if err := n.encode(env, body); err != nil {
 		return err
 	}
 	return n.route(ctx, pid.Node, env)
@@ -995,7 +1017,7 @@ func (n *Node) callRemote(ctx context.Context, from, to PID, name string, req pr
 	ref := n.callRef(watch)
 	env := wire(grpcprocv1.Kind_KIND_CALL, from, to, name)
 	env.Ref, env.Metadata, env.Watch = ref, md, watch != 0
-	if err := encodeBody(env, req); err != nil {
+	if err := n.encode(env, req); err != nil {
 		return callResult{err: err}
 	}
 	l, err := n.getOut(ctx, to.Node)
@@ -1044,11 +1066,26 @@ func (n *Node) callRemote(ctx context.Context, from, to PID, name string, req pr
 // is set when the answer comes from dispatch, on the link the call arrived by;
 // see routeOrCut.
 func (n *Node) reply(from, to PID, ref uint64, a answerTo, body proto.Message, status grpcprocv1.Status, errText string, dispatching bool) error {
+	remote := to.Node != n.id.Name
+	var env *grpcprocv1.Envelope
+	var failed error
+	if remote {
+		// An answer that cannot be carried, one that does not encode or is
+		// too large, is answered as that error: its caller must not wait
+		// for ever, and the link must not carry what its peer would refuse.
+		if env, failed = n.replyEnv(from, to, ref, body, status, errText); failed != nil {
+			status, errText = grpcprocv1.Status_STATUS_ERROR, failed.Error()
+			if errors.Is(failed, ErrTooLarge) {
+				errText = ErrTooLarge.Error() // what the caller's errors.Is matches
+			}
+			env, _ = n.replyEnv(from, to, ref, nil, status, errText)
+		}
+	}
 	if status != grpcprocv1.Status_STATUS_OK {
 		n.unwatch(openCall{to, ref}, a.watched)
 		a.watched = PID{}
 	}
-	if to.Node == n.id.Name {
+	if !remote {
 		// With no ch, the call was answered already: this is a second Reply,
 		// or one after the process's exit, or Stop, answered for it.
 		if a.ch != nil {
@@ -1057,14 +1094,19 @@ func (n *Node) reply(from, to PID, ref uint64, a answerTo, body proto.Message, s
 		}
 		return nil
 	}
+	env.WatchedId = a.watched.ID
+	return cmp.Or(n.routeOrCut(to.Node, env, a.via, dispatching), failed)
+}
+
+// replyEnv is the envelope of a reply to a caller of a peer, and why it
+// cannot be sent as it is, if it cannot.
+func (n *Node) replyEnv(from, to PID, ref uint64, body proto.Message, status grpcprocv1.Status, errText string) (*grpcprocv1.Envelope, error) {
 	env := wire(grpcprocv1.Kind_KIND_REPLY, from, to, "")
-	env.Ref, env.Status, env.Reason, env.WatchedId = ref, status, errText, a.watched.ID
-	if body != nil {
-		if err := encodeBody(env, body); err != nil {
-			return err
-		}
+	env.Ref, env.Status, env.Reason = ref, status, wireText(errText)
+	if body == nil {
+		return env, nil // its reason is cut to maxText, well within any MaxMessageSize
 	}
-	return n.routeOrCut(to.Node, env, a.via, dispatching)
+	return env, n.encode(env, body)
 }
 
 // routeOrCut routes a reply or a Down. The peer waits for those over a link
@@ -1162,7 +1204,7 @@ func (n *Node) down(from, to PID, ref uint64, reason string, via *inLink, dispat
 		return nil
 	}
 	env := wire(grpcprocv1.Kind_KIND_DOWN, from, to, "")
-	env.Ref, env.Reason = ref, reason
+	env.Ref, env.Reason = ref, wireText(reason)
 	return n.routeOrCut(to.Node, env, via, dispatching)
 }
 
@@ -1174,7 +1216,7 @@ func (n *Node) exit(ctx context.Context, from PID, to Target, reason string) err
 		return nil
 	}
 	env := wire(grpcprocv1.Kind_KIND_EXIT, from, pid, name)
-	env.Reason = reason
+	env.Reason = wireText(reason)
 	return n.route(ctx, pid.Node, env)
 }
 
@@ -1430,8 +1472,56 @@ func wire(kind grpcprocv1.Kind, from, to PID, name string) *grpcprocv1.Envelope 
 	return &grpcprocv1.Envelope{
 		Kind:            kind,
 		FromIncarnation: from.Incarnation, FromId: from.ID,
-		ToIncarnation: to.Incarnation, ToId: to.ID, ToName: name,
+		ToIncarnation: to.Incarnation, ToId: to.ID, ToName: wireName(name),
 	}
+}
+
+// validName reports whether a process name can travel to a peer: valid
+// UTF-8, which protobuf needs of a string, and at most maxText bytes.
+// WithName refuses any other.
+func validName(name string) bool { return len(name) <= maxText && utf8.ValidString(name) }
+
+// wireName is name as a peer is sent it: as it is, or, for one that cannot
+// travel and so no process holds, "", which with no PID is no process, so
+// the peer answers as for one that does not exist.
+func wireName(name string) string {
+	if !validName(name) {
+		return ""
+	}
+	return name
+}
+
+// wireText is an exit reason or an error's text as a peer is sent it: valid
+// UTF-8, and at most about maxText bytes, so that no answer outgrows a frame
+// for it.
+func wireText(s string) string {
+	if len(s) > maxText {
+		s = s[:maxText]
+	}
+	return strings.ToValidUTF8(s, "\uFFFD")
+}
+
+// encode puts m in env, a message or a call to a peer, or a reply, and
+// checks that the peer can be sent it (see fits).
+func (n *Node) encode(env *grpcprocv1.Envelope, m proto.Message) error {
+	if err := encodeBody(env, m); err != nil {
+		return err
+	}
+	for k, v := range env.GetMetadata() {
+		if !utf8.ValidString(k) || !utf8.ValidString(v) {
+			return fmt.Errorf("grpcproc: encode: metadata %q is not valid UTF-8", k)
+		}
+	}
+	return n.fits(env)
+}
+
+// fits fails an envelope larger than a peer's server takes, which would end
+// the link it went on.
+func (n *Node) fits(env *grpcprocv1.Envelope) error {
+	if size, limit := proto.Size(env), n.cfg.MaxMessageSize-frameOverhead; size > limit {
+		return fmt.Errorf("%w: %d bytes encoded, Config.MaxMessageSize allows %d", ErrTooLarge, size, limit)
+	}
+	return nil
 }
 
 func encodeBody(env *grpcprocv1.Envelope, m proto.Message) error {

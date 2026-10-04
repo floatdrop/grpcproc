@@ -1,6 +1,53 @@
 package grpcproc
 
-import grpcprocv1 "github.com/floatdrop/grpcproc/proto/grpcproc/v1"
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"slices"
+
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
+
+	grpcprocv1 "github.com/floatdrop/grpcproc/proto/grpcproc/v1"
+)
+
+// AdmitAll is a Config.Admit that admits every peer, with no Policy: for a
+// network where whoever can reach the node's gRPC server is trusted, since
+// such a peer may claim any node name and exit any process.
+func AdmitAll(context.Context, NodeID) (Policy, error) { return nil, nil }
+
+var errNoCertificate = errors.New("grpcproc: no verified client certificate")
+
+// AdmitTLS is a Config.Admit that admits a peer whose verified TLS client
+// certificate names the node it claims to be, and judges it by pol, nil for
+// no Policy. The name is a DNS subject alternative name equal to the node's,
+// or an IP one of the address the node's name is; a wildcard names no node,
+// since a node name is a name, not a host to match. The server's
+// credentials must verify client certificates
+// (tls.RequireAndVerifyClientCert), or no peer is admitted.
+//
+// It proves who dialed this node. That the node this one dials is the one
+// it meant is for the dial's own credentials: DialOptionsFor can give each
+// peer's TLS a ServerName of the peer's node name.
+func AdmitTLS(pol Policy) func(ctx context.Context, peer NodeID) (Policy, error) {
+	return func(ctx context.Context, id NodeID) (Policy, error) {
+		p, ok := peer.FromContext(ctx)
+		if !ok {
+			return nil, errNoCertificate
+		}
+		info, ok := p.AuthInfo.(credentials.TLSInfo)
+		if !ok || len(info.State.VerifiedChains) == 0 {
+			return nil, errNoCertificate
+		}
+		cert, ip := info.State.VerifiedChains[0][0], net.ParseIP(id.Name)
+		if !slices.Contains(cert.DNSNames, id.Name) && (ip == nil || !slices.ContainsFunc(cert.IPAddresses, ip.Equal)) {
+			return nil, fmt.Errorf("grpcproc: the certificate does not name node %q", id.Name)
+		}
+		return pol, nil
+	}
+}
 
 // Op is what a peer asks of a process on this node, as a Policy sees it.
 type Op uint8

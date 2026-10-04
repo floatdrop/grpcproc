@@ -114,6 +114,7 @@ func node(ctx context.Context, name string) *grpcproc.Node {
 	peers[name] = lis.Addr().String()
 
 	n, err := grpcproc.NewNode(grpcproc.Config{
+		Admit:       grpcproc.AdmitAll,
 		Name:        name,
 		Resolver:    peers,
 		DialOptions: []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())},
