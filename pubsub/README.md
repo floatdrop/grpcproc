@@ -68,7 +68,7 @@ own.
 | --- | --- |
 | the topic exits | receives the `Down` with `sub.Ref`, with the topic's reason: an owned topic's is its owner's |
 | the topic's node becomes unreachable | receives that `Down` with `noconnection` |
-| it calls `sub.Cancel(p)` | stops monitoring the topic and tells it to send no more; what the topic sent before it heard may still arrive, and what is in the mailbox stays |
+| it calls `sub.Cancel(p)` | stops monitoring the topic and tells it to send no more; what the topic sent before it heard may still arrive, and what is in the mailbox, a `Down` included, stays |
 | it exits | is forgotten: the topic monitors its subscribers |
 
 A subscriber that should end with the topic, rather than be told, links to

@@ -75,7 +75,8 @@ export const guidesPubsub: Doc = {
 						published after them follows: nothing is missed between the two, and nothing arrives
 						twice. The events are plain messages, from <C>sub.From</C>, so <C>p</C>'s mailbox must
 						accept <C>E</C>; <C>Subscribe</C> fails with <C>ErrType</C> when it does not, or when the
-						topic publishes another type.
+						topic publishes another concrete type. A topic or subscriber whose <C>E</C> is an
+						interface is not checked.
 					</p>
 					<Code caption="examples/pubsub/main.go">{region(example, /^\/\/ dashboard subscribes/, /^}/)}</Code>
 					<Table
@@ -96,14 +97,15 @@ export const guidesPubsub: Doc = {
 							],
 							[
 								<C>sub.Cancel(p)</C>,
-								'Nothing more from the topic. Events already in the mailbox stay there.'
+								'Its monitor of the topic stops, and the topic is told to send no more: what it sent before it heard may still arrive, and what is in the mailbox, a Down included, stays.'
 							],
 							['The subscriber exits', 'Nothing to do: the topic monitors its subscribers, and forgets one that exits.']
 						]}
 					/>
 					<p>
 						A subscriber that should end with the topic, rather than be told, links to it as well:{' '}
-						<C>p.Link(topic.Addr())</C>. A process that subscribes twice still gets each event once. <C>ctx</C> bounds
+						<C>p.Link(topic.Addr())</C>. A process that subscribes twice still gets each event once, but
+						each <C>Subscribe</C> monitors the topic anew, with a <C>Ref</C> of its own. <C>ctx</C> bounds
 						the whole of <C>Subscribe</C>; if it ends first, <C>Subscribe</C> tells the topic to
 						forget <C>p</C>, in case the request reached it after all.
 					</p>
