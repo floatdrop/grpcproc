@@ -3,7 +3,7 @@
 Guidance for Claude Code (claude.ai/code) working in this repository.
 
 `github.com/floatdrop/grpcproc` gives goroutines Erlang-style network
-transparency over the gRPC server a service already runs: processes with
+transparency over gRPC: processes with
 typed mailboxes, `Send`, `Call`, `Monitor`, `Link` and `Exit`, the same
 whether the target is in this binary or on another node. Go 1.27+, built on
 generic methods; the core depends on gRPC, protobuf and

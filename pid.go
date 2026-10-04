@@ -1,7 +1,7 @@
-// Package grpcproc gives goroutines Erlang-style network transparency on top of
-// the gRPC server a service already runs. A process is addressed by a PID or
-// a name; Send, Call, Monitor, Link and Exit work the same whether the target
-// lives in this binary or on another node.
+// Package grpcproc gives goroutines Erlang-style network transparency over
+// gRPC. A process is addressed by a PID or a name; Send, Call, Monitor, Link
+// and Exit work the same whether the target lives in this binary or on
+// another node.
 package grpcproc
 
 import (

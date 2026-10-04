@@ -87,8 +87,8 @@ func main() {
 // here, grpcproc/etcd in a real cluster.
 var peers = grpcproc.StaticResolver{}
 
-// node runs a node on its own gRPC server, the one a service already has
-// for its other APIs.
+// node runs a node on its own gRPC server, which a service may share with
+// its other APIs.
 func node(ctx context.Context, name string) *grpcproc.Node {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	check(err)

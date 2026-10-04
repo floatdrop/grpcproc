@@ -188,8 +188,9 @@ export const conceptsActors: Doc = {
 							cross the wire.
 						</li>
 						<li>
-							<strong>Your gRPC server as the transport.</strong> A node is one gRPC service
-							registered next to your others, with your credentials, interceptors and keepalive. Two
+							<strong>gRPC as the transport.</strong> A node is one gRPC service on a server you
+							own, next to your other services if you have any, with your credentials, interceptors
+							and keepalive. Two
 							nodes hold one stream in each direction, and everything between them travels on it in
 							order.
 						</li>
