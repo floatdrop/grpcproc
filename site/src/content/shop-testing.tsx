@@ -2,8 +2,7 @@ import clusterTest from '../../../examples/guide/cluster_test.go?raw';
 import ordersTest from '../../../examples/guide/internal/orders/orders_test.go?raw';
 
 import { Code } from '../code.tsx';
-import { A, C, Ext } from '../components/prose.tsx';
-import { file } from '../config.ts';
+import { A, C } from '../components/prose.tsx';
 import type { Doc } from './types.ts';
 
 const inspect = `go install github.com/floatdrop/grpcproc/tools/cmd/grpcprocctl@latest
@@ -16,19 +15,13 @@ kill %1 %2 %3                                # the three programs`;
 
 export const shopTesting: Doc = {
 	path: 'shop/testing/',
-	title: 'Testing and looking inside',
+	title: 'Tests and inspection',
 	description:
-		'A service tested alone with fakes behind the addresses it calls, the deployments tested whole, and the running cluster inspected with grpcprocctl.',
-	lead: (
-		<p>
-			<A to="shop/deployments/">The previous chapter</A> ran the shop as one program and as three.
-			This one tests both, and looks inside the three while they run.
-		</p>
-	),
+		'A service tested alone with fakes, the deployments tested whole, and the running cluster inspected with grpcprocctl.',
 	sections: [
 		{
 			id: 'testing',
-			title: 'Testing',
+			title: 'Tests',
 			body: (
 				<>
 					<p>
@@ -51,7 +44,7 @@ export const shopTesting: Doc = {
 		},
 		{
 			id: 'inspect',
-			title: 'Looking inside',
+			title: 'Inspecting the running shop',
 			body: (
 				<>
 					<p>
@@ -67,12 +60,8 @@ export const shopTesting: Doc = {
 						{inspect}
 					</Code>
 					<p>
-						That is the whole shop. <A to="concepts/actors/">The concept pages</A> explain what it
-						stands on: processes, addresses, monitors and links, supervision trees, nodes.{' '}
-						<A to="guides/observability/">Observability</A> covers the counters, hooks and
-						OpenTelemetry, and <A to="guides/inspector/">The Inspector</A> the rest of what{' '}
-						<C>grpcprocctl</C> can do. <Ext href={file('docs/DESIGN.md')}>The design notes</Ext> have
-						the wire protocol and the reasons behind the choices.
+						<A to="guides/grpcprocctl/">Command line</A> has the rest of what <C>grpcprocctl</C> does,
+						and <A to="guides/web/">Web UI</A> shows the same cluster in a browser.
 					</p>
 				</>
 			)

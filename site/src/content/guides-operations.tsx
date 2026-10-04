@@ -5,15 +5,12 @@ import type { Doc } from './types.ts';
 export const guidesOperations: Doc = {
 	path: 'guides/operations/',
 	title: 'Running in production',
-	description:
-		'What a deployment sets that a first program does not: admission, keepalive, limits, identity across restarts, the election, the order of a shutdown, and what to watch.',
+	description: 'What a deployment should set that the defaults do not, and what goes wrong without it.',
 	lead: (
 		<p>
-			A node's defaults suit a program on one machine. A deployment decides a few things more: who
-			may link to its nodes, how fast a silent peer is noticed, how large a message may be and how
-			much may queue, how nodes are told apart across restarts, how a leader hands over, and in
-			what order a node stops. Each section says what to set, and what goes wrong without it.{' '}
-			<A to="guides/configuration/">Configuring a node</A> has every field.
+			A node's defaults suit a program on one machine.{' '}
+			<A to="guides/configuration/">Configuration</A> has every field; this page says which to
+			set for a deployment.
 		</p>
 	),
 	sections: [
@@ -106,7 +103,7 @@ node, err := grpcproc.NewNode(grpcproc.Config{
 		},
 		{
 			id: 'failure-detection',
-			title: 'Noticing a silent peer',
+			title: 'Failure detection',
 			body: (
 				<>
 					<p>
@@ -152,9 +149,8 @@ srv := grpc.NewServer(
 				<>
 					<p>
 						Everything a node holds for others is unbounded by default, as Erlang's is: a send
-						never waits and never fails for a slow receiver. That is right until a receiver falls
-						behind for good, and then memory grows until something gives. Three bounds refuse
-						instead, each for one kind of slowness. A call always learns of a refusal; a send
+						never waits and never fails for a slow receiver, and if the receiver falls behind for
+						good, memory grows. Three bounds refuse instead. A call always learns of a refusal; a send
 						learns of a link's and a message's, while a full mailbox makes it a dead letter on the
 						receiver's node, as a send to a missing process is.
 					</p>
@@ -216,8 +212,8 @@ srv := grpc.NewServer(
 					<p>
 						A node's name is its address and must be unique in the cluster. Two programs started
 						with one name are taken as two incarnations of one node: the newer one replaces the
-						older on every peer that hears from both, and the older one's links are refused. That
-						is what a restart should do, and what a misconfigured second replica must not.
+						older on every peer that hears from both, and the older one's links are refused. A
+						second replica given the same name by mistake does the same to the first.
 					</p>
 					<p>
 						The incarnation must grow with each start. The default is the start time in
@@ -231,7 +227,7 @@ srv := grpc.NewServer(
 					<p>
 						Incarnations fence grpcproc's traffic only. A replaced node that still runs may still
 						write to a database; fence that with <C>Lease.Term</C> (below) or a global name's{' '}
-						<C>Claim.Revision</C> (<A to="concepts/addressing/">Addressing</A>).
+						<C>Claim.Revision</C> (<A to="concepts/addressing/">Addresses</A>).
 					</p>
 					<Aside title="Rolling upgrades">
 						Nodes link only if they speak one protocol version, which each release's notes give.
@@ -243,7 +239,7 @@ srv := grpc.NewServer(
 		},
 		{
 			id: 'election',
-			title: 'The leader election',
+			title: 'Leader election',
 			body: (
 				<>
 					<p>
@@ -278,7 +274,7 @@ srv := grpc.NewServer(
 		},
 		{
 			id: 'shutdown',
-			title: 'Shutting down',
+			title: 'Shutdown',
 			body: (
 				<>
 					<p>
@@ -317,7 +313,7 @@ srv.GracefulStop()`}</Code>
 		},
 		{
 			id: 'watching',
-			title: 'What to watch',
+			title: 'Monitoring',
 			body: (
 				<>
 					<p>

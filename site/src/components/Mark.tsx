@@ -1,6 +1,6 @@
 /**
  * The grpcproc mark: a node, and three processes and the links between them, the
- * same drawing as public/favicon.svg and the centre of scene.svg. Decorative: the
+ * same drawing as public/favicon.svg. Decorative: the
  * text beside it names it.
  */
 export function Mark({ className }: { className: string }) {

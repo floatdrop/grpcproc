@@ -6,13 +6,13 @@ export const referenceErrors: Doc = {
 	path: 'reference/errors/',
 	title: 'Errors and exit reasons',
 	description:
-		'What a failed send or call returns, what a Call’s error says about whether the callee saw the request, and the reasons a process exits with.',
+		'The errors the API returns, what each says about whether a call was handled, and the reasons a process exits with.',
 	lead: (
 		<p>
-			grpcproc has two kinds of failure. An <em>error</em> is what a call to the API returns to the
-			code that made it. An <em>exit reason</em> is a string that says why a process ended, and it
-			reaches the processes that watch it as a message. The two meet in one place: a process that
-			was asked to exit sees an <C>*ExitError</C>, whose reason is what its watchers get.
+			An <em>error</em> is what a call to the API returns to the code that made it. An{' '}
+			<em>exit reason</em> is a string that says why a process ended, and it reaches the processes
+			that watch it as a message. A process that was asked to exit sees an <C>*ExitError</C>, whose
+			reason is what its watchers get.
 		</p>
 	),
 	sections: [
@@ -160,21 +160,20 @@ if errors.Is(err, grpcproc.ErrNoConnection) {
 		},
 		{
 			id: 'calls',
-			title: 'What a failed call tells you',
+			title: 'Retrying a failed call',
 			body: (
 				<>
 					<p>
 						Delivery is at most once. A <C>Send</C> that returns <C>nil</C> was handed to delivery,
 						which means the mailbox for a local process and the link's queue for a remote one; a{' '}
-						<C>Call</C> that returns a reply was handled. Every other outcome leaves one question:
-						did the callee see the request? The error answers it, or says it cannot.
+						<C>Call</C> that returns a reply was handled. For any other outcome, the error says
+						whether the callee saw the request, where that is known:
 					</p>
 					<ul>
 						<li>
-							<strong>A <C>*LinkError</C> with <C>Unsent</C> set</strong> is the one error that
-							says no. The peer could not be reached, dials to it are backed off, or its link is
-							full, and the message is still on this node. Sending it again cannot deliver it
-							twice.
+							<strong>A <C>*LinkError</C> with <C>Unsent</C> set</strong> says no. The peer could
+							not be reached, dials to it are backed off, or its link is full, and the message is
+							still on this node. Sending it again cannot deliver it twice.
 						</li>
 						<li>
 							<strong>A <C>*LinkError</C> without it</strong> says the message may have been
@@ -195,9 +194,9 @@ if errors.Is(err, grpcproc.ErrNoConnection) {
 					<p>
 						<C>Unsent</C> is the field, rather than <C>Sent</C>, so that a <C>LinkError</C> built
 						without it claims nothing. A caller that retries on anything else risks doing the work
-						twice, and whether that is safe is the handler's business, not the transport's. The
-						tutorial's desk shows the pattern: on an error it leaves things as they are, logs the
-						order for reconciliation, and fails the call.
+						twice; whether that is safe depends on the handler. The tutorial's desk does not retry:
+						on an error it leaves things as they are, logs the order for reconciliation, and fails
+						the call.
 					</p>
 				</>
 			)
@@ -245,18 +244,16 @@ if errors.Is(err, grpcproc.ErrNoConnection) {
 		},
 		{
 			id: 'model',
-			title: 'The error model',
+			title: 'Messages of the wrong type',
 			body: (
 				<>
 					<p>
-						Reasons, and the type check on delivery, are the whole error model. A process function
-						returns an error or panics, and the reason says which. A message of the wrong type is a
-						dead letter with reason <C>type</C>, and <C>ErrType</C> to a caller, never a panic in the
-						process: local sends are checked by the compiler through the typed address, and remote
-						ones are checked on delivery, because types do not cross the wire. Nothing that arrives
-						from the network can crash a process by its shape alone; what the process does with a
-						well-typed message it does not like is its own decision, and the tutorial's stock logs
-						and drops such a message rather than exit.
+						A message of the wrong type is a dead letter with reason <C>type</C>, and{' '}
+						<C>ErrType</C> to a caller, never a panic in the process. The compiler checks a send against its address's type, and the receiving node checks
+						the message against the mailbox's on delivery, local or remote, because an address's
+						type is the sender's claim and does not cross the wire. What a process does with a well-typed message it does not
+						like is its own decision: the tutorial's stock logs and drops such a message rather than
+						exit.
 					</p>
 				</>
 			)

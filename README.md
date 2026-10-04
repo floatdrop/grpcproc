@@ -18,7 +18,7 @@ go get github.com/floatdrop/grpcproc
 ```
 
 **[Documentation](https://floatdrop.github.io/grpcproc/)** ·
-[Getting started](https://floatdrop.github.io/grpcproc/start/) ·
+[Quick start](https://floatdrop.github.io/grpcproc/start/) ·
 [Concepts](https://floatdrop.github.io/grpcproc/concepts/actors/) ·
 [API reference](https://pkg.go.dev/github.com/floatdrop/grpcproc)
 

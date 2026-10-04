@@ -7,20 +7,13 @@ import type { Doc } from './types.ts';
 
 export const conceptsNodes: Doc = {
 	path: 'concepts/nodes/',
-	title: 'Nodes and the cluster',
+	title: 'Nodes and links',
 	description:
-		'What a node is, how two nodes are linked, what travels between them and in what order, and what happens when a peer cannot be reached.',
-	lead: (
-		<p>
-			A process lives on a node, and a node lives in a program. Everything the other pages say about
-			processes holds within one node and across nodes alike; this page is about the nodes
-			themselves.
-		</p>
-	),
+		'How two nodes are linked, what travels between them, and what happens when a peer cannot be reached.',
 	sections: [
 		{
 			id: 'node',
-			title: 'A node is grpcproc in one program',
+			title: 'Nodes',
 			body: (
 				<>
 					<p>
@@ -44,22 +37,22 @@ defer node.Stop(ctx)      // before the server stops`}</Code>
 						together are its <C>NodeID</C>, and every PID on the node carries both. A node that
 						restarts has the same name and a new incarnation, so a PID from before the restart
 						names a process that no longer exists, and gets <C>noproc</C> rather than a message
-						delivered to a stranger. <A to="concepts/addressing/">Addressing</A> has the rest.
+						delivered to a stranger. <A to="concepts/addressing/">Addresses</A> has the rest.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'links',
-			title: 'A stream each way',
+			title: 'Links',
 			body: (
 				<>
 					<p>
 						Two nodes are linked by two gRPC streams, one in each direction. A node opens its
 						stream to a peer when it first has something to send there: a call to the peer's{' '}
 						<C>grpcproc.v1.Node</C> service, held open for as long as both run. The peer opens its
-						own stream back when it first has something to send this way, a reply included. Two
-						streams, rather than one shared, means neither side has to win a race to dial first.
+						own stream back when it first has something to send this way, a reply included. With a
+						stream each way, neither side has to win a race to dial first.
 					</p>
 					<Drawing caption="two nodes, a stream each way">
 						<Links />
@@ -73,10 +66,9 @@ defer node.Stop(ctx)      // before the server stops`}</Code>
 						process, or be overtaken by one sent after.
 					</p>
 					<p>
-						That single ordered stream is what gives the guarantee the rest of grpcproc rests on:
-						a process's last message reaches a watcher before the <C>Down</C> that says the process
-						is gone. The writer sends everything queued since its last write as one frame, split
-						at about a megabyte, so under load many envelopes share the cost of one gRPC message,
+						Because the stream is ordered, a process's last message reaches a watcher before the{' '}
+						<C>Down</C> that says the process is gone. The writer sends everything queued since its last write as one frame, split
+						at a megabyte or <C>MaxMessageSize</C>, whichever is less, so under load many envelopes share the cost of one gRPC message,
 						and at low load a frame holds one envelope and nothing waits.
 					</p>
 				</>
@@ -84,12 +76,12 @@ defer node.Stop(ctx)      // before the server stops`}</Code>
 		},
 		{
 			id: 'wire',
-			title: 'What travels',
+			title: 'The envelope',
 			body: (
 				<>
 					<p>
-						An envelope is one interaction between two processes. It is a flat message, so that
-						decoding one is cheap, and it carries no node names: every envelope on a stream goes
+						An envelope is one interaction between two processes. It is a flat message, cheap to
+						decode, and it carries no node names: every envelope on a stream goes
 						from a process of the node that opened it to a process of the node that accepted it,
 						so a PID travels as an incarnation and an id, and the reader fills the node names in
 						from the stream.
@@ -109,6 +101,8 @@ defer node.Stop(ctx)      // before the server stops`}</Code>
   Hello hello = 12;
   int64 timeout_nanos = 13;           // a call's time left, so that clocks need not agree
   map<string, string> metadata = 15;  // trace context, tenant: never read by grpcproc
+  bool watch = 16;                    // a call that asks for a monitor or a link of what answers it
+  uint64 watched_id = 17;             // and, in its reply, the process the watch was placed on
 }`}</Code>
 					<p>
 						A body is a protobuf message, sent as its type's full name and its encoding. Generated
@@ -122,7 +116,7 @@ defer node.Stop(ctx)      // before the server stops`}</Code>
 		},
 		{
 			id: 'down',
-			title: 'When a peer is down',
+			title: 'A peer that is down',
 			body: (
 				<>
 					<p>
@@ -149,8 +143,8 @@ defer node.Stop(ctx)      // before the server stops`}</Code>
 					</ul>
 					<p>
 						Every link failure is a <C>*LinkError</C>, which <C>errors.Is</C> matches to{' '}
-						<C>ErrNoConnection</C>. Its <C>Unsent</C> field is the one thing that makes a retry safe:
-						it says the message never left this node, because the peer could not be reached, dials to
+						<C>ErrNoConnection</C>. Its <C>Unsent</C> field is what makes a retry safe: it says the
+						message never left this node, because the peer could not be reached, dials to
 						it are backed off, or its link is full, so sending it again cannot deliver it twice. A{' '}
 						<C>LinkError</C> without <C>Unsent</C> claims nothing, and the message may have been
 						handled.
@@ -177,15 +171,14 @@ defer node.Stop(ctx)      // before the server stops`}</Code>
 						<C>DialOptions</C>, and <C>keepalive.ServerParameters</C> with an enforcement policy on
 						the server. grpcproc does not set it, since the server is the application's; set it,
 						or a silent partition is noticed only by <A to="concepts/discovery/">Membership</A>, or
-						never. <A to="guides/configuration/">Configuring a node</A> has the values the tutorial
+						never. <A to="guides/configuration/">Configuration</A> has the values the tutorial
 						uses.
 					</p>
 					<p>
 						A dial is bounded by <C>DialTimeout</C>: resolving the peer, connecting, and the
 						handshake, five seconds by default. After a dial fails, everything routed to that peer
 						fails at once with <C>ErrNoConnection</C> for a while, rather than each send waiting out
-						a dial of its own; a process sending to a dead node would otherwise stall for the whole
-						timeout per message. The wait starts at a 32nd of <C>DialBackoff</C> and doubles up to
+						a dial of its own. The wait starts at a 32nd of <C>DialBackoff</C> and doubles up to
 						it, with jitter. Then one send dials again while the others keep failing, so a hung peer
 						holds one sender at a time: a half-open circuit breaker. <C>Membership</C> reporting the
 						peer up ends the wait, and <C>LinkInfo</C> shows the peer as a down outbound link with
@@ -196,7 +189,7 @@ defer node.Stop(ctx)      // before the server stops`}</Code>
 		},
 		{
 			id: 'incarnations',
-			title: 'Incarnations fence the links',
+			title: 'Incarnations',
 			body: (
 				<>
 					<p>
@@ -226,7 +219,7 @@ defer node.Stop(ctx)      // before the server stops`}</Code>
 		},
 		{
 			id: 'stop',
-			title: 'A graceful stop',
+			title: 'Stopping a node',
 			body: (
 				<>
 					<p>
@@ -247,15 +240,14 @@ defer node.Stop(ctx)      // before the server stops`}</Code>
 		},
 		{
 			id: 'local',
-			title: 'Local and remote',
+			title: 'Local and remote sends',
 			body: (
 				<>
 					<p>
-						Nothing in a send says whether the target is local. A local send appends the message
-						to the mailbox and passes the pointer as it is: no encoding, no copy, and no
-						allocation when the mailbox keeps up. The rule that comes with it is not to mutate a
-						message after sending it. <C>Config.CopyLocal</C> clones every locally delivered
-						message instead, for a codebase that wants the isolation the wire gives for free.
+						A local send appends the message to the mailbox and passes the pointer as it is: no
+						encoding, no copy, and no allocation when the mailbox keeps up. So a message must not
+						be mutated after it is sent.{' '}
+						<C>Config.CopyLocal</C> clones every locally delivered message instead.
 					</p>
 					<p>
 						A remote send encodes the body, queues the envelope on the stream to the peer's node,
@@ -264,8 +256,8 @@ defer node.Stop(ctx)      // before the server stops`}</Code>
 						stall the shared stream for every other process behind it. Mailboxes are unbounded by
 						default, and one that <C>WithMailboxLimit</C> bounds refuses instead: a message is a
 						dead letter, a call fails with <C>ErrMailboxFull</C>. Past that, backpressure is the
-						application's, and the mailbox depth and each link's queue are visible so it can be
-						built. A link's queue is its peer's alone, so it can be bounded
+						application's, built on the mailbox depth and each link's queue, which are visible. A
+						link's queue is its peer's alone, so it can be bounded
 						without stalling anyone else: with <C>MaxQueued</C> or <C>MaxQueuedBytes</C> set, a send
 						or a call to a peer that cannot keep up fails at once with <C>ErrLinkBusy</C>, as{' '}
 						<C>Unsent</C>.
@@ -276,8 +268,9 @@ defer node.Stop(ctx)      // before the server stops`}</Code>
 							is two gRPC streams on the application's server, one opened by each side, so a
 							one-way partition shows as one dead direction. The <C>net_kernel</C> tick has two
 							counterparts: gRPC keepalive for the fast, local signal, and <C>Membership</C> for the
-							cluster-wide verdict. Node names are per cluster and process names are per node; there
-							is no <C>global</C> registry yet. The{' '}
+							cluster-wide verdict. Node names are per cluster and process names are per node;{' '}
+							<A to="concepts/addressing/#global">global names</A> are the counterpart of{' '}
+							<C>global</C>. The{' '}
 							<Ext href={file('docs/DESIGN.md')}>design notes</Ext> compare the rest.
 						</p>
 					</Aside>

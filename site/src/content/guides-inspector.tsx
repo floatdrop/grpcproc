@@ -5,21 +5,20 @@ import type { Doc } from './types.ts';
 
 export const guidesInspector: Doc = {
 	path: 'guides/inspector/',
-	title: 'The Inspector',
+	title: 'Inspector',
 	description:
-		'A gRPC service that serves every node’s processes, links and events, and forwards to every other node’s, for grpcprocctl, an AI agent, or grpcurl.',
+		'A gRPC service on each node that serves its processes, links and events, and forwards requests to the other nodes.',
 	lead: (
 		<p>
-			Everything <A to="guides/observability/">Observability</A> describes is a Go API on the node.
-			The Inspector serves it over gRPC, on the node's own server, and forwards to every other
-			node's, so one endpoint reaches the whole cluster. <A to="guides/grpcprocctl/">grpcprocctl</A>{' '}
-			is its command line, and <A to="guides/mcp/">an AI agent</A> asks the same questions over MCP.
+			The Inspector serves the Go API that <A to="guides/observability/">Observability</A>{' '}
+			describes over gRPC, on the node's own server, and forwards to every other node's, so one
+			endpoint reaches the whole cluster.
 		</p>
 	),
 	sections: [
 		{
 			id: 'serving',
-			title: 'Serving it',
+			title: 'Serving',
 			body: (
 				<>
 					<p>
@@ -38,21 +37,20 @@ defer insp.Close()`}</Code>
 						Inspectors served elsewhere than on the port the nodes link through, and{' '}
 						<C>WithPeers</C> any other way of reaching a peer's Inspector; <C>WithPeers(nil)</C>{' '}
 						keeps a server to its own node. A process targeted by PID routes to the PID's node when
-						the request names none. So a tool pointed at one node can ask about any.
+						the request names none.
 					</p>
 					<p>
 						<C>inspect.ReadOnly()</C> refuses the four writes: <C>Send</C>, <C>Call</C>,{' '}
-						<C>Exit</C> and <C>SetLogLevel</C>. Anything finer is the job of the interceptors and transport
-						credentials that guard your other services, as for any gRPC service you register. The
-						tutorial's platform serves the Inspector read-only because it shares the node's port and
-						nothing there authenticates.
+						<C>Exit</C> and <C>SetLogLevel</C>. Anything finer is the job of the interceptors and
+						transport credentials that guard your other services. The tutorial's platform serves the
+						Inspector read-only because it shares the node's port and nothing there authenticates.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'service',
-			title: 'The service',
+			title: 'Methods',
 			body: (
 				<>
 					<Table
@@ -90,25 +88,29 @@ defer insp.Close()`}</Code>
 						size below that. The server allocates it, so limit how many streams a client may open,
 						with <C>grpc.MaxConcurrentStreams</C> or an interceptor.
 					</p>
-					<p>
-						It is a plain gRPC service with reflection-friendly messages, so <C>grpcurl</C> works on
-						it too.
-					</p>
+					<p>It is a plain gRPC service, so <C>grpcurl</C> works on it too.</p>
 				</>
 			)
 		},
 		{
 			id: 'clients',
-			title: 'Its clients',
+			title: 'Clients',
 			body: (
 				<>
+					<ul>
+						<li>
+							<A to="guides/grpcprocctl/">Command line</A>: <C>grpcprocctl</C>, in a terminal.
+						</li>
+						<li>
+							<A to="guides/web/">Web UI</A>: <C>grpcprocctl web</C>, the cluster live in a browser.
+						</li>
+						<li>
+							<A to="guides/mcp/">AI agents</A>: <C>grpcprocctl mcp</C>, the same questions as MCP tools.
+						</li>
+					</ul>
 					<p>
-						<A to="guides/grpcprocctl/">grpcprocctl</A> is its command line: processes and their
-						mailboxes, nodes and links, events as they happen, leader elections and cron jobs.{' '}
-						<A to="guides/mcp/">An AI agent over MCP</A> asks the same questions through{' '}
-						<C>grpcprocctl mcp</C>. Both live in{' '}
-						<Ext href={file('tools/README.md')}>grpcproc/tools</Ext>, a separate module, so grpcproc
-						itself carries no CLI or MCP dependencies.
+						All three live in <Ext href={file('tools/README.md')}>grpcproc/tools</Ext>, a separate
+						module.
 					</p>
 				</>
 			)

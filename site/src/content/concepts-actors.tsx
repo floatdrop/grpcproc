@@ -10,18 +10,17 @@ export const conceptsActors: Doc = {
 	path: 'concepts/actors/',
 	title: 'The actor model',
 	description:
-		'What a process is, why it talks in messages, why its address is not a pointer, and where supervision comes from: the model behind grpcproc, for a Go developer who has not met it.',
+		'The model behind grpcproc, for a Go developer who has not met it: processes, messages, addresses, and supervision.',
 	lead: (
 		<p>
 			grpcproc takes its shape from Erlang, where the unit of a program is a process: state of its
-			own, a queue of messages in front of it, and an address anyone can send to. This page says
-			what that buys, and what it costs, for a reader who has goroutines and channels.
+			own, a queue of messages in front of it, and an address anyone can send to.
 		</p>
 	),
 	sections: [
 		{
 			id: 'process',
-			title: 'A process is a goroutine with a mailbox',
+			title: 'Processes',
 			body: (
 				<>
 					<p>
@@ -32,10 +31,9 @@ export const conceptsActors: Doc = {
 					</p>
 					<Code caption="examples/quickstart/main.go">{region(quickstart, /^func inventory/, /^}/)}</Code>
 					<p>
-						That is the whole discipline: state lives inside one goroutine, and the only way to
-						change it is to send a message. A caller that wants an answer sends a call and waits;
-						one that does not sends and moves on. Nothing interrupts a process between two messages,
-						so every handler sees a consistent state and leaves one.
+						The only way to change the state is to send a message. A caller that wants an answer
+						sends a call and waits; one that does not sends and moves on. Nothing interrupts a
+						process between two messages, so every handler sees a consistent state and leaves one.
 					</p>
 					<p>
 						A mailbox is typed: this one holds <C>*shoppb.Reserve</C> and nothing else, and the
@@ -48,13 +46,13 @@ export const conceptsActors: Doc = {
 		},
 		{
 			id: 'messages',
-			title: 'Messages instead of shared memory',
+			title: 'Messages, not shared memory',
 			body: (
 				<>
 					<p>
 						Go already says "do not communicate by sharing memory; share memory by
-						communicating". A channel is that advice made concrete, and a process is the next step:
-						a channel with an owner, an address, and a lifetime you can observe.
+						communicating". A process is a channel with an owner, an address, and a lifetime you
+						can observe.
 					</p>
 					<p>
 						A channel has no name: to send on it you need the channel value, so sender and receiver
@@ -63,24 +61,23 @@ export const conceptsActors: Doc = {
 						blocks for ever, or never happens, and nothing reports which.
 					</p>
 					<p>
-						A process fixes each of those. Its address, a PID or a registered name, can be passed
-						around, stored and sent inside a message, and works from any node in the cluster. And a
-						process can be monitored: when it exits, or when its node is lost, whoever asked is
-						told, with a reason.
+						A process's address, a PID or a registered name, can be passed around, stored and sent
+						inside a message, and works from any node in the cluster. And a process can be
+						monitored: when it exits, or when its node is lost, whoever asked is told, with a
+						reason.
 					</p>
 					<p>
-						What a process does not fix is shared state, on purpose. Two processes never share a
-						variable; they share nothing but the messages between them. A value that many parts of a
-						program read and write becomes a process that owns it and answers questions about it.
-						That is more typing than a mutex, and it is why the process can move to another machine
-						without anything else changing.
+						Two processes never share a variable; they share only the messages between them. A
+						value that many parts of a program read and write becomes a process that owns it and
+						answers questions about it. That is more typing than a mutex, and it is why the process
+						can move to another machine without anything else changing.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'address',
-			title: 'An address, not a pointer',
+			title: 'Addresses',
 			body: (
 				<>
 					<p>
@@ -89,18 +86,17 @@ export const conceptsActors: Doc = {
 						are small comparable values that mean the same thing on every node.
 					</p>
 					<p>
-						So the location of a process is nobody's business. <C>Send</C>, <C>Call</C>,{' '}
-						<C>Monitor</C> and <C>Exit</C> take an address, look at the node in it, and either
-						deliver within the program or write to the link with that node. The code on both ends is
-						the same either way.
+						<C>Send</C>, <C>Call</C>, <C>Monitor</C> and <C>Exit</C> take an address, look at the
+						node in it, and either deliver within the program or write to the link with that node.
+						The code on both ends is the same either way.
 					</p>
 					<Drawing caption="the same call, within a node and across nodes">
 						<ActorsPicture />
 					</Drawing>
 					<p>
-						The difference is not hidden; it is where it belongs, in what can go wrong. A remote
-						call fails when the link breaks, and the caller finds out; a monitor on a remote process
-						fires when the node cannot be reached, with a reason that says so. The{' '}
+						What differs is what can go wrong: a remote call fails when the link breaks, and a
+						monitor on a remote process fires when the node cannot be reached, with a reason that
+						says so. The{' '}
 						<A to="shop/">tutorial</A> runs one application as one program and as three, from the
 						same code: only the configuration changes.
 					</p>
@@ -109,64 +105,58 @@ export const conceptsActors: Doc = {
 		},
 		{
 			id: 'rpc',
-			title: 'A process is not an RPC service',
+			title: 'Processes and RPC services',
 			body: (
 				<>
 					<p>
 						A gRPC service method runs once per request, on whatever goroutine the server gives it,
 						concurrently with every other request. It has no state between calls but what it keeps
-						in a database or behind a mutex. That is the right shape for a stateless handler, and
-						grpcproc leaves your services as they are.
+						in a database or behind a mutex. That suits a stateless handler, and grpcproc leaves
+						your services as they are.
 					</p>
 					<p>
-						A process is the other shape. It has state, it has a queue, and it handles one message at
-						a time. A stock that must not be reserved twice, a session that must see its requests in
-						order, a job that runs in steps and can be asked how far it got: each is naturally one
-						process, and a mutex around a struct is the usual way of writing one without saying so.
+						A process has state and a queue, and handles one message at a time. A stock that must
+						not be reserved twice, a session that must see its requests in order, a job that runs in
+						steps and can be asked how far it got: each is one process.
 					</p>
 					<p>
-						The two meet at the edge. In the tutorial an HTTP handler is not a process: it calls one
-						through the node, waits with the request's context, and turns the answer into a status
-						code. The handler is stateless, the process behind it is not, and the call between them
-						is typed like everything else.
+						In the tutorial an HTTP handler is not a process: it calls one through the node, waits
+						with the request's context, and turns the answer into a status code.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'failure',
-			title: 'Failure is a message',
+			title: 'Failure as a message',
 			body: (
 				<>
 					<p>
 						A process ends when its function returns, and it has a reason: <C>normal</C> for a nil
 						return, the error's text otherwise, <C>panic: …</C> for a panic, or whatever an{' '}
-						<C>Exit</C> request asked for. The reason is not lost: any process that monitored it
-						receives a <C>Down</C> carrying it, after the last message the exiting process sent.
+						<C>Exit</C> request asked for. Any process that monitored it receives a <C>Down</C>{' '}
+						carrying the reason, after the last message the exiting process sent.
 					</p>
 					<p>
 						A node that cannot be reached is reported the same way: every monitor on a process there
 						gets a <C>Down</C> with reason <C>noconnection</C>, and every call waiting on it fails.
-						So a watcher does not distinguish a crash from a lost machine unless it wants to, and
-						the code that handles one handles the other.
+						So the code that handles a crash handles a lost machine too.
 					</p>
 					<p>
-						This is what goroutines lack. A goroutine that panics takes the program down, one that
-						returns leaves no trace, and one whose machine is gone is not a concept. With exits as
-						messages, failure is something a program can be written about, and{' '}
-						<A to="concepts/monitors-and-links/">Monitors and links</A> is the vocabulary for it.
+						A goroutine that panics takes the program down, and one that returns leaves no trace.{' '}
+						<A to="concepts/monitors-and-links/">Monitors and links</A> has the rest.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'supervision',
-			title: 'Let it crash',
+			title: 'Supervision',
 			body: (
 				<>
 					<p>
-						Erlang's answer to a process that fails is not to handle every error inside it, but to
-						let it die and have another one, a supervisor, start it again from a known state. Most
+						Erlang's answer to a process that fails is to let it die and have another one, a
+						supervisor, start it again from a known state. Most
 						failures come from a state the code did not anticipate, and the surest way out of such a
 						state is to leave it. Code that recovers in place keeps the bad state and adds guesses
 						to it.
@@ -174,15 +164,13 @@ export const conceptsActors: Doc = {
 					<p>
 						A supervisor is itself a process. It starts its children, monitors them, and when one
 						exits it applies a policy: restart that child, restart all of them, or give up and exit
-						itself, which is its own supervisor's problem. Supervisors of supervisors form a tree,
-						and the tree is the program's plan for failure, written down once rather than scattered
-						through every handler.
+						itself, which its own supervisor then handles. Supervisors of supervisors form a tree.
 					</p>
 					<p>
-						In grpcproc a supervisor is nothing the core knows about: it is an ordinary process built
-						on <C>SpawnMonitor</C>, <C>Down</C> and <C>Exit</C>, in the optional{' '}
-						<C>grpcproc/actor</C> package. <A to="concepts/supervision/">Supervision trees</A> explains
-						the strategies and what state should live outside the process so a restart can load it.
+						In grpcproc a supervisor is an ordinary process built on <C>SpawnMonitor</C>,{' '}
+						<C>Down</C> and <C>Exit</C>, in the optional <C>grpcproc/actor</C> package.{' '}
+						<A to="concepts/supervision/">Supervision</A> explains the strategies and what state
+						should live outside the process so a restart can load it.
 					</p>
 				</>
 			)
@@ -206,21 +194,15 @@ export const conceptsActors: Doc = {
 							order.
 						</li>
 						<li>
-							<strong>At-most-once delivery, in order per sender.</strong> A message is delivered
-							once or not at all, never twice, and two messages from one sender to one receiver arrive
-							in the order they were sent. A <C>Down</C> comes after the last message of the process
-							it reports on. What is lost is reported where it can be: a call fails, a send to a
-							process that does not exist is a dead letter.
-						</li>
-						<li>
-							<strong>Mailboxes that never block.</strong> A send never waits for the receiver.
-							Every process on a node shares the link to a peer, so a mailbox that made it wait would
-							stall the link for all of them. A mailbox is unbounded unless{' '}
-							<C>WithMailboxLimit</C> bounds it, and then refuses what it has no room for: a message
-							is a dead letter, a call fails with <C>ErrMailboxFull</C>. Past that, backpressure is
-							the application's, and the depth of every mailbox is visible to make it one.
+							<strong>Delivery guarantees.</strong> At most once, in order per sender, into
+							mailboxes that never block the sender:{' '}
+							<A to="concepts/processes/#delivery">Processes and messages</A> has the list.
 						</li>
 					</ul>
+					<p>
+						The reasons behind the choices, and what was rejected, are in the{' '}
+						<Ext href="https://github.com/floatdrop/grpcproc/blob/main/docs/DESIGN.md">design notes</Ext>.
+					</p>
 					<Aside title="Coming from Erlang">
 						<p>
 							A process is a process, its pid is a <C>PID</C> with a creation number called an
@@ -231,34 +213,11 @@ export const conceptsActors: Doc = {
 							<C>handle_cast</C>; a supervisor is <C>actor.Supervise</C>, with the same strategies and
 							restart types. Links are one way, as in ergo, and an exit signal is not trapped, since a
 							goroutine cannot be killed. Nodes connect over gRPC streams rather than the
-							distribution protocol, and there is no <C>global</C>.
+							distribution protocol, and <C>global</C> is{' '}
+							<A to="concepts/addressing/#global">global names</A>.
 						</p>
 					</Aside>
 				</>
-			)
-		},
-		{
-			id: 'next',
-			title: 'Where next',
-			body: (
-				<ul>
-					<li>
-						<A to="concepts/processes/">Processes and messages</A>: what a process can do, message
-						by message.
-					</li>
-					<li>
-						<A to="concepts/supervision/">Supervision trees</A>: the strategies, and how failure
-						moves up the tree.
-					</li>
-					<li>
-						<A to="guides/actors/">Actors</A>: a struct with a method per kind of message, instead of
-						a receive loop.
-					</li>
-					<li>
-						The reasons behind the choices, and what was rejected, are in the{' '}
-						<Ext href="https://github.com/floatdrop/grpcproc/blob/main/docs/DESIGN.md">design notes</Ext>.
-					</li>
-				</ul>
 			)
 		}
 	]

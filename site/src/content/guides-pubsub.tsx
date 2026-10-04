@@ -10,25 +10,23 @@ export const guidesPubsub: Doc = {
 	path: 'guides/pubsub/',
 	title: 'Pub/sub',
 	description:
-		'The grpcproc/pubsub package: topics a process publishes to without knowing who listens, subscribed to from any node, with the last few events kept for whoever comes late.',
+		'Topics that a process publishes to and any node subscribes to, with the last few events kept for late subscribers.',
 	lead: (
 		<p>
-			<C>grpcproc/pubsub</C> is publish/subscribe on top of processes, built on the public API only.
-			A process publishes what changes to a topic; any process, on any node, subscribes, and the
-			publisher never learns who they are. The code is from{' '}
+			<C>grpcproc/pubsub</C> is optional, and built on the public API only. The code is from{' '}
 			<Ext href={file('examples/pubsub/main.go')}>examples/pubsub</Ext>.
 		</p>
 	),
 	sections: [
 		{
 			id: 'topics',
-			title: 'A topic is a process',
+			title: 'Topics',
 			body: (
 				<>
 					<p>
-						A topic keeps its subscribers and the last <C>Config.Buffer</C> events, and sends each
-						event it is given to every subscriber. It is spawned, named and addressed like any other
-						process, in one of two ways:
+						A topic is a process that keeps its subscribers and the last <C>Config.Buffer</C>{' '}
+						events, and sends each event it is given to every subscriber. It is spawned in one of
+						two ways:
 					</p>
 					<Table
 						rows={[
@@ -114,7 +112,7 @@ export const guidesPubsub: Doc = {
 		},
 		{
 			id: 'demand',
-			title: 'Working only while someone listens',
+			title: 'Demand notifications',
 			body: (
 				<>
 					<p>
@@ -161,7 +159,7 @@ export const guidesPubsub: Doc = {
 						once to each node, however many subscribers the node has.
 					</p>
 					<p>
-						For the subscriber, this changes little. <C>sub.From</C> is the relay, and the{' '}
+						For the subscriber, <C>sub.From</C> is the relay, and the{' '}
 						<C>Down</C> comes from the relay, with the topic's reason: the relay ends with the topic,
 						for the same reason, and ends as well when its last subscriber leaves, after which the
 						topic forgets it.
@@ -179,7 +177,7 @@ export const guidesPubsub: Doc = {
 		},
 		{
 			id: 'example',
-			title: 'The example, run',
+			title: 'Example',
 			body: (
 				<>
 					<p>
@@ -196,7 +194,7 @@ export const guidesPubsub: Doc = {
 		},
 		{
 			id: 'limits',
-			title: 'What it does not do',
+			title: 'Limits',
 			body: (
 				<>
 					<ul>
@@ -218,7 +216,7 @@ export const guidesPubsub: Doc = {
 						</li>
 					</ul>
 					<Aside title="Not the node's events">
-						<C>node.Subscribe</C> is a different thing with a similar name: a Go channel of what
+						<C>node.Subscribe</C> is a Go channel of what
 						happens on the node itself, spawns, exits, links up and down, for tools and tests.{' '}
 						<A to="guides/observability/#events">Observability</A> covers it. A topic is for an
 						application's own events, between processes.

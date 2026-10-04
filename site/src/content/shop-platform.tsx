@@ -7,21 +7,14 @@ import modules from '../../../examples/guide/testdata/modules.txt?raw';
 import { Code } from '../code.tsx';
 import { Drawing } from '../components/Figure.tsx';
 import { Lifecycle } from '../components/diagrams.tsx';
-import { A, C } from '../components/prose.tsx';
+import { C } from '../components/prose.tsx';
 import type { Doc } from './types.ts';
 
 export const shopPlatform: Doc = {
 	path: 'shop/platform/',
-	title: 'The platform',
+	title: 'Platform',
 	description:
-		'What every program of the shop runs: its configuration, a gRPC server with the node and the Inspector on it, the root supervisor, and the main that composes them with the services.',
-	lead: (
-		<p>
-			<A to="shop/services/">The previous chapter</A> wrote the services; each knows the node and the
-			configuration, and nothing else of what runs it. This one is that: the platform, which every
-			entry point composes with its services.
-		</p>
-	),
+		'What every program of the shop runs: configuration, a gRPC server with the node and the Inspector on it, and the root supervisor.',
 	sections: [
 		{
 			id: 'config',
@@ -54,14 +47,14 @@ export const shopPlatform: Doc = {
 		},
 		{
 			id: 'lifecycle',
-			title: 'Start and stop',
+			title: 'Start and stop order',
 			body: (
 				<>
 					<p>
 						The container builds eager services in registration order and starts them in build
 						order, so the node and the Inspector are registered on the server before it serves.
-						Stopping runs the other way, which is what a node wants: the root stops the trees first,
-						then the node closes its links, and the server goes last.
+						Stopping runs the other way: the root stops the trees first, then the node closes its
+						links, and the server goes last.
 					</p>
 					<Drawing caption="start and stop">
 						<Lifecycle />

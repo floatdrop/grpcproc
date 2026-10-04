@@ -9,14 +9,13 @@ import type { Doc } from './types.ts';
 
 export const start: Doc = {
 	path: 'start/',
-	title: 'Getting started',
+	title: 'Quick start',
 	description:
-		'Install grpcproc, put a node on your gRPC server, spawn a process, and reach it from another node by name.',
+		'Install grpcproc, put a node on your gRPC server, spawn a process, and call it from another node by name.',
 	lead: (
 		<p>
-			The program on the front page, built one piece at a time. It is{' '}
-			<Ext href={file('examples/quickstart/main.go')}>examples/quickstart</Ext> in the repository;
-			the code here is cut from it.
+			This page builds <Ext href={file('examples/quickstart/main.go')}>examples/quickstart</Ext>{' '}
+			piece by piece; the code is cut from it.
 		</p>
 	),
 	sections: [
@@ -48,12 +47,13 @@ export const start: Doc = {
 					</p>
 					<Code caption="examples/quickstart/main.go">{region(quickstart, /^\/\/ peers is where/, /^}/)}</Code>
 					<p>
-						<C>Config</C> needs a <C>Name</C>, which is how peers address the node, and a{' '}
-						<C>Resolver</C>, which turns a peer's name into an address to dial. The example's is a
-						map; <A to="concepts/discovery/">Discovery</A> covers the rest. <C>DialOptions</C> are
-						for every connection the node opens to a peer: the credentials, and the keepalive that
-						turns a silent partition into a broken link. <A to="guides/configuration/">Configuration</A>{' '}
-						goes through every field.
+						<C>Config</C> needs a <C>Name</C>, which is how peers address the node, a{' '}
+						<C>Resolver</C>, which turns a peer's name into an address to dial, and an{' '}
+						<C>Admit</C>, which decides which peers may link. The example's resolver is a map;{' '}
+						<A to="concepts/discovery/">Discovery</A> covers the rest. <C>DialOptions</C> are for
+						every connection the node opens to a peer: the credentials, and the keepalive that
+						turns a silent partition into a broken link.{' '}
+						<A to="guides/configuration/">Configuration</A> goes through every field.
 					</p>
 					<p>
 						<C>Register</C> mounts one gRPC service, <C>grpcproc.v1.Node</C>, next to yours. Peers
@@ -77,8 +77,8 @@ export const start: Doc = {
 					<Code caption="examples/quickstart/main.go">{region(quickstart, /^\/\/ inventory is a process/, /^}/)}</Code>
 					<p>
 						<C>Receive</C> blocks until a message arrives, and returns an error when the process
-						should stop: it was asked to exit, or its node is stopping. Returning that error is the
-						whole of the exit handling. A process that returns <C>nil</C> ends with reason{' '}
+						should stop: it was asked to exit, or its node is stopping. The process returns that
+						error. A process that returns <C>nil</C> ends with reason{' '}
 						<C>normal</C>; one that returns an error, or panics, ends with that as its reason, and
 						whoever monitors it learns which.
 					</p>
@@ -95,7 +95,7 @@ export const start: Doc = {
 		},
 		{
 			id: 'call',
-			title: 'Spawn it, and call it from another node',
+			title: 'Spawn and call',
 			body: (
 				<>
 					<p>
@@ -111,22 +111,18 @@ export const start: Doc = {
 						accepts, so the compiler checks every send to it, wherever it runs. <C>Call</C> sends and
 						waits for the reply, typed by what the caller asks for. An error the handler returned
 						comes back as a <C>*RemoteError</C>, its text carried across the link. The context
-						bounds the whole call.
-					</p>
-					<p>
-						Nothing in the shop's code says the process is remote: the same call works with a local
-						address.
+						bounds the whole call. The same call works with a local address.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'monitor',
-			title: 'Monitor it',
+			title: 'Monitor',
 			body: (
 				<>
 					<p>
-						A process can watch another. <C>Monitor</C> asks for a <C>Down</C> when the target
+						<C>Monitor</C> asks for a <C>Down</C> when the target
 						exits, or when its node cannot be reached, and the <C>Down</C> arrives in the watcher's
 						mailbox like any message, after everything the target sent it. Here a process on the
 						shop monitors the stock and then asks it to exit:
@@ -145,7 +141,7 @@ export const start: Doc = {
 		},
 		{
 			id: 'run',
-			title: 'Run it',
+			title: 'Run',
 			body: (
 				<>
 					<Code lang="sh">{'git clone https://github.com/floatdrop/grpcproc && cd grpcproc/examples\ngo run ./quickstart'}</Code>
@@ -155,23 +151,22 @@ export const start: Doc = {
 		},
 		{
 			id: 'next',
-			title: 'Where next',
+			title: 'Next steps',
 			body: (
 				<>
 					<ul>
 						<li>
-							<A to="concepts/actors/">The actor model</A> says why processes and mailboxes, for a
-							reader who has not met them, and <A to="concepts/processes/">Processes and messages</A>{' '}
-							goes through what a process can do.
+							<A to="concepts/actors/">The actor model</A>: why processes and mailboxes.{' '}
+							<A to="concepts/processes/">Processes and messages</A>: what a process can do.
 						</li>
 						<li>
-							A receive loop with a <C>switch</C> in it grows old. <A to="guides/actors/">Actors</A>{' '}
-							puts a method per kind of message on a struct, and{' '}
-							<A to="concepts/supervision/">Supervision trees</A> restart it when it fails.
+							<A to="guides/actors/">Actors</A>: a struct with a method per kind of message, in
+							place of a receive loop. <A to="concepts/supervision/">Supervision</A>: restarting
+							it when it fails.
 						</li>
 						<li>
-							<A to="shop/">The tutorial</A> builds a whole application: three services, run as one
-							program or as three nodes from the same code.
+							<A to="shop/">The tutorial</A>: three services, run as one program or as three nodes
+							from the same code.
 						</li>
 					</ul>
 				</>

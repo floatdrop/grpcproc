@@ -9,36 +9,29 @@ export const guidesObservability: Doc = {
 	path: 'guides/observability/',
 	title: 'Observability',
 	description:
-		'What a node knows about its processes and links, how a process says what it believes, the event stream, the Hooks tap, and OpenTelemetry on top of it.',
+		'What a node reports about its processes and links: snapshots, events, hooks, logging and OpenTelemetry.',
 	lead: (
 		<>
 			<p>
-				A process that has stopped answering is the usual failure of a message-passing system, and
-				the usual question is which one, and why. grpcproc answers from inside: every process and
-				every link keeps counters, a process can publish what it currently believes, and the node
-				reports all of it through one Go API. Three rules hold throughout.
+				Every process and every link keeps counters, a process can publish its own state, and the
+				node reports all of it through one Go API. <A to="guides/inspector/">The Inspector</A>{' '}
+				serves the same data over gRPC, to the <A to="guides/grpcprocctl/">command line</A>, the{' '}
+				<A to="guides/web/">web UI</A> and <A to="guides/mcp/">AI agents</A>.
 			</p>
 			<ul>
 				<li>
-					<strong>Counters are always on and cheap.</strong> Atomics on the process and the link, read
-					by snapshot. No sampling, no configuration, nothing to switch on in production after the
-					fact.
+					Counters are always on: atomics on the process and the link, read by snapshot, with nothing
+					to configure.
 				</li>
 				<li>
-					<strong>Nothing in the core imports a metrics or tracing library.</strong> A <C>Hooks</C>{' '}
-					interface is the single tap; <C>grpcproc/otel</C> implements it, in a module of its own.
+					The core imports no metrics or tracing library. The <C>Hooks</C> interface is the single
+					tap; <C>grpcproc/otel</C> implements it, in a module of its own.
 				</li>
 				<li>
-					<strong>The Go API is the source of truth.</strong> The Inspector service and every tool
-					built on it expose exactly what <C>node.Info()</C> and <C>node.Processes()</C> return,
-					nothing more.
+					The Go API is the source of truth. The Inspector and every tool built on it expose
+					exactly what <C>node.Info()</C> and <C>node.Processes()</C> return.
 				</li>
 			</ul>
-			<p>
-				This page is the Go side. <A to="guides/inspector/">The Inspector</A> serves the same data
-				over gRPC, to <A to="guides/grpcprocctl/">grpcprocctl</A> in a terminal or to{' '}
-				<A to="guides/mcp/">an AI agent</A>.
-			</p>
 		</>
 	),
 	sections: [
@@ -124,13 +117,12 @@ export const guidesObservability: Doc = {
 		},
 		{
 			id: 'inspect',
-			title: 'What a process says about itself',
+			title: 'Inspecting a process',
 			body: (
 				<>
 					<p>
-						Counters say that a process is behind. What it believes is the process's to say.{' '}
-						<C>WithInspect</C> gives it a function that returns a map, and <C>node.Inspect</C> asks
-						for it:
+						<C>WithInspect</C> gives a process a function that returns a map of what it wants to
+						publish, and <C>node.Inspect</C> asks for it:
 					</p>
 					<Code>{`node.Spawn(run, grpcproc.WithInspect(func() map[string]string {
 	return map[string]string{
@@ -142,14 +134,12 @@ export const guidesObservability: Doc = {
 state, err := node.Inspect(ctx, pid)`}</Code>
 					<p>
 						The function runs on the process's own goroutine, inside <C>Receive</C>, between two
-						messages: it reads the process's state with no lock, because nothing else is running
-						there. A process busy in a handler answers when it next receives. One that never does
-						cannot answer, and <C>Inspect</C> fails with <C>busy for 12s</C>, which is the diagnosis:
-						the process is stuck in one message, and <C>LastMessage</C> says which kind.
+						messages, so it reads the process's state with no lock. A process busy in a handler
+						answers when it next receives. One that never does cannot answer, and <C>Inspect</C>{' '}
+						fails with <C>busy for 12s</C>: the process is stuck in one message, and{' '}
+						<C>LastMessage</C> says which kind.
 					</p>
-					<p>
-						With a state machine the map is one line, and what an operator wants to see first:
-					</p>
+					<p>With a state machine the map is one line:</p>
 					<Code>{`grpcproc.WithInspect(func() map[string]string { return map[string]string{"state": rec.state.String()} })`}</Code>
 					<p>
 						Supervisors publish their children, each child's PID and restart count, and how many
@@ -179,9 +169,8 @@ state, err := node.Inspect(ctx, pid)`}</Code>
 						closes when <C>ctx</C> ends or the node stops.
 					</p>
 					<p>
-						These are the node's own events, for tools and tests. An application's events, published
-						by one process for others on any node, are what <A to="guides/pubsub/">Pub/sub</A> is
-						for.
+						These are the node's own events. An application's events, published by one process for
+						others on any node, go through <A to="guides/pubsub/">Pub/sub</A>.
 					</p>
 					<p>
 						The supervisor example crashes an actor and follows what the supervisor does through the
@@ -219,8 +208,7 @@ type Done func(err error)`}</Code>
 						process takes a message, a <C>Down</C> or an <C>Exited</C> from its mailbox. Both return
 						the metadata to use from then on, and a <C>Done</C> that closes what they started: a send
 						once it is handed to delivery, a call once it returns, the handling of a message when the
-						process next calls <C>Receive</C> or exits, with the exit reason as the error. That is
-						all a tracer needs.
+						process next calls <C>Receive</C> or exits, with the exit reason as the error.
 					</p>
 					<p>
 						A process remembers the metadata of the message it is handling, as <C>OnReceive</C>{' '}
@@ -252,8 +240,6 @@ type Done func(err error)`}</Code>
 						on <C>Config.Logger</C>, by default <C>slog.Default()</C>. Each process has a threshold
 						of its own: <C>node.SetLogLevel(pid, level)</C> changes it at runtime, the Inspector's{' '}
 						<C>SetLogLevel</C> does the same over gRPC, and <C>ProcessInfo.LogLevel</C> reports it.
-						One process that is misbehaving can be turned up to <C>Debug</C> without touching the
-						others.
 					</p>
 					<Code>{`p.Log().Info("charged", "order", m.Body.Order, "amount", m.Body.Amount)
 
@@ -262,8 +248,7 @@ if err := node.SetLogLevel(pid, slog.LevelDebug); err != nil {
 }`}</Code>
 					<p>
 						A panic in a process is logged with its stack, and the process exits with reason{' '}
-						<C>panic: …</C>; goroutine dumps and heap profiles are <C>net/http/pprof</C>'s job, and
-						grpcproc does not duplicate them.
+						<C>panic: …</C>. Goroutine dumps and heap profiles are <C>net/http/pprof</C>'s job.
 					</p>
 				</>
 			)
@@ -276,8 +261,7 @@ if err := node.SetLogLevel(pid, slog.LevelDebug); err != nil {
 					<p>
 						<Ext href={file('otel/README.md')}>grpcproc/otel</Ext> implements <C>Hooks</C> with
 						OpenTelemetry: a span for every send, call and handled message, chained across processes
-						and nodes, and metrics keyed by process label. It is a separate module, so grpcproc
-						itself does not depend on OpenTelemetry.
+						and nodes, and metrics keyed by process label. It is a separate module.
 					</p>
 					<Code lang="sh">{'go get github.com/floatdrop/grpcproc/otel'}</Code>
 					<Code>{`h, err := grpcprocotel.New() // global meter and tracer providers and propagator; see Options
@@ -325,8 +309,7 @@ defer span.End()`}</Code>
 					<h3>Metrics</h3>
 					<p>
 						No metric carries a PID: the process label is the unit, and every other attribute is
-						bounded. A series per process would be a cardinality trap in a system that spawns a
-						process per session.
+						bounded, so a system that spawns a process per session does not make a series for each.
 					</p>
 					<Table
 						head={['Name', 'Type and attributes']}

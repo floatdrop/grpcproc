@@ -8,14 +8,14 @@ import type { Doc } from './types.ts';
 
 export const conceptsAddressing: Doc = {
 	path: 'concepts/addressing/',
-	title: 'PIDs, names and addresses',
+	title: 'Addresses',
 	description:
-		'How a process is named: PIDs and their incarnation, registered names, typed addresses, what a message can be sent to, dead letters, and the metadata that travels with every message.',
+		'How a message finds a process: PIDs, names on a node, global names, and the typed address over them.',
 	lead: (
 		<p>
 			A message goes to an address, never to a process value. An address is small, comparable, and means
-			the same on every node, which is what lets a process be reached from anywhere and stored inside
-			a message. There are two kinds, and a typed wrapper over both.
+			the same on every node, so it can be stored and sent inside a message. There are two kinds, a
+			PID and a name, and a typed wrapper over both.
 		</p>
 	),
 	sections: [
@@ -39,11 +39,11 @@ export const conceptsAddressing: Doc = {
 						whom to answer.
 					</p>
 					<p>
-						The incarnation is why a PID is safe to keep. A node that restarts numbers its processes
+						The incarnation makes a PID safe to keep. A node that restarts numbers its processes
 						from one again, so without it the PID of a process from before the restart would point
 						at whichever process now has that number. With it, the PID names a process that no longer
 						exists: a send to it is a dead letter, a call fails with <C>ErrNoProc</C>, and a monitor
-						on it fires <C>Down{'{noproc}'}</C>. A message is never delivered to a stranger. By
+						on it fires <C>Down{'{noproc}'}</C>. By
 						default the incarnation is the node's start time; <A to="concepts/nodes/">Nodes</A> says
 						what else it fences.
 					</p>
@@ -71,18 +71,17 @@ export const conceptsAddressing: Doc = {
 
 pid, ok := warehouse.Whereis("stock") // on this node, now`}</Code>
 					<p>
-						Names are per node. Two nodes can each have a <C>stock</C>, and nothing but the node
-						name tells them apart; that is what lets the same service run on every node of the{' '}
-						<A to="shop/">tutorial</A>. A name is freed when its process exits and taken by whatever
+						Names are per node: two nodes can each have a <C>stock</C>, told apart by the node
+						name. A name is freed when its process exits and taken by whatever
 						is spawned under it next, so an address by name outlives any one process: a supervisor
-						restarts a child under the same name and its callers notice nothing but the gap. A
+						restarts a child under the same name and its callers notice only the gap. A
 						message sent by name while nobody holds it is a dead letter, and a monitor placed by
 						name fires at once with <C>noproc</C>.
 					</p>
 					<p>
 						A local name is found by knowing which node it is on, from configuration or from a
-						message that carried its PID. A name of the whole installation is a global name, below;
-						Erlang keeps <C>global</C> apart from local registration for the same reason.
+						message that carried its PID. A name of the whole installation is a global name, as
+						Erlang's <C>global</C> is.
 					</p>
 				</>
 			)
@@ -115,7 +114,7 @@ r, err := grpcproc.AddrOf[*roomspb.Command](grpcproc.Global{Name: "room:42"}).
 						The names live in a store, <C>Config.Names</C>: etcd in production, an in-memory one in
 						every <C>grpcproctest</C> cluster. Each node keeps a copy, so a send never waits on the
 						store; a message sent a moment after the holder moved can reach the old one, and fail as
-						a process that does not exist would. A name no one holds is exactly that: a call fails
+						a process that does not exist would. For a name no one holds, a call fails
 						with <C>ErrNoProc</C>, a monitor gets <C>Down{'{'}noproc{'}'}</C> with the global name
 						in <C>Down.Name</C>, a message is a dead letter. Where the copy's lag matters, before
 						starting what another node may have started, <C>node.Names().Resolve</C> asks the store
@@ -141,7 +140,7 @@ r, err := grpcproc.AddrOf[*roomspb.Command](grpcproc.Global{Name: "room:42"}).
 		},
 		{
 			id: 'addr',
-			title: 'Addr[M] and Target',
+			title: 'Typed addresses and targets',
 			body: (
 				<>
 					<p>
@@ -160,9 +159,9 @@ r, err := grpcproc.AddrOf[*roomspb.Command](grpcproc.Global{Name: "room:42"}).
 							[
 								<C>Named[M](node, name)</C>,
 								<>
-									An address by name, with the type the caller asserts. This is how one service
-									reaches another: the name and the type are the contract, exported by the package
-									that owns the process.
+									An address by name, with the type the caller asserts. One service reaches another
+									this way: the name and the type are the contract, exported by the package that owns
+									the process.
 								</>
 							],
 							[
@@ -188,7 +187,7 @@ r, err := grpcproc.AddrOf[*roomspb.Command](grpcproc.Global{Name: "room:42"}).
 		},
 		{
 			id: 'protocol',
-			title: 'An address with its protocol',
+			title: 'Address types with methods',
 			body: (
 				<>
 					<p>
@@ -211,7 +210,7 @@ ${region(inventoryAddress, /^\/\/ Reserve takes items/, /^}/)}`}
 						matters: a process's call carries the metadata of the message it is handling, and an
 						actor keeps its addresses in fields but has its process only inside a handler. The type
 						embeds <C>Addr</C>, so it is still a <C>Target</C> with its raw <C>Call</C> and{' '}
-						<C>Send</C>: the methods make the protocol the easy way, not the only one.{' '}
+						<C>Send</C>.{' '}
 						<A to="shop/#contracts">The shop</A>'s contracts are written this way.
 					</p>
 				</>
@@ -219,22 +218,22 @@ ${region(inventoryAddress, /^\/\/ Reserve takes items/, /^}/)}`}
 		},
 		{
 			id: 'types',
-			title: 'Types stop at the wire',
+			title: 'Type checks',
 			body: (
 				<>
 					<p>
 						The type on an address is the sender's claim. On the sending node the compiler enforces
 						it: a <C>Send</C> to an <C>Addr[*shoppb.Reserve]</C> takes a <C>*shoppb.Reserve</C> and
-						nothing else. But the claim does not travel. On the wire a message is its type's full
+						nothing else. The claim does not travel: on the wire a message is its type's full
 						name and its encoding, and the receiving node decodes it and checks, on delivery, that
 						the process's mailbox accepts it.
 					</p>
 					<p>
-						So a remote sender can be wrong, by naming the right process with the wrong type, and the
-						process is protected all the same. The message never enters the mailbox: it is a dead
-						letter with reason <C>type</C>, a caller gets <C>ErrType</C>, and the process's own code
-						never sees a value of a type it did not declare. A local send skips the check, since the
-						compiler already made it.
+						A remote sender that names the right process with the wrong type does not reach it. The
+						message never enters the mailbox: it is a dead letter with reason <C>type</C>, and a
+						caller gets <C>ErrType</C>. The same check runs for a local send. An address that{' '}
+						<C>Spawn</C> returned always passes it; <C>Named</C> or <C>AddrOf</C> with the wrong
+						type, or an untyped <C>SendTo</C>, is a dead letter on the same node too.
 					</p>
 				</>
 			)
@@ -246,18 +245,18 @@ ${region(inventoryAddress, /^\/\/ Reserve takes items/, /^}/)}`}
 				<>
 					<p>
 						A message that cannot be delivered is a dead letter: there is no process at the PID,
-						nobody holds the name, or the type is wrong. For a <C>Send</C> that is not an error. The
-						sender did not wait for anything, and a process that exited a moment ago is the ordinary
-						case, not a fault in the sender; the node counts the dead letter, reports it to{' '}
-						<C>Hooks.OnDeadLetter</C> and to subscribers of its events, and moves on.
+						nobody holds the name, the type is wrong, or the mailbox is full. For a <C>Send</C>{' '}
+						that is not an error: the node counts the dead letter and reports it to{' '}
+						<C>Hooks.OnDeadLetter</C> and to subscribers of its events.{' '}
+						<A to="reference/errors/#dead-letters">Errors and exit reasons</A> lists the reasons.
 					</p>
 					<p>
-						A <C>Call</C> is different, because the caller waits. It fails with <C>ErrNoProc</C>{' '}
-						when there is no such process, or when the process exits before answering, and with{' '}
-						<C>ErrType</C> when the process does not take the request or the reply is not what the
-						caller asked for. What a send can return an error for is only the node: the message
-						could not be encoded, the peer could not be reached, or the context ended while waiting
-						for a first connection to it.
+						A <C>Call</C> waits, so it fails: with <C>ErrNoProc</C> when there is no such process,
+						or when the process exits before answering, and with <C>ErrType</C> when the process
+						does not take the request or the reply is not what the caller asked for. A send returns
+						an error only for what its own node could not do: the message could not be encoded or
+						was too large, the peer could not be reached or its link is full, or the context ended
+						while waiting for a first connection to it.
 					</p>
 					<p>
 						<A to="guides/observability/">Observability</A> shows where dead letters are counted and
@@ -282,17 +281,16 @@ r, err := stock.Call[*shoppb.Reserved](ctx, node, reserve)
 
 md := grpcproc.MetadataFrom(ctx) // reads it back`}</Code>
 					<p>
-						Inside a process it needs no context at all. A process remembers the metadata of the
+						Inside a process it needs no context. A process remembers the metadata of the
 						message it is handling, and every <C>Send</C>, <C>Call</C> and <C>SendAfter</C> it makes
 						meanwhile inherits it. A request that enters at the edge with a trace id leaves the same
-						id on every message its handling causes, across processes and nodes, without a single
-						handler threading a context through. A call's context can add to what is inherited, and{' '}
+						id on every message its handling causes, across processes and nodes. A call's context can add to what is inherited, and{' '}
 						<C>m.Context(parent)</C> puts a message's metadata into a context for code that wants
 						one, a database client say; for a call it also ends at the caller's deadline, as{' '}
 						<A to="concepts/processes/#send-call">Send and Call</A> describes.
 					</p>
 					<p>
-						This is what <A to="guides/observability/">grpcproc/otel</A> builds its traces on: a span
+						<A to="guides/observability/">grpcproc/otel</A> builds its traces on this: a span
 						opened when a message is taken, and every message sent while handling it a child of that
 						span.
 					</p>
@@ -308,8 +306,7 @@ md := grpcproc.MetadataFrom(ctx) // reads it back`}</Code>
 						A message sent from outside any process still has a sender: the node's pseudo-process,{' '}
 						<C>node.PID()</C>, the node's name and incarnation with ID zero. It has no mailbox, so a
 						process cannot reply to it with a send; a call from it is answered through the call, as
-						any other. It shows up in <C>Msg.From</C>, in dead letters and in traces, so a message
-						from the edge is as attributable as one from a process.
+						any other. It shows up in <C>Msg.From</C>, in dead letters and in traces.
 					</p>
 				</>
 			)

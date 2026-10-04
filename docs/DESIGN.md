@@ -401,7 +401,9 @@ there is one implementation. Types do not cross the wire: a remote sender can
 address `Named[*A]` at a process that is `Process[*B]`. The receiving node
 checks `decoded.(M)` on delivery, and a mismatch is a dead letter with reason
 `type`, counted and passed to `Hooks.OnDeadLetter`, never a panic inside the
-process. Local sends are checked at compile time and skip the assertion.
+process. The assertion runs for local sends too: the address `Spawn` returned
+always passes, and a `Named` or `AddrOf` of the wrong type, or an untyped
+`SendTo`, is a dead letter on the same node.
 
 `Down` arrives through the same `Receive`, in order with messages, so the
 guarantee "a process's last message is seen before its `Down`" holds for typed

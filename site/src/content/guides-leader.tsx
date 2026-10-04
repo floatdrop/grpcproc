@@ -12,14 +12,12 @@ export const guidesLeader: Doc = {
 	path: 'guides/leader/',
 	title: 'Leader election',
 	description:
-		'Elect one node of a cluster to run a singleton, which starts when its node wins and exits when it loses, and carry its state from one leader to the next.',
+		'Elect one node of a cluster to run a singleton, and carry its state from one leader to the next.',
 	lead: (
 		<p>
-			<C>grpcproc/leader</C> elects one node of a cluster, and runs a singleton there: a child spec
-			of yours, started when its node wins and told to exit when it loses. Leadership is the
-			singleton's lifetime, so no handler asks whether it still leads. The singleton can checkpoint
-			its state, and whichever node leads next starts from it. It is a package of the core module,
-			released with it.
+			<C>grpcproc/leader</C> elects one node of a cluster and runs a singleton there: a child spec
+			of yours, started when its node wins and told to exit when it loses, so no handler asks
+			whether it still leads. It is a package of the core module.
 		</p>
 	),
 	sections: [
@@ -52,8 +50,8 @@ export const guidesLeader: Doc = {
 sched := grpcproc.Named[*schedpb.Msg](info.Leader, "scheduler")`}</Code>
 					<p>
 						A call to a node that no longer leads fails with <C>grpcproc.ErrNoProc</C>, and while no
-						leader is known <C>info.Leader</C> is empty: ask again. <C>leader.Call</C> does both, as{' '}
-						<A to="guides/leader/#calling">Calling the leader</A> shows.
+						leader is known <C>info.Leader</C> is empty: ask again, or use{' '}
+						<A to="guides/leader/#calling">leader.Call</A>, which does.
 					</p>
 				</>
 			)
@@ -67,8 +65,8 @@ sched := grpcproc.Named[*schedpb.Msg](info.Leader, "scheduler")`}</Code>
 						A node that wins an election starts the singleton, and a node that stops leading tells
 						it to exit with reason <C>demoted</C>. Its <C>Init</C> is "became the leader", its
 						context ending is "stopped being the leader", and its <C>Terminate</C> runs either way,
-						in time to save its last word. A singleton that does I/O with its process's context has
-						that I/O cancelled on demotion, rather than finish it as a leader that no longer is one.
+						in time to save its state. I/O it does with its process's context is cancelled on
+						demotion.
 					</p>
 					<Drawing caption="a leader and a follower of one election">
 						<Election />
@@ -76,15 +74,14 @@ sched := grpcproc.Named[*schedpb.Msg](info.Leader, "scheduler")`}</Code>
 					<p>
 						A singleton that exits by itself, or cannot start, ends its node's leadership. The node
 						steps down, and campaigns again only after a backoff that doubles with each failure in a
-						row, while the others elect one of themselves: a failing singleton moves across the
-						cluster rather than restart in place. For restarts in place, make the singleton an{' '}
+						row, while the others elect one of themselves. For restarts in place, make the singleton an{' '}
 						<C>actor.ChildSupervisor</C>, whose own children restart as a{' '}
 						<A to="guides/supervisors/">supervisor</A>'s do.
 					</p>
 					<p>
 						<C>Spec.Confirm</C>, if set, runs after a win and before the singleton starts, with the
-						term: an error withholds leadership, with the same backoff. It is where leadership waits
-						for a lock outside the cluster, an etcd lease or a Kubernetes Lease.
+						term: an error withholds leadership, with the same backoff. Use it to wait for a lock
+						outside the cluster, an etcd lease or a Kubernetes Lease.
 					</p>
 				</>
 			)
@@ -106,12 +103,12 @@ sched := grpcproc.Named[*schedpb.Msg](info.Leader, "scheduler")`}</Code>
 						</li>
 						<li>
 							<strong>Pre-votes</strong> come first: a node asks whether it would win before it
-							starts a term, so a node cut off from the others does not raise its term alone, and
-							depose the leader with it once it is back.
+							starts a term, so a node cut off from the others does not raise its term alone and
+							depose the leader once it is back.
 						</li>
 						<li>
 							<strong>A leader steps down</strong> once it has not heard from a majority for two
-							election timeouts: cut off from the others, it stops leading by itself.
+							election timeouts.
 						</li>
 						<li>
 							<strong>Followers stick</strong> to a leader they heard from within an election
@@ -148,7 +145,7 @@ sched := grpcproc.Named[*schedpb.Msg](info.Leader, "scheduler")`}</Code>
 					<p>
 						With <C>Voters</C>, the view is that fixed set of nodes, and a majority of it elects,
 						whether the others are up or not. Two majorities of one set share a node, so a
-						partition never elects two leaders. This is the one to reach for.
+						partition never elects two leaders. Prefer it where the nodes that may lead are known.
 					</p>
 					<p>
 						Without <C>Voters</C>, the view is dynamic: this node, <C>Peers</C>, and the nodes a{' '}
@@ -188,7 +185,7 @@ sched := grpcproc.Named[*schedpb.Msg](info.Leader, "scheduler")`}</Code>
 		},
 		{
 			id: 'state',
-			title: 'State from one leader to the next',
+			title: 'State and checkpoints',
 			body: (
 				<>
 					<p>
@@ -204,11 +201,11 @@ lease.Save(state)                   // the same, without the wait`}</Code>
 						and nothing a demoted singleton saves reaches anyone.
 					</p>
 					<p>
-						<C>leader.Resign(ctx, node, cluster)</C> hands over on purpose. The leader stops its
-						singleton, whose <C>Terminate</C> can still save; waits for the follower with the latest
-						state to hold the leader's; and has it campaign at once. Call it before stopping a
-						leader's node, and the next leader starts from the singleton's last word rather than its
-						last checkpoint. On a node that does not lead it is <C>ErrNotLeader</C>, and on a leader
+						<C>leader.Resign(ctx, node, cluster)</C> hands over. The leader stops its singleton,
+						whose <C>Terminate</C> can still save; waits for the follower with the latest state to
+						hold the leader's; and has it campaign at once. Call it before stopping a leader's
+						node, and the next leader starts from what <C>Terminate</C> saved rather than the last
+						checkpoint. On a node that does not lead it is <C>ErrNotLeader</C>, and on a leader
 						alone, <C>ErrNoSuccessor</C>.
 					</p>
 					<p>
@@ -270,16 +267,16 @@ lease.Save(state)                   // the same, without the wait`}</Code>
 						]}
 					/>
 					<p>
-						Delivery is at most once, so repeating a call that may have been handled is the
-						caller's choice: fine for a read, or for a request the singleton de-duplicates. For the
-						numbers, a repeat can only skip one, never hand one out twice.
+						Repeating a call that may have been handled is the caller's choice: fine for a read, or
+						for a request the singleton de-duplicates. For the numbers, a repeat can only skip one,
+						never hand one out twice.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'maintenance',
-			title: 'Moving the leader, and taking a node out',
+			title: 'Transfer and cordon',
 			body: (
 				<>
 					<Code>{`leader.Transfer(ctx, node, "scheduler", "b") // b leads next; "" for the most up-to-date follower
@@ -295,16 +292,15 @@ leader.Uncordon(ctx, node, "scheduler", "c")`}</Code>
 						<C>Cordon</C> keeps a node from leading until <C>Uncordon</C>: it campaigns no more,
 						voters refuse it, and if it leads, it hands over. The cordoned nodes are part of the
 						state the leader replicates, and <C>Cordon</C> returns once a majority holds it, so a
-						cordon outlasts the cordoned node's restarts, and the leader's. Cordon a node, stop
-						it, work on its host, start it again: it stays a follower until you uncordon it. It
-						still votes, so the cluster keeps its quorum meanwhile. A cordon that would leave no
-						node of the view to lead is refused.
+						cordon outlasts the cordoned node's restarts, and the leader's. A cordoned node still
+						votes, so the cluster keeps its quorum while its host is worked on. A cordon that would
+						leave no node of the view to lead is refused.
 					</p>
 					<p>
 						From a terminal, <A to="guides/grpcprocctl/#leader">grpcprocctl</A> does the same three
-						through the Inspector — <C>leader move</C>, with <C>--to</C> a node,{' '}
-						<C>leader cordon</C> and <C>leader uncordon</C> — and an agent gets them as MCP tools.
-						It shows what every node's elector believes once they agree:
+						through the Inspector: <C>leader move</C>, with <C>--to</C> a node,{' '}
+						<C>leader cordon</C> and <C>leader uncordon</C>. It prints what every node's elector
+						believes once they agree:
 					</p>
 					<Code lang="sh">{'grpcprocctl --plaintext leader cordon scheduler b   # b led: it hands over'}</Code>
 					<Output>{`NODE  ROLE      TERM  LEADER  VIEW   STATE  CORDONED  UNREACHABLE  SINGLETON  BACKOFF  ERROR
@@ -322,23 +318,23 @@ c     follower  2     a       a,b,c  2.3    b                      none`}</Outpu
 		},
 		{
 			id: 'two-leaders',
-			title: 'Two leaders, briefly',
+			title: 'Split leadership',
 			body: (
 				<>
 					<p>
 						Two nodes can both believe they lead for a while: a leader cut off from the others leads
 						until it notices, two election timeouts at most, and they elect another meanwhile. Its
 						singleton is told to exit then, but what it did before is done. <C>Lease.Term</C> grows
-						with every election: a resource that remembers the highest term it has seen can refuse a
-						deposed leader's writes, which is what fencing a database or a queue takes.
-						Leadership waiting for an external lock, through <C>Confirm</C>, is the other way.
+						with every election: a database or a queue that remembers the highest term it has seen
+						can refuse a deposed leader's writes. The other way is to have leadership wait for an
+						external lock, in <C>Confirm</C>.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'cron',
-			title: 'A job that runs once in a cluster',
+			title: 'Cron as the singleton',
 			body: (
 				<>
 					<p>
@@ -357,21 +353,22 @@ c     follower  2     a       a,b,c  2.3    b                      none`}</Outpu
 					<Code caption="examples/singleton/singleton_test.go">{region(singleton, /\/\/ The leader crashes a moment before 10:10/, /sleepUntil\("10:12:30"\)/)}</Code>
 					<p>
 						It runs in a <C>testing/synctest</C> bubble over a{' '}
-						<A to="guides/testing/">grpcproctest</A> cluster: the bubble's clock is fake, and moves
-						on when every goroutine in it waits, so the minutes pass at once and an election's
-						timeouts are the same on every run.
+						<A to="guides/testing/">grpcproctest</A> cluster, on a fake clock: the minutes pass at
+						once, and an election's timeouts are the same on every run.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'inspector',
-			title: 'In the Inspector',
+			title: 'Inspecting an election',
 			body: (
 				<>
 					<p>
-						The elector publishes what it believes, which <C>grpcprocctl inspect leader/scheduler</C>{' '}
-						shows, on every node: comparing the nodes is how a split view shows up.
+						The elector publishes what it believes on every node:{' '}
+						<C>grpcprocctl inspect leader/scheduler</C> shows one node's, and{' '}
+						<A to="guides/grpcprocctl/#leader">grpcprocctl leader</A> and the{' '}
+						<A to="guides/web/">Web UI</A> compare them, which is how a split view shows up.
 					</p>
 					<Table
 						head={['Key', 'What it says']}

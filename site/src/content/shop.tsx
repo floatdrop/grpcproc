@@ -30,34 +30,33 @@ export const shop: Doc = {
 	path: 'shop/',
 	title: 'The shop',
 	description:
-		'A tutorial: one application, read chapter by chapter. A shop whose services are grpcproc processes, wired with golang.yandex/di, run as one program or as three nodes from the same code.',
+		'A tutorial that builds one application: a shop whose services are grpcproc processes, run as one program or as three nodes from the same code.',
 	sections: [
 		{
 			id: 'build',
-			title: 'What we build',
+			title: 'The application',
 			body: (
 				<>
 					<p>
-						This tutorial is one application, read chapter by chapter: a shop that takes orders over
-						HTTP, reserves stock and charges a card. Its services are grpcproc processes, built and
-						wired by <Ext href="https://github.com/yandex/di">golang.yandex/di</Ext>, a
-						dependency-injection container. The same code runs as one program, for development, or
-						as three programs on three nodes, as deployed.
+						The shop takes orders over HTTP, reserves stock and charges a card. Its services are
+						grpcproc processes, built and wired by{' '}
+						<Ext href="https://github.com/yandex/di">golang.yandex/di</Ext>, a dependency-injection
+						container. The same code runs as one program, for development, or as three programs on
+						three nodes, as deployed.
 					</p>
 					<p>
 						Every file shown is from{' '}
 						<Ext href={`${REPO}/tree/main/examples/guide`}>
 							<C>examples/guide</C>
 						</Ext>{' '}
-						in the repository, and every output is pinned by its tests, so what you read is what
-						runs.
+						in the repository, and every output is pinned by its tests.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'shape',
-			title: 'The shape of an application',
+			title: 'Package layout',
 			body: (
 				<>
 					<p>
@@ -74,9 +73,9 @@ export const shop: Doc = {
 					<p>
 						No service knows where the others run. The orders service reaches the inventory through
 						the inventory's contract and a node name from the placement in the configuration, which
-						says which node runs each service. Whether that node is its own is not its business. So
-						the shop as one program and the shop as three differ in two things only: which services
-						each entry point composes, and what each program is told.
+						says which node runs each service. The shop as one program and the shop as three differ
+						in two things only: which services each entry point composes, and what each program is
+						told.
 					</p>
 					<Drawing caption="the four layers, and what imports the contracts">
 						<Layout />

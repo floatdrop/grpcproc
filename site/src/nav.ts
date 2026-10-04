@@ -10,7 +10,7 @@ export interface NavGroup {
 }
 
 export const groups: NavGroup[] = [
-	{ title: 'Getting started', paths: ['', 'start/'] },
+	{ title: 'Start', paths: ['', 'start/'] },
 	{
 		title: 'Concepts',
 		paths: [
@@ -24,23 +24,21 @@ export const groups: NavGroup[] = [
 		]
 	},
 	{
-		title: 'Guides',
+		title: 'Build',
 		paths: [
 			'guides/actors/',
 			'guides/supervisors/',
-			'guides/blocking-io/',
 			'guides/pubsub/',
-			'guides/configuration/',
-			'guides/testing/',
-			'guides/observability/',
-			'guides/inspector/',
-			'guides/grpcprocctl/',
-			'guides/mcp/',
-			'guides/etcd/',
+			'guides/blocking-io/',
 			'guides/cron/',
 			'guides/leader/',
-			'guides/operations/'
+			'guides/testing/'
 		]
+	},
+	{ title: 'Run', paths: ['guides/configuration/', 'guides/etcd/', 'guides/operations/'] },
+	{
+		title: 'Inspect',
+		paths: ['guides/observability/', 'guides/inspector/', 'guides/grpcprocctl/', 'guides/web/', 'guides/mcp/']
 	},
 	{
 		title: 'Tutorial: the shop',
