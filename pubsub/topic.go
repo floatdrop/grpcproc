@@ -66,6 +66,11 @@ type topic struct {
 type upstream struct {
 	addr grpcproc.Addr[proto.Message]
 	sub  Subscription // the relay's; zero until its first subscriber comes
+	// caughtUp is set once the events the topic kept, which it sent ahead
+	// of its answer to the relay's subscription, are handed on; until then
+	// the relay's Subscribe calls wait in waiting.
+	caughtUp bool
+	waiting  []grpcproc.Msg[proto.Message]
 }
 
 type kept struct {
@@ -126,6 +131,17 @@ func (t *topic) handle(m grpcproc.Msg[proto.Message]) error {
 	switch m.Body.(type) {
 	case *pubsubv1.Subscribe:
 		return t.subscribe(m)
+	case *pubsubv1.Subscribed:
+		if t.up != nil && m.From == t.p.PID() {
+			// The relay's note to itself, behind the topic's kept events:
+			// they are handed on, and the waiting subscribers have them.
+			t.up.caughtUp = true
+			for _, w := range t.up.waiting {
+				_ = w.Reply(t.subscribed(), nil)
+			}
+			t.up.waiting = nil
+			return nil
+		}
 	case *pubsubv1.Unsubscribe:
 		if ref, ok := t.subs[m.From]; ok {
 			t.p.Demonitor(ref)
@@ -164,6 +180,11 @@ func (t *topic) subscribe(m grpcproc.Msg[proto.Message]) error {
 			return errDone
 		}
 		t.up.sub, t.cfg.Buffer, t.typ = s, int(r.GetBuffer()), r.GetType()
+		// The topic sent the events it keeps ahead of its answer, so they
+		// are in the relay's mailbox now, and a note to itself goes behind
+		// them: until it comes back, Subscribe calls are answered only once
+		// those events are handed on, as Subscribe promises.
+		_ = t.p.SendTo(t.p.PID(), &pubsubv1.Subscribed{})
 	}
 	if _, ok := t.subs[m.From]; !ok {
 		t.subs[m.From] = t.p.Monitor(m.From)
@@ -176,8 +197,17 @@ func (t *topic) subscribe(m grpcproc.Msg[proto.Message]) error {
 			_ = t.p.SendTo(t.cfg.Notify, &pubsubv1.Demand{Subscribed: true})
 		}
 	}
-	_ = m.Reply(&pubsubv1.Subscribed{From: t.p.PID().Proto(), Buffer: uint32(t.cfg.Buffer), Type: t.typ}, nil)
+	if t.up != nil && !t.up.caughtUp {
+		t.up.waiting = append(t.up.waiting, m)
+		return nil
+	}
+	_ = m.Reply(t.subscribed(), nil)
 	return nil
+}
+
+// subscribed is the answer to a subscription.
+func (t *topic) subscribed() *pubsubv1.Subscribed {
+	return &pubsubv1.Subscribed{From: t.p.PID().Proto(), Buffer: uint32(t.cfg.Buffer), Type: t.typ}
 }
 
 // drop forgets a subscriber. A relay with none left ends: the topic sees it

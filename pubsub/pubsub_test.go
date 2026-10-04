@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -309,6 +310,59 @@ func TestRemoteSubscribersShareARelay(t *testing.T) {
 		l2.cancel(t, b)
 		eventually(t, "the relay to end", func() bool { _, ok := b.Whereis("pubsub:{pings@a}"); return !ok })
 		eventually(t, "the topic to forget the relay", func() bool { return inspect(t, a, topic.Addr().PID(), "subscribers") == "1" })
+	})
+}
+
+// slowRelay holds a relay for a second on each event it takes from its topic.
+type slowRelay struct{ grpcproc.NopHooks }
+
+func (slowRelay) OnReceive(r grpcproc.ReceiveInfo, md grpcproc.Metadata) (grpcproc.Metadata, grpcproc.Done) {
+	if r.Label == "pubsub.relay" && r.From.Node == "a" && r.Body != nil {
+		time.Sleep(time.Second)
+	}
+	return md, nil
+}
+
+// Through a relay, as on the topic's own node, the events the topic keeps
+// are in the subscriber's mailbox when Subscribe returns: the relay's first
+// subscriber's too, for which the relay subscribes to the topic.
+func TestRemoteSubscriberHasTheKeptEventsWhenSubscribeReturns(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// The relay is slow to take the topic's events, so they are in the
+		// subscriber's mailbox only if Subscribe waited for them.
+		slow := grpcproctest.WithConfig(func(name string, cfg *grpcproc.Config) {
+			if name == "b" {
+				cfg.Hooks = slowRelay{}
+			}
+		})
+		c := grpcproctest.NewWith(t, []grpcproctest.Option{slow}, "a", "b")
+		a, b := c.Node("a"), c.Node("b")
+		topic, err := pubsub.Spawn[*testpb.Ping](a, pubsub.Config{Buffer: 2}, grpcproc.WithName("pings"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		publish(t, a, topic, 1, 2, 3)
+		got := make(chan []int64, 1)
+		if _, err := b.Spawn(func(p *grpcproc.Process[proto.Message]) error {
+			if _, err := pubsub.Named[*testpb.Ping]("a", "pings").Subscribe(ctx(t), p); err != nil {
+				return err
+			}
+			var ns []int64
+			for {
+				m, err := p.ReceiveTimeout(0)
+				if err != nil {
+					break
+				}
+				ns = append(ns, m.Body.(*testpb.Ping).GetN())
+			}
+			got <- ns
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if ns := within(t, got); !slices.Equal(ns, []int64{2, 3}) {
+			t.Fatalf("in the mailbox when Subscribe returned: %v, want [2 3]", ns)
+		}
 	})
 }
 
