@@ -406,7 +406,7 @@ func TestClassification(t *testing.T) {
 		}
 	}
 	errs := map[error]string{
-		grpcproc.ErrNoProc: "noproc", grpcproc.ErrType: "type",
+		grpcproc.ErrNoProc: "noproc", grpcproc.ErrType: "type", grpcproc.ErrMailboxFull: "mailbox_full",
 		&grpcproc.LinkError{Peer: "b", Err: errors.New("x")}:                    "noconnection",
 		&grpcproc.LinkError{Peer: "b", Err: grpcproc.ErrLinkBusy, Unsent: true}: "busy",
 		context.DeadlineExceeded:                                                "timeout", context.Canceled: "canceled",
