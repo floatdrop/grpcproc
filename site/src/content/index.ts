@@ -27,12 +27,13 @@ import { guidesWeb } from './guides-web.tsx';
 import { landing } from './landing.tsx';
 import { referenceErrors } from './reference-errors.tsx';
 import { referencePerformance } from './reference-performance.tsx';
-import { shop } from './shop.tsx';
-import { shopDeployments } from './shop-deployments.tsx';
-import { shopPlatform } from './shop-platform.tsx';
-import { shopServices } from './shop-services.tsx';
-import { shopTesting } from './shop-testing.tsx';
 import { start } from './start.tsx';
+import { tutorial } from './tutorial.tsx';
+import { tutorialConversations } from './tutorial-conversations.tsx';
+import { tutorialDeployments } from './tutorial-deployments.tsx';
+import { tutorialPlatform } from './tutorial-platform.tsx';
+import { tutorialTesting } from './tutorial-testing.tsx';
+import { tutorialWorkers } from './tutorial-workers.tsx';
 import type { Doc } from './types.ts';
 
 const all: Doc[] = [
@@ -60,11 +61,12 @@ const all: Doc[] = [
 	guidesGrpcprocctl,
 	guidesWeb,
 	guidesMcp,
-	shop,
-	shopServices,
-	shopPlatform,
-	shopDeployments,
-	shopTesting,
+	tutorial,
+	tutorialConversations,
+	tutorialWorkers,
+	tutorialPlatform,
+	tutorialDeployments,
+	tutorialTesting,
 	referenceErrors,
 	referencePerformance
 ];

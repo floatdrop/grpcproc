@@ -1,0 +1,11 @@
+> what is 6 * 7?
+Let me think
+  [starting over] gpu-1 did not finish
+Let me calculate that.
+  [tool] calc 6 * 7
+  [ran] 42
+The answer is 42.
+  [turn 1 done]
+> thanks
+You said: thanks
+  [turn 2 done]

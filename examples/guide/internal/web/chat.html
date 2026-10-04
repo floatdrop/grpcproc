@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>grpcproc: an agent runtime</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; }
+  #log { min-height: 12rem; }
+  .user { font-weight: 600; margin-top: 1rem; }
+  .note { color: #777; font-size: 0.875rem; font-family: ui-monospace, monospace; }
+  form { display: flex; gap: 0.5rem; margin-top: 1rem; }
+  input { flex: 1; font: inherit; padding: 0.4rem 0.6rem; }
+  button { font: inherit; padding: 0.4rem 1rem; }
+</style>
+<h1>An agent runtime</h1>
+<p class="note">Try: <code>hello</code>, <code>what is 6 * 7</code>, <code>what is 7 / 0</code>, <code>wait 10s</code></p>
+<div id="log"></div>
+<form id="say"><input id="text" autofocus autocomplete="off" placeholder="Say something"><button>Send</button></form>
+<script>
+  if (!location.hash) location.hash = Math.random().toString(36).slice(2, 8);
+  const id = location.hash.slice(1);
+  const log = document.getElementById('log');
+  const line = (cls, text) => { const d = document.createElement('div'); d.className = cls; d.textContent = text; log.append(d); return d; };
+  let answer = null;
+  let events;
+  // A stream that opens, again or for the first time, begins with the events
+  // the conversation keeps: the page shows what the stream says, and no more.
+  // A browser gives up on a stream that was refused, so the page asks again.
+  const follow = () => {
+    events = new EventSource(`/conversations/${id}/events`);
+    events.onopen = () => { log.textContent = ''; answer = null; };
+    events.onmessage = show;
+    events.onerror = () => { if (events.readyState === EventSource.CLOSED) setTimeout(follow, 3000); };
+  };
+  const show = (m) => {
+    const e = JSON.parse(m.data);
+    if (e.kind === 'token') { (answer ??= line('assistant', '')).textContent += e.text; return; }
+    if (e.kind === 'retrying' && answer) { answer.remove(); }
+    answer = null;
+    if (e.kind === 'said') line('user', e.text);
+    if (e.kind === 'tool') line('note', `tool: ${e.text}`);
+    if (e.kind === 'ran') line('note', `returned: ${e.text}`);
+    if (e.kind === 'tool-failed') line('note', `tool failed: ${e.text}`);
+    if (e.kind === 'retrying') line('note', `starting over: ${e.text}`);
+    if (e.kind === 'failed') line('note', `failed: ${e.text}`);
+  };
+  follow();
+  document.getElementById('say').onsubmit = (ev) => {
+    ev.preventDefault();
+    const input = document.getElementById('text');
+    if (!input.value) return;
+    const text = input.value;
+    fetch(`/conversations/${id}`, { method: 'POST', body: text })
+      .then((r) => { if (!r.ok) throw new Error(r.status); })
+      .catch(() => line('note', `not sent: ${text}`));
+    input.value = '';
+  };
+</script>

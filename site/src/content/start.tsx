@@ -165,8 +165,8 @@ export const start: Doc = {
 							it when it fails.
 						</li>
 						<li>
-							<A to="shop/">The tutorial</A>: three services, run as one program or as three nodes
-							from the same code.
+							<A to="tutorial/">The tutorial</A>: an AI agent runtime, with a process per
+							conversation, run as one program or as a program per node from the same code.
 						</li>
 					</ul>
 				</>

@@ -189,7 +189,7 @@ for _, m := range node.Members() {
 						a key per node under a lease the node keeps alive, resolved by reading the key, and
 						membership by listing the keys and then watching the prefix. It is a separate module,
 						and a deployment that wants another registry implements the same three interfaces. The
-						tutorial's <A to="shop/platform/">platform</A> takes its resolver, registrar and
+						tutorial's <A to="tutorial/platform/">platform</A> takes its resolver, registrar and
 						membership from the configuration, and the services see only the node.
 					</p>
 				</>

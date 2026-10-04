@@ -289,7 +289,7 @@ DialOptionsFor: func(peer string) []grpc.DialOption {
 					<p>
 						The root starts the node itself, once the services' trees run, so that with a registry
 						the node is published only when its processes exist (
-						<A to="shop/platform/">Platform</A>).
+						<A to="tutorial/platform/">Platform</A>).
 					</p>
 				</>
 			)

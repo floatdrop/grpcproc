@@ -1,8 +1,10 @@
-shop
-└── root             supervisor
-    ├── inventory    supervisor
-    │   └── stock    *inventoryv1.Command
-    ├── payments     supervisor
-    │   └── cashier  *paymentsv1.Charge
-    └── orders       supervisor
-        └── desk     *ordersv1.Place
+local
+├── root                               supervisor
+│   ├── models-sup                     supervisor
+│   │   └── models                     *modelsv1.Generate
+│   ├── tools-sup                      supervisor
+│   │   └── tools                      *toolsv1.Run
+│   └── conversations                  supervisor
+│       └── conversation/1             conversation
+│           └── conversation/1/events  pubsub.topic
+└── ·                                  follower

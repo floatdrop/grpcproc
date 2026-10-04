@@ -1,4 +1,4 @@
-import inventory from '../../../examples/guide/internal/inventory/inventory.go?raw';
+import models from '../../../examples/guide/internal/models/models.go?raw';
 import supervisor from '../../../examples/supervisor/main.go?raw';
 import supervisorOutput from '../../../examples/supervisor/output.txt?raw';
 
@@ -25,7 +25,7 @@ export const guidesSupervisors: Doc = {
 			<A to="concepts/supervision/">Supervision</A> says which strategy to pick and where state
 			should live; read it first if supervisors are new. The code is from{' '}
 			<Ext href={file('examples/supervisor/main.go')}>examples/supervisor</Ext> and the tutorial's{' '}
-			<Ext href={file('examples/guide/internal/inventory/inventory.go')}>inventory service</Ext>.
+			<Ext href={file('examples/guide/internal/models/models.go')}>models service</Ext>.
 		</p>
 	),
 	sections: [
@@ -189,12 +189,12 @@ export const guidesSupervisors: Doc = {
 					<p>
 						<C>ChildSupervisor</C> is a child whose spec is another <C>Spec</C>, so an application
 						can have one supervisor per service, each with its own strategy and intensity, under
-						one root. The tutorial's inventory service builds its subtree in a function that takes
+						one root. The tutorial's models service builds its subtree in a function that takes
 						the service's dependencies from the container:
 					</p>
-					<Code caption="examples/guide/internal/inventory/inventory.go">{region(inventory, /^\/\/ tree is the service's supervision tree/, /^}/)}</Code>
+					<Code caption="examples/guide/internal/models/models.go">{region(models, /^\/\/ tree is the service's supervision tree/, /^}/)}</Code>
 					<p>
-						The root, in <A to="shop/platform/">the tutorial's platform</A>, is a <C>OneForOne</C>{' '}
+						The root, in <A to="tutorial/platform/">the tutorial's platform</A>, is a <C>OneForOne</C>{' '}
 						supervisor whose children are every service's tree. A service that gives up, past its
 						own intensity, exits with <C>max restarts</C>, an abnormal reason; the root restarts that
 						subtree alone, and the others carry on. A root that gives up ends the program, for

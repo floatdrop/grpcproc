@@ -1,4 +1,4 @@
-// Package platform is what every program of the shop runs, whichever
+// Package platform is what every program of the runtime runs, whichever
 // services it hosts: its node, the gRPC server the node is served on, the
 // Inspector beside it, and the root of its supervision tree. The services'
 // packages know none of it but the node and the configuration.
@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"slices"
 	"time"
 
 	"golang.yandex/di"
@@ -108,7 +109,7 @@ func newServer(ln net.Listener) *server {
 
 func newNode(cfg Config, r grpcproc.Resolver, srv *server, log *slog.Logger) (*grpcproc.Node, error) {
 	n, err := grpcproc.NewNode(grpcproc.Config{
-		Admit:       grpcproc.AdmitAll, // with mTLS, AdmitTLS: peers' certificates name their nodes
+		Admit:       admit(cfg),
 		Name:        cfg.Node,
 		Advertise:   cfg.Listen,
 		Resolver:    r,
@@ -120,6 +121,24 @@ func newNode(cfg Config, r grpcproc.Resolver, srv *server, log *slog.Logger) (*g
 	}
 	n.Register(srv.grpc)
 	return n, nil
+}
+
+// admit says what each peer may ask of this node, from the configuration:
+// an untrusted peer nothing, so that it only answers what this node asks
+// it; any other the processes this node exports, or anything if it names
+// none. Nothing here checks who a peer is, so a peer is whoever it says it
+// is: plaintext keeps the guide short. A real deployment first checks that
+// the peer's certificate names its node, as grpcproc.AdmitTLS does.
+func admit(cfg Config) func(context.Context, grpcproc.NodeID) (grpcproc.Policy, error) {
+	return func(_ context.Context, peer grpcproc.NodeID) (grpcproc.Policy, error) {
+		switch {
+		case slices.Contains(cfg.Untrusted, peer.Name):
+			return grpcproc.Export(), nil
+		case len(cfg.Export) > 0:
+			return grpcproc.Export(cfg.Export...), nil
+		}
+		return nil, nil
+	}
 }
 
 // newInspector serves the node to grpcprocctl, and reaches the other nodes'

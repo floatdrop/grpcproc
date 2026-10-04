@@ -254,7 +254,7 @@ export function NotFound({ docs }: { docs: Doc[] }) {
 				</p>
 				<ul>
 					{docs
-						.filter((d) => ['start/', 'concepts/actors/', 'concepts/supervision/', 'shop/'].includes(d.path))
+						.filter((d) => ['start/', 'concepts/actors/', 'concepts/supervision/', 'tutorial/'].includes(d.path))
 						.map((d) => (
 							<li key={d.path}>
 								<a href={url(d.path)}>{d.title}</a>

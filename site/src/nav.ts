@@ -41,8 +41,8 @@ export const groups: NavGroup[] = [
 		paths: ['guides/observability/', 'guides/inspector/', 'guides/grpcprocctl/', 'guides/web/', 'guides/mcp/']
 	},
 	{
-		title: 'Tutorial: the shop',
-		paths: ['shop/', 'shop/services/', 'shop/platform/', 'shop/deployments/', 'shop/testing/']
+		title: 'Tutorial: an agent runtime',
+		paths: ['tutorial/', 'tutorial/conversations/', 'tutorial/workers/', 'tutorial/platform/', 'tutorial/deployments/', 'tutorial/testing/']
 	},
 	{ title: 'Reference', paths: ['reference/errors/', 'reference/performance/'] }
 ];

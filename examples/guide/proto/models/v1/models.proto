@@ -1,0 +1,53 @@
+// The models service's contract: what a GPU node's scheduler accepts and
+// answers. Another service depends on this package, never on the service.
+syntax = "proto3";
+
+package models.v1;
+
+import "guide/proto/tools/v1/tools.proto";
+
+option go_package = "github.com/floatdrop/grpcproc/examples/guide/proto/models/v1;modelsv1";
+
+// Role is who said a turn of a conversation.
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_USER = 1;
+  ROLE_ASSISTANT = 2;
+  // What a tool returned for the call the assistant made.
+  ROLE_TOOL = 3;
+}
+
+message Turn {
+  Role role = 1;
+  string text = 2;
+  // The tool the assistant asked for, having said text.
+  tools.v1.Run tool = 3;
+}
+
+// Generate asks for the next thing the assistant says. It is a call,
+// answered with Generated once the model is done; the tokens are published
+// meanwhile, as they come, on the topic it names.
+message Generate {
+  repeated Turn history = 1;
+  // The topic the tokens go to: its node and its name. Its events are
+  // conversations.v1.Event.
+  string topic_node = 2;
+  string topic = 3;
+  // The turn of the conversation this answers, set on every token.
+  uint64 turn = 4;
+  // Which try at the answer this is, larger than any before it, and set on
+  // every token: a node that lost its caller may go on publishing after
+  // another was asked, and a subscriber drops the tokens of an earlier try.
+  uint64 attempt = 5;
+}
+
+// Generated is the scheduler's answer. A node with no slot free says so:
+// busy is part of the answer, and an error means the node did not answer.
+message Generated {
+  // Everything the model said.
+  string text = 1;
+  // The tool it wants called before it goes on, if any.
+  tools.v1.Run tool = 2;
+  // No slot was free: nothing was generated.
+  bool busy = 3;
+}

@@ -25,7 +25,7 @@ export const conceptsSupervision: Doc = {
 						<A to="concepts/actors/#supervision">The actor model</A> has the reasoning. It is a rule
 						about the unexpected, not a licence to skip validation: a bad message from another
 						service is expected input, answered with a refusal, as{' '}
-						<A to="shop/services/">the tutorial</A> shows.
+						<A to="tutorial/#contracts">the tutorial</A>'s contracts do.
 					</p>
 				</>
 			)
@@ -259,7 +259,7 @@ actor.ChildFunc("", oneOff).WithRestart(actor.Temporary) // anonymous: no name`}
 						<li>
 							<strong>One supervisor per service</strong>, under a root with <C>OneForOne</C>. A
 							service that gives up is restarted alone, and the others keep serving. That is the shape{' '}
-							<A to="shop/platform/">the tutorial's platform</A> builds from the services' modules.
+							<A to="tutorial/platform/">the tutorial's platform</A> builds from the services' modules.
 						</li>
 						<li>
 							<strong>Group by fate.</strong> Children that cannot work with a fresh replacement of

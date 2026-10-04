@@ -15,7 +15,7 @@ code that runs.
 | [`pubsub`](pubsub) | A topic owned by the process that publishes to it, subscribed to from another node: the events it kept, the ones that follow, and its end. |
 | [`testing`](testing) | A two-node scenario as a plain `go test`, with `grpcproctest`: a partition, a crash, a restart. |
 | [`singleton`](singleton) | `grpcproc/leader` singletons in a three-node cluster, across the leader crashing: `grpcproc/cron` running a job once a minute on whichever node leads, and a dispenser of numbers that never repeat, which every node calls through `leader.Call`. `go test`s in `testing/synctest` bubbles, whose minutes pass at once. |
-| [`guide`](guide) | The tutorial's application: a shop whose services are actors wired with `golang.yandex/di`, run as one program or as three nodes. |
+| [`guide`](guide) | The tutorial's application: an AI agent runtime wired with `golang.yandex/di`, with a process per conversation, the model on GPU nodes and tools on a sandbox node, run as one program or as a program per node. |
 
 After editing a program, refresh its pinned output and the README's embeds:
 

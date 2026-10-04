@@ -280,7 +280,7 @@ addr, err := node.Spawn(actor.Run(&Pricer{table: table}))`}</Code>
 					<p>
 						An actor that calls other actors takes their addresses as dependencies, and a test puts
 						fakes behind them: plain process functions registered under the same names.{' '}
-						<A to="guides/testing/">Testing</A> shows that with the tutorial's orders desk,{' '}
+						<A to="guides/testing/">Testing</A> shows that with the tutorial's conversations,{' '}
 						<C>grpcproctest</C> for anything that needs more than one node, and{' '}
 						<A to="guides/testing/#deterministic">deterministic tests</A> for timers and restarts.
 					</p>

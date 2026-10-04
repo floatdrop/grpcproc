@@ -97,7 +97,7 @@ export const conceptsActors: Doc = {
 						What differs is what can go wrong: a remote call fails when the link breaks, and a
 						monitor on a remote process fires when the node cannot be reached, with a reason that
 						says so. The{' '}
-						<A to="shop/">tutorial</A> runs one application as one program and as three, from the
+						<A to="tutorial/">tutorial</A> runs one application as one program and as four, from the
 						same code: only the configuration changes.
 					</p>
 				</>

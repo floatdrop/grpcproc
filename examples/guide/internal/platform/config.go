@@ -12,7 +12,7 @@ import (
 // through Where, so moving a service to another node changes which entry
 // point composes it and what the programs are told, and no service.
 type Config struct {
-	// Node is the node's name. NODE, "shop" by default.
+	// Node is the node's name. NODE, "local" by default.
 	Node string
 	// Listen is where its gRPC server listens. LISTEN.
 	Listen string
@@ -22,14 +22,26 @@ type Config struct {
 	// that talk to it: a reply travels back on the replier's own link.
 	// PEERS, as node=addr,node=addr.
 	Peers map[string]string
-	// Placement names the node of each service that does not run here.
-	// PLACEMENT, as service=node,service=node.
+	// Placement names the node of each service that does not run here, or
+	// its nodes, for one that runs on several. PLACEMENT, as
+	// service=node,service=node+node.
 	Placement map[string]string
+	// Export names the processes this node offers its peers: they may send
+	// to, call and monitor those, and nothing else. With none, they may ask
+	// anything. EXPORT, as name,name.
+	Export []string
+	// Untrusted names the peers that may ask nothing of this node: they
+	// answer what it asks them. UNTRUSTED, as node,node.
+	Untrusted []string
 }
 
-// Where is the node that runs service: the one Placement names, or this one.
-func (c Config) Where(service string) string {
-	return cmp.Or(c.Placement[service], c.Node)
+// Where is the node that runs service: the one Placement names, the first
+// if it names several, or this one.
+func (c Config) Where(service string) string { return c.All(service)[0] }
+
+// All is the nodes that run service: those Placement names, or this one.
+func (c Config) All(service string) []string {
+	return strings.Split(cmp.Or(c.Placement[service], c.Node), "+")
 }
 
 // Load reads the configuration from the environment. With none set, it is
@@ -44,20 +56,35 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg := Config{
-		Node:      env("NODE", "shop"),
+		Node:      env("NODE", "local"),
 		Listen:    env("LISTEN", "127.0.0.1:9100"),
 		HTTP:      env("HTTP", "127.0.0.1:8080"),
 		Peers:     peers,
 		Placement: placement,
+		Export:    list("EXPORT"),
+		Untrusted: list("UNTRUSTED"),
 	}
 	// A service placed on a node nobody can dial fails every call to it;
 	// better to fail here.
-	for service, node := range cfg.Placement {
-		if node != cfg.Node && cfg.Peers[node] == "" {
-			return Config{}, fmt.Errorf("platform: PLACEMENT puts %s on %s, which PEERS does not name", service, node)
+	for service := range cfg.Placement {
+		for _, node := range cfg.All(service) {
+			if node != cfg.Node && cfg.Peers[node] == "" {
+				return Config{}, fmt.Errorf("platform: PLACEMENT puts %s on %s, which PEERS does not name", service, node)
+			}
 		}
 	}
 	return cfg, nil
+}
+
+// list parses name,name.
+func list(key string) []string {
+	var out []string
+	for name := range strings.SplitSeq(os.Getenv(key), ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 func env(key, fallback string) string { return cmp.Or(os.Getenv(key), fallback) }

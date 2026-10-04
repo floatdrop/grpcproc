@@ -1,0 +1,15 @@
+> hello there
+You said: hello there
+  [turn 1 done]
+> what is 6 * 7?
+Let me calculate that.
+  [tool] calc 6 * 7
+  [ran] 42
+The answer is 42.
+  [turn 2 done]
+> and 7 / 0?
+Let me calculate that.
+  [tool] calc 7 / 0
+  [ran] failed: panic: runtime error: integer divide by zero
+The tool failed: panic: runtime error: integer divide by zero.
+  [turn 3 done]

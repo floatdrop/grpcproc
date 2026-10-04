@@ -5,12 +5,12 @@ platform.Module
   needs      platform.Config ← registered directly
              *slog.Logger ← registered directly
              all of actor.ChildSpec
-inventory.Module
-  provides   inventory.Store, actor.ChildSpec
-payments.Module
-  provides   payments.Gateway, actor.ChildSpec
-orders.Module
-  provides   orders.Prices, actor.ChildSpec
+models.Module
+  provides   models.Model, models.Pace, models.Slots, actor.ChildSpec
+tools.Module
+  provides   tools.Tools, actor.ChildSpec
+conversations.Module
+  provides   conversations.History, conversations.Limits, actor.ChildSpec
   needs      platform.Config ← registered directly
 web.Module
   provides   *web.front, *http.Server

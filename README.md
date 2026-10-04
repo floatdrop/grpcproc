@@ -136,9 +136,10 @@ your `*grpc.Server` next to your other services, start and stop.
   in [`grpcproc/etcd`](etcd/README.md), and `grpcproctest`, which runs a
   cluster inside one `go test`, partitions and crashes included.
   [Testing](https://floatdrop.github.io/grpcproc/guides/testing/)
-- **A tutorial**: a shop whose services are actors, run as one program or as
-  three nodes from the same code.
-  [The shop](https://floatdrop.github.io/grpcproc/shop/)
+- **A tutorial**: an AI agent runtime, with a process per conversation, the
+  model on GPU nodes, tools on a sandbox node and tokens streamed to the
+  browser, run as one program or as a program per node from the same code.
+  [An agent runtime](https://floatdrop.github.io/grpcproc/tutorial/)
 
 [docs/DESIGN.md](docs/DESIGN.md) has the wire protocol and the reasons behind
 the choices; [benchmarks](benchmarks/README.md) measures it against GoAkt,

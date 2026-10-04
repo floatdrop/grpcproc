@@ -156,9 +156,9 @@ export const landing: Doc = {
 								text: 'Snapshots and events, the Inspector, the command line, the Web UI, MCP, OpenTelemetry.'
 							},
 							{
-								to: 'shop/',
+								to: 'tutorial/',
 								title: 'Tutorial',
-								text: 'A shop of three services, run as one program or as three nodes from the same code.'
+								text: 'An AI agent runtime: a process per conversation, models on GPU nodes, tools in a sandbox, tokens streamed to the browser.'
 							},
 							{
 								to: PKG_DOC,
