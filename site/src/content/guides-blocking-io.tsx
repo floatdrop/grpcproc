@@ -11,12 +11,11 @@ export const guidesBlockingIO: Doc = {
 	path: 'guides/blocking-io/',
 	title: 'Blocking I/O',
 	description:
-		'Sockets, pipes and other blocking reads in processes: when a process may block, how one that takes messages hands its reads to a goroutine that only sends, and what other goroutines may call.',
+		'How a process reads from a socket, a pipe or another blocking source and still takes messages.',
 	lead: (
 		<p>
-			A process is a goroutine you write, and <C>Receive</C> is a call it makes, so nothing stops it
-			from blocking on a socket. What it gives up while blocked is its mailbox: when that is fine,
-			and what to do when it is not. The code is from{' '}
+			A process may block on a socket like any goroutine, but while it is blocked it does not read
+			its mailbox. The code is from{' '}
 			<Ext href={file('examples/blockingio/main.go')}>examples/blockingio</Ext>, a line server whose
 			listener and connections are processes.
 		</p>
@@ -24,17 +23,17 @@ export const guidesBlockingIO: Doc = {
 	sections: [
 		{
 			id: 'block',
-			title: 'A process that takes no messages may block',
+			title: 'Blocking in a process that takes no messages',
 			body: (
 				<>
 					<p>
 						The listener accepts connections, and nothing is sent to it, so it blocks in{' '}
 						<C>Accept</C> as any Go code would. It does not call <C>Receive</C> meanwhile, so a
 						request to inspect it waits, and when its deadline ends it says how long the listener has
-						been busy: for a listener, the whole truth.
+						been busy.
 					</p>
 					<p>
-						What it must still do is end when asked. An <C>Exit</C> cancels the process's context,
+						It must still end when asked. An <C>Exit</C> cancels the process's context,
 						but nothing can interrupt a goroutine, so <C>context.AfterFunc</C> closes the listener
 						when the context ends. <C>Accept</C> returns, and the process returns the context's
 						cause, the <C>*ExitError</C> with the reason it was asked to exit with.
@@ -42,15 +41,14 @@ export const guidesBlockingIO: Doc = {
 					<Code caption="examples/blockingio/main.go">{region(blockingio, /^\/\/ listener accepts connections/, /^}/)}</Code>
 					<p>
 						Each connection is a process of its own, spawned with <C>LinkParent</C>: linked to the
-						listener, one way, so that it ends when the listener does. That is all the ownership a
-						connection needs.
+						listener, one way, so that it ends when the listener does.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'reader',
-			title: 'A process that also takes messages',
+			title: 'Reading in a goroutine that only sends',
 			body: (
 				<>
 					<p>
@@ -58,21 +56,19 @@ export const guidesBlockingIO: Doc = {
 						what other processes ask it to. Blocked in <C>Read</C>, it could not do the second. So
 						the process keeps its mailbox and its state, and the blocking reads go to a goroutine of
 						its own, which touches none of that state: it only sends each line it reads to the
-						process's mailbox, where the line waits in order with the writes. The process's loop is
-						the one place that handles either.
+						process's mailbox, where the line waits in order with the writes.
 					</p>
 					<Code caption="examples/blockingio/main.go">{region(blockingio, /^\/\/ serve runs one connection/, /^}/)}</Code>
 					<p>
-						The mailbox is still the only thing the process waits on, and <C>Receive</C> returns a
-						line, a write, or the end of the connection. Because the process waits there and not in{' '}
-						<C>Read</C>, it stays what any process is: it answers inspection, makes calls, holds
-						monitors.
+						<C>Receive</C> returns a line, a write, or the end of the connection. Because the
+						process waits there and not in <C>Read</C>, it still answers inspection, makes calls
+						and holds monitors.
 					</p>
 					<p>
 						A mailbox holds one message type, and it is a protobuf message, so a line from a socket
 						becomes one even though it never leaves the node. The example's <C>Event</C> is a oneof
 						of the three things a connection takes. Local delivery passes the pointer and encodes
-						nothing, so this costs a type, not time.
+						nothing.
 					</p>
 					<Code lang="proto" caption="examples/connpb/conn.proto">
 						{connProto}
@@ -82,7 +78,7 @@ export const guidesBlockingIO: Doc = {
 		},
 		{
 			id: 'goroutines',
-			title: 'What another goroutine may call',
+			title: 'What other goroutines may call',
 			body: (
 				<>
 					<p>
@@ -104,7 +100,7 @@ export const guidesBlockingIO: Doc = {
 		},
 		{
 			id: 'ending',
-			title: 'How it ends',
+			title: 'Ending',
 			body: (
 				<>
 					<p>
@@ -128,7 +124,7 @@ export const guidesBlockingIO: Doc = {
 		},
 		{
 			id: 'edge',
-			title: 'The edge needs no process',
+			title: 'HTTP and gRPC handlers',
 			body: (
 				<>
 					<p>

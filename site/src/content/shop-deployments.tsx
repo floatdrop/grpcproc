@@ -28,15 +28,9 @@ curl -d '{"sku":"pear","qty":3,"card":"4242"}' localhost:8080/orders`;
 
 export const shopDeployments: Doc = {
 	path: 'shop/deployments/',
-	title: 'One program, or three',
+	title: 'Deployments',
 	description:
-		'The same modules composed two ways: every service on one node for development, or split between a front, a warehouse and a billing node, each main one line.',
-	lead: (
-		<p>
-			<A to="shop/platform/">The previous chapter</A> built the platform, whose <C>Run</C> is every
-			entry point's <C>main</C>. This one writes the entry points: the one program, and the three.
-		</p>
-	),
+		'The same modules composed two ways: every service on one node, or split between a front, a warehouse and a billing node.',
 	sections: [
 		{
 			id: 'local',
@@ -61,7 +55,7 @@ export const shopDeployments: Doc = {
 					</Code>
 					<p>
 						A call from the desk to the stock never leaves the program. A local send appends to the
-						process's mailbox, and the message is not even encoded.
+						process's mailbox, and the message is not encoded.
 					</p>
 					<Code lang="sh" caption="shell">
 						{localShell}
@@ -107,7 +101,7 @@ export const shopDeployments: Doc = {
 						</Ext>{' '}
 						publishes each node under an etcd lease and resolves the others through it; the platform
 						takes its resolver, registrar and membership from there, and the services do not
-						change. <A to="guides/etcd/">Running with etcd</A> shows how.
+						change. The <A to="guides/etcd/">etcd</A> guide shows how.
 					</p>
 					<Code lang="sh" caption="shell">
 						{clusterShell}

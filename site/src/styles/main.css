@@ -175,17 +175,19 @@ body {
 
 /* ---- hero ---------------------------------------------------------------- */
 
-/* The words alone in one column, and, from the page's two-column width in
-   the block below, the scene beside them. The topbar's small mark is there
-   at every width. */
+/* The landing page's opening: the pitch, the install line and where to go,
+   in one column above the page's own. */
 .gp-hero {
 	/* Gravity's spacing scale stops at 40px; the page rhythm above a section is
 	   coarser than any control's, so these few are spelled out. */
-	padding-block: 4.5rem 3.5rem;
-	display: grid;
-	grid-template-columns: minmax(0, 1fr);
+	padding-block: 3.5rem 2.5rem;
+}
+
+.gp-hero__actions {
+	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
-	gap: var(--g-spacing-6);
+	gap: var(--g-spacing-3);
 }
 
 .gp-hero__copy {
@@ -195,15 +197,11 @@ body {
 	gap: var(--g-spacing-5);
 }
 
-.gp-hero__art {
-	display: none;
-}
-
 /* display-3 is 40px, which is the right ceiling and far too much at 390px, so
    the variant sets the family and weight and the size scales with the page. */
 .gp-hero__title {
 	margin: 0;
-	max-width: 22ch;
+	max-width: 26ch;
 	font-size: clamp(1.875rem, 6vw, 2.5rem);
 	line-height: 1.12;
 	letter-spacing: -0.02em;
@@ -361,28 +359,11 @@ body {
 
 /* ---- columns ------------------------------------------------------------- */
 
-/* Two breakpoints. From the first, the scene sits beside the hero's words
-   and the navigation beside the prose, sticky; from the second, the outline
-   joins on the other side. These blocks come after every base rule they
-   override, since the cascade breaks the tie between equal selectors by
-   order. */
+/* Two breakpoints. From the first, the navigation sits beside the prose,
+   sticky; from the second, the outline joins on the other side. These blocks
+   come after every base rule they override, since the cascade breaks the tie
+   between equal selectors by order. */
 @media (min-width: 64rem) {
-	/* The words take up to their measure and the scene follows them, so it
-	   stays beside the text as the page widens instead of drifting to the
-	   far edge; the room left over is on the right. */
-	.gp-hero {
-		grid-template-columns: minmax(0, max-content) auto;
-		justify-content: start;
-		gap: var(--g-spacing-10);
-	}
-
-	.gp-hero__art {
-		display: block;
-		width: 22rem;
-		height: auto;
-		aspect-ratio: 560 / 320;
-	}
-
 	.gp-layout {
 		grid-template-columns: 15rem minmax(0, 1fr);
 		gap: var(--g-spacing-9);
@@ -901,4 +882,66 @@ body {
 .gp-d-lifeline {
 	stroke: var(--g-color-line-generic);
 	stroke-dasharray: 3 4;
+}
+
+/* ---- drawings that move -------------------------------------------------- */
+
+/* The overview's drawings animate parts of themselves with keyframes each
+   drawing writes (components/diagrams-overview.tsx). What is set here is
+   what a part looks like, and how it stands when nothing moves: a message
+   in transit is not drawn, a note that belongs to one moment is not shown. */
+.gp-a-msg,
+.gp-a-ring,
+.gp-a-off {
+	opacity: 0;
+}
+
+.gp-a-msg circle {
+	stroke: var(--g-color-base-background);
+	stroke-width: 1.5;
+}
+
+.gp-a-msg_request circle {
+	fill: var(--g-color-line-info);
+}
+
+.gp-a-msg_reply circle {
+	fill: var(--g-color-line-positive);
+}
+
+.gp-a-msg_down circle {
+	fill: var(--g-color-line-danger);
+}
+
+.gp-a-msg_spawn circle {
+	fill: var(--g-color-line-misc);
+}
+
+.gp-a-ring rect {
+	fill: none;
+	stroke: var(--g-color-line-info);
+	stroke-width: 2;
+}
+
+.gp-a-danger .gp-d-note {
+	fill: var(--g-color-text-danger);
+}
+
+.gp-a-cross {
+	fill: none;
+	stroke: var(--g-color-line-danger);
+	stroke-width: 2;
+	stroke-linecap: round;
+}
+
+/* A drawing holds still under the pointer, or while it has the focus. */
+.gp-diagram:hover .gp-a,
+.gp-diagram:focus .gp-a {
+	animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.gp-a {
+		animation: none !important;
+	}
 }

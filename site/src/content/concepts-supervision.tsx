@@ -9,18 +9,9 @@ import type { Doc } from './types.ts';
 
 export const conceptsSupervision: Doc = {
 	path: 'concepts/supervision/',
-	title: 'Supervision trees',
+	title: 'Supervision',
 	description:
-		'Why a process that meets a state it cannot handle should stop, and how supervisors start it again clean, restart what shares its fate, and pass a failure they cannot contain upward.',
-	lead: (
-		<>
-			<p>
-				Everything on this page is built from{' '}
-				<A to="concepts/monitors-and-links/">monitors and links</A>: a supervisor is a process that watches other processes and follows a policy when one of them
-				exits. What is new is the policy, and the way of thinking about failure that goes with it.
-			</p>
-		</>
-	),
+		'How a supervisor restarts the processes under it, which ones and when, and what happens when it gives up.',
 	sections: [
 		{
 			id: 'let-it-crash',
@@ -28,50 +19,36 @@ export const conceptsSupervision: Doc = {
 			body: (
 				<>
 					<p>
-						Most code handles errors where they happen. A handler that reads a corrupt record, gets
-						an impossible reply or finds its own state inconsistent has to decide what to do right
-						there, with information that is usually not enough. The common answers are to log and
-						carry on with state that is now wrong, or to return an error the caller can do nothing
-						with either. Every handler grows a layer of code for cases its author could only guess
-						at, and the guesses are where the bugs live.
-					</p>
-					<p>
-						The other answer is to stop. A process that meets a state it cannot handle returns an
-						error, and that is the whole of its error handling: no recovery code, no partial state to
-						reason about. Something above it, which knows nothing about the error but knows how to
-						start the process, starts a new one from a known good state. The bug is still there and
-						still logged, but its blast radius is one process and one moment, not a process that runs
-						on for hours with a corrupted map.
-					</p>
-					<p>
-						This works because a process's failure is a message, a <C>Down</C> with a reason, and
-						because a process starts cheaply. It is not a licence to skip validation: a bad message
-						from another service is expected input, answered with a refusal, and{' '}
-						<A to="shop/services/">the tutorial</A> shows the line between the two. It is a rule
-						about the unexpected. The process that hit it is the wrong place to handle it.
+						A process that meets a state it cannot handle returns an error, and a supervisor above
+						it starts a new one from a known good state: the bug is logged, and it costs one process
+						its state rather than leaving one running with a corrupted map.{' '}
+						<A to="concepts/actors/#supervision">The actor model</A> has the reasoning. It is a rule
+						about the unexpected, not a licence to skip validation: a bad message from another
+						service is expected input, answered with a refusal, as{' '}
+						<A to="shop/services/">the tutorial</A> shows.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'supervisor',
-			title: 'What a supervisor is',
+			title: 'Supervisors',
 			body: (
 				<>
 					<p>
-						A supervisor is a process whose job is other processes. It has a list of children, each
-						described by how to start it and when to restart it. It starts them in order, monitoring
-						each from before it runs, with <C>SpawnMonitor</C>, so no exit escapes it and none is
-						misreported as <C>noproc</C>. Each child is also linked to it, with <C>LinkParent</C>, so a
-						supervisor that is gone takes its children with it whatever else happens. Then it waits
-						for <C>Down</C> messages.
+						A supervisor is a process built on{' '}
+						<A to="concepts/monitors-and-links/">monitors and links</A>. It has a list of children,
+						each described by how to start it and when to restart it. It starts them in order,
+						monitoring each from before it runs, with <C>SpawnMonitor</C>, so no exit is missed or
+						misreported as <C>noproc</C>. Each child is also linked to it, with <C>LinkParent</C>, so
+						a supervisor that is gone takes its children with it. Then it waits for <C>Down</C>{' '}
+						messages.
 					</p>
 					<p>
 						When one arrives, the supervisor reads the reason and the child's restart type, and
 						either starts the child again, and perhaps its siblings, or counts one failure too many
-						and exits itself. It does nothing else: a supervisor holds no application state and
-						answers no application calls, which is what makes it something to trust when everything
-						under it is failing.
+						and exits itself. A supervisor holds no application state and answers no application
+						calls.
 					</p>
 					<Code>{`sup, err := actor.Supervise(node, actor.Spec{
 	Strategy: actor.OneForOne,
@@ -81,25 +58,25 @@ export const conceptsSupervision: Doc = {
 	},
 }, grpcproc.WithName("shop"))`}</Code>
 					<p>
-						<C>actor.Child</C> takes a name and a function that builds the actor. The function, not
-						the actor: the supervisor calls it at every start, so a restart begins from a fresh struct,
-						not from the one that crashed. <C>actor.ChildFunc</C> does the same for a plain process
+						<C>actor.Child</C> takes a name and a function that builds the actor. The supervisor
+						calls the function at every start, so a restart begins from a fresh struct, not from the
+						one that crashed. <C>actor.ChildFunc</C> does the same for a plain process
 						function, and <C>actor.ChildSupervisor</C> makes a child that is itself a supervisor.{' '}
-						<A to="guides/supervisors/">Building a supervision tree</A> has the API in full.
+						<A to="guides/supervisors/">Supervisors</A> has the API in full.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'state',
-			title: 'Where state lives',
+			title: 'State across restarts',
 			body: (
 				<>
 					<p>
-						A restarted actor is a new struct. Whatever the old one held in its fields is gone, and
-						that is the point: it was the state that crashed. So what must outlive a crash lives
-						outside the actor, in something the actor loads when it starts and writes to as it goes.
-						In the example that is a <C>Ledger</C>, a stand-in for a database:
+						A restarted actor is a new struct, and whatever the old one held in its fields is gone.
+						What must outlive a crash lives outside the actor, in something the actor loads when it
+						starts and writes to as it goes. In the example that is a <C>Ledger</C>, a stand-in for
+						a database:
 					</p>
 					<Code caption="examples/supervisor/main.go">
 						{region(supervisor, /\/\/ Ledger stands for a database/, /^func \(i \*Inventory\) Init/).replace(/\n[^\n]*$/, '\n') +
@@ -108,19 +85,15 @@ export const conceptsSupervision: Doc = {
 					<p>
 						The actor's <C>Init</C> runs before its first message and loads the levels back; the
 						supervisor built the actor around the same <C>Ledger</C> it built the last one around.
-						A restart therefore costs one load, and the process comes back knowing what the last
-						one had saved. What it did not save, it did not know for certain anyway.
-					</p>
-					<p>
-						This also decides what an actor should hold. A cache, a cursor, a connection: fine to
-						lose, and cheap to rebuild in <C>Init</C>. The one copy of an order: not in the actor.
+						So an actor may hold what is cheap to rebuild in <C>Init</C>, a cache, a cursor, a
+						connection, and never the one copy of an order.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'strategies',
-			title: 'Which children restart',
+			title: 'Strategies',
 			body: (
 				<>
 					<p>
@@ -141,14 +114,14 @@ export const conceptsSupervision: Doc = {
 					/>
 					<p>
 						Only children that were running come back with their group. A transient child that had
-						finished stays finished, since restarting a sibling is not a reason to run it again.
+						finished stays finished.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'restart-types',
-			title: 'When a child restarts',
+			title: 'Restart types',
 			body: (
 				<>
 					<p>
@@ -168,7 +141,7 @@ export const conceptsSupervision: Doc = {
 					<Code>{`actor.Child("importer", newImporter).WithRestart(actor.Transient)
 actor.ChildFunc("", oneOff).WithRestart(actor.Temporary) // anonymous: no name`}</Code>
 					<p>
-						The default is what most services want. A child that is stopped by its supervisor, with{' '}
+						A child that is stopped by its supervisor, with{' '}
 						<C>StopChild</C> or when the supervisor ends, is not restarted whatever its type: the
 						supervisor asked for that exit.
 					</p>
@@ -177,19 +150,18 @@ actor.ChildFunc("", oneOff).WithRestart(actor.Temporary) // anonymous: no name`}
 		},
 		{
 			id: 'escalation',
-			title: 'Giving up, and escalation',
+			title: 'Restart intensity and escalation',
 			body: (
 				<>
 					<p>
-						A child that fails, restarts and fails again is not helped by a third restart. Its bug
-						is deterministic, or the thing it depends on is down, and neither is fixed by a fresh
-						struct. So a supervisor keeps count. More than <C>MaxRestarts</C> restarts within{' '}
-						<C>Within</C>, 3 in 5 seconds by default, and it stops trying: it stops its other
-						children and exits with reason <C>max restarts</C>.
+						A child that keeps failing has a deterministic bug, or depends on something that is
+						down, and a fresh struct fixes neither. So a supervisor keeps count. More than{' '}
+						<C>MaxRestarts</C> restarts within <C>Within</C>, 3 in 5 seconds by default, and it
+						stops trying: it stops its other children and exits with reason <C>max restarts</C>.
 					</p>
 					<p>
-						That reason is abnormal on purpose. A supervisor is usually a child of another
-						supervisor, and to that one, <C>max restarts</C> is a <C>Down</C> like any other: it
+						That reason is abnormal. A supervisor is usually a child of another supervisor, and to
+						that one, <C>max restarts</C> is a <C>Down</C> like any other: it
 						restarts the child supervisor, which starts its whole subtree again from scratch. If
 						that fails too, the failure moves up one more level. At the top it reaches the root,
 						and a root that gives up means the program has given up; the tutorial's platform stops
@@ -199,17 +171,15 @@ actor.ChildFunc("", oneOff).WithRestart(actor.Temporary) // anonymous: no name`}
 						<Escalation />
 					</Drawing>
 					<p>
-						Escalation is what makes the tree a tree rather than a list. Each level restarts what it
-						can and passes on what it cannot, and the width of a restart grows with the depth of the
-						problem: one actor, then one service, then the program. The intensity limit at each
-						level sets the pace.
+						Each level restarts what it can and passes on what it cannot, so a restart widens as
+						the failure persists: one actor, then one service, then the program.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'stopping',
-			title: 'Stopping, and stubborn children',
+			title: 'Stopping children',
 			body: (
 				<>
 					<p>
@@ -222,25 +192,22 @@ actor.ChildFunc("", oneOff).WithRestart(actor.Temporary) // anonymous: no name`}
 					</p>
 					<p>
 						A goroutine cannot be killed, so a child that ignores its exit request and outlives its{' '}
-						<C>Shutdown</C> is logged and left behind. That would be the end of it, except that a
-						named child keeps its name until it exits, and the supervisor is about to start
-						something under that name. Nothing is ever started under a name an old process still
-						holds: the supervisor monitors the stubborn child and starts its replacement, and the
-						children after it, only once it is gone, handling its mailbox meanwhile. Its own end
-						waits the same way. A child that never exits therefore holds its restart for good, which
-						is the honest outcome: ending the tree instead would free nothing.
+						<C>Shutdown</C> is logged and left behind. A named child keeps its name until it exits,
+						and nothing is started under a name an old process still holds: the supervisor monitors
+						the stubborn child and starts its replacement, and the children after it, only once it
+						is gone, handling its mailbox meanwhile. Its own end waits the same way. A child that
+						never exits therefore holds its restart for good.
 					</p>
 					<p>
 						So a process function must return when <C>Receive</C> returns an error, and a handler
-						must not block forever. That is the one obligation supervision places on the code it
-						supervises.
+						must not block forever.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'names',
-			title: 'Names survive restarts',
+			title: 'Names across restarts',
 			body: (
 				<>
 					<p>
@@ -251,8 +218,7 @@ actor.ChildFunc("", oneOff).WithRestart(actor.Temporary) // anonymous: no name`}
 						<C>ErrNoProc</C> and can be tried again.
 					</p>
 					<p>
-						The example puts this together. One child, restarted alone when it exits, up to 3 times a
-						minute:
+						The example has one child, restarted alone when it exits, up to 3 times a minute:
 					</p>
 					<Code caption="examples/supervisor/main.go">{region(supervisor, /\/\/ tree is the supervision tree/, /^}/)}</Code>
 					<p>
@@ -266,13 +232,12 @@ actor.ChildFunc("", oneOff).WithRestart(actor.Temporary) // anonymous: no name`}
 		},
 		{
 			id: 'significant',
-			title: 'Subtrees that finish',
+			title: 'Significant children',
 			body: (
 				<>
 					<p>
-						Not every subtree runs for the life of the program. A job made of several processes is
-						done when its processes are done, and the supervisor over them should end then, not stand
-						over an empty list. <C>WithSignificant(true)</C> marks the children whose end counts, and{' '}
+						A job made of several processes is done when its processes are done, and the supervisor
+						over them should end then. <C>WithSignificant(true)</C> marks the children whose end counts, and{' '}
 						<C>Spec.AutoShutdown</C> says how many: <C>AnySignificant</C> ends the supervisor when the
 						first of them ends by itself, <C>AllSignificant</C> when the last does. A child the
 						supervisor stopped does not count, and a permanent child cannot be significant, since it
@@ -310,7 +275,7 @@ actor.ChildFunc("", oneOff).WithRestart(actor.Temporary) // anonymous: no name`}
 						</li>
 						<li>
 							<strong>Keep state out of actors and logic out of supervisors.</strong> The first makes
-							restarts safe; the second makes supervisors something that does not itself fail.
+							restarts safe; the second keeps supervisors from failing themselves.
 						</li>
 						<li>
 							<strong>Set the intensity for the failure you expect.</strong> A dependency that comes

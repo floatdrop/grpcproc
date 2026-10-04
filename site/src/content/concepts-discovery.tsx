@@ -8,19 +8,17 @@ export const conceptsDiscovery: Doc = {
 	path: 'concepts/discovery/',
 	title: 'Discovery and membership',
 	description:
-		'How a node finds its peers, how it announces itself, and how the cluster decides that a node is gone when its links have not noticed.',
+		'The three interfaces through which a node finds its peers, announces itself, and learns who is alive.',
 	lead: (
 		<p>
-			A node addresses a peer by name. Three small interfaces turn that name into an address,
-			publish this node for others to find, and tell the node who is alive. The core ships the
-			smallest implementation of the first; <A to="guides/etcd/">grpcproc/etcd</A> implements all
-			three on etcd leases.
+			The core ships a static <C>Resolver</C>; <A to="guides/etcd/">grpcproc/etcd</A> implements
+			all three interfaces on etcd leases.
 		</p>
 	),
 	sections: [
 		{
 			id: 'interfaces',
-			title: 'Three interfaces',
+			title: 'The interfaces',
 			body: (
 				<>
 					<Code>{`type Resolver interface {
@@ -57,15 +55,15 @@ type MemberEvent struct {
 					<p>
 						<C>Resolver</C> is required; the other two are optional. A node with only a resolver
 						works: it dials peers as it needs them and notices a lost one through its links. The
-						other two are for clusters whose nodes come and go, and for the failure the links
-						cannot see.
+						other two are for clusters whose nodes come and go, and for failures the links cannot
+						see.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'resolver',
-			title: 'Resolving a name',
+			title: 'Resolver',
 			body: (
 				<>
 					<p>
@@ -88,21 +86,21 @@ type MemberEvent struct {
 		},
 		{
 			id: 'registrar',
-			title: 'Announcing a node',
+			title: 'Registrar and metadata',
 			body: (
 				<>
 					<p>
 						<C>Config.Advertise</C> is the address peers dial to reach this node's gRPC server. The
 						core does not use it to listen, since the server is the application's; it reports it
-						in <C>NodeInfo</C> and in the <C>Hello</C> that opens a stream, and hands it to the{' '}
-						<C>Registrar</C> as the member's <C>Addr</C>. Peers then resolve this node to it.
+						in <C>NodeInfo</C> and hands it to the <C>Registrar</C> as the member's <C>Addr</C>.
+						Peers then resolve this node to it.
 					</p>
 					<p>
 						<C>Start</C> registers after it has begun watching membership, so that no event is
 						missed between the two, and <C>Stop</C> withdraws last, after the node's processes have
-						exited and their <C>Down</C> notices have reached its peers. The order matters: peers
-						that saw the node leave the cluster before they saw its processes exit would report{' '}
-						<C>noconnection</C> where the truth is <C>shutdown</C>. An error from <C>Register</C>{' '}
+						exited and their <C>Down</C> notices have reached its peers: peers that saw the node
+						leave the cluster first would report <C>noconnection</C> instead of{' '}
+						<C>shutdown</C>. An error from <C>Register</C>{' '}
 						must leave the node unpublished, because <C>Start</C> may call it again.
 					</p>
 					<p>
@@ -134,15 +132,14 @@ for _, m := range node.Members() {
 		},
 		{
 			id: 'membership',
-			title: 'Why membership, when links notice a peer down',
+			title: 'Membership',
 			body: (
 				<>
 					<p>
-						A node notices a lost link by itself, as fast as gRPC keepalive allows, and that is the
-						faster signal. It is also a local one with a blind spot: a peer that dies without
-						closing its connections is noticed only when keepalive gives up, or never if keepalive
-						is not configured. And a link breaking says nothing about whether the peer is gone or
-						only unreachable from here.
+						A node notices a lost link by itself, as fast as gRPC keepalive allows. That signal is
+						local: a peer that dies without closing its connections is noticed only when keepalive
+						gives up, or never if keepalive is not configured, and a broken link does not say
+						whether the peer is gone or only unreachable from here.
 					</p>
 					<p>
 						<C>Membership</C> is the cluster-wide verdict on top of that. With etcd, it is the
@@ -170,7 +167,7 @@ for _, m := range node.Members() {
 						</li>
 						<li>
 							a member up, unless it is an older incarnation than the node has seen, ends any dial
-							backoff for that peer: it is worth dialing again now.
+							backoff for that peer.
 						</li>
 					</ul>
 					<p>
@@ -184,7 +181,7 @@ for _, m := range node.Members() {
 		},
 		{
 			id: 'etcd',
-			title: 'On etcd',
+			title: 'etcd',
 			body: (
 				<>
 					<p>
@@ -192,9 +189,8 @@ for _, m := range node.Members() {
 						a key per node under a lease the node keeps alive, resolved by reading the key, and
 						membership by listing the keys and then watching the prefix. It is a separate module,
 						and a deployment that wants another registry implements the same three interfaces. The
-						services on the node do not change either way: the tutorial's{' '}
-						<A to="shop/platform/">platform</A> takes its resolver, registrar and membership from
-						the configuration, and the services see only the node.
+						tutorial's <A to="shop/platform/">platform</A> takes its resolver, registrar and
+						membership from the configuration, and the services see only the node.
 					</p>
 				</>
 			)

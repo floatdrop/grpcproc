@@ -6,24 +6,18 @@ import web from '../../../examples/guide/internal/web/web.go?raw';
 import { Code } from '../code.tsx';
 import { Drawing } from '../components/Figure.tsx';
 import { Flow } from '../components/diagrams.tsx';
-import { A, C } from '../components/prose.tsx';
+import { C } from '../components/prose.tsx';
 import type { Doc } from './types.ts';
 
 export const shopServices: Doc = {
 	path: 'shop/services/',
 	title: 'Services',
 	description:
-		'The three services of the shop as actors: the stock, which keeps its levels in a store; the cashier, which only answers calls; the desk, which calls both; and the HTTP front, which is not a process at all.',
-	lead: (
-		<p>
-			<A to="shop/">The previous chapter</A> laid out the shape of the application and the contracts
-			its services import. This one writes the services themselves, one module each.
-		</p>
-	),
+		'The three services of the shop as actors, the stock, the cashier and the order desk, and the HTTP front that calls them.',
 	sections: [
 		{
 			id: 'service',
-			title: 'A service is a module',
+			title: 'The stock',
 			body: (
 				<>
 					<p>
@@ -39,14 +33,12 @@ export const shopServices: Doc = {
 						the process crashes, and its supervisor starts a new one; <C>actor.Child</C> builds a
 						fresh actor at every start, so it begins from what the store says, not from whatever
 						crashed. The store is an interface the container serves: the tutorial's keeps the levels
-						in memory, and a database would be built, started and stopped the same way, with nothing
-						else changing.
+						in memory, and a database would be built, started and stopped the same way.
 					</p>
 					<p>
 						<C>Module</C> registers the store and the service's tree. The tree is not started here:
 						it joins the group of <C>actor.ChildSpec</C> the platform builds the root supervisor
-						from, so a program runs whichever services its entry point composes, and nothing keeps
-						a list of them.
+						from, so a program runs whichever services its entry point composes.
 					</p>
 					<Code caption="internal/inventory/inventory.go">{inventory}</Code>
 				</>
@@ -54,7 +46,7 @@ export const shopServices: Doc = {
 		},
 		{
 			id: 'calls',
-			title: 'A service that only answers',
+			title: 'The cashier',
 			body: (
 				<>
 					<p>
@@ -71,7 +63,7 @@ export const shopServices: Doc = {
 		},
 		{
 			id: 'orders',
-			title: 'Calling other services',
+			title: 'The order desk',
 			body: (
 				<>
 					<p>
@@ -102,7 +94,7 @@ export const shopServices: Doc = {
 		},
 		{
 			id: 'edge',
-			title: 'The edge',
+			title: 'The HTTP front',
 			body: (
 				<>
 					<p>

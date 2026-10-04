@@ -11,33 +11,26 @@ export const guidesActors: Doc = {
 	path: 'guides/actors/',
 	title: 'Actors',
 	description:
-		'The grpcproc/actor package: a struct with a method per kind of message in place of a receive loop, built by a constructor and run as a process.',
+		'Write a process as a struct with a method per kind of message, using the grpcproc/actor package.',
 	lead: (
 		<p>
-			<C>grpcproc/actor</C> is optional structure on top of processes, built on the public API only.
-			This page covers its handler loop; <A to="guides/supervisors/">Supervisors</A> covers the
-			other half. The code is from{' '}
+			<C>grpcproc/actor</C> is optional, and built on the public API only. Its other half is{' '}
+			<A to="guides/supervisors/">Supervisors</A>. The code is from{' '}
 			<Ext href={file('examples/actors/main.go')}>examples/actors</Ext>.
 		</p>
 	),
 	sections: [
 		{
 			id: 'why',
-			title: 'Why not a receive loop',
+			title: 'Why actors',
 			body: (
 				<>
 					<p>
-						A process is a function over a mailbox, and the function is a loop: receive, switch on
-						what came, reply or not. That is the right shape for a process that does one thing; for
-						a service it grows old. The switch gets a case per operation, one for <C>Down</C>,
-						another for a call that must be answered later, and the state the loop closes over is
-						reachable from nothing but the loop.
-					</p>
-					<p>
-						An actor is that loop turned inside out. It is a struct holding its dependencies and its
-						state, with a method per kind of message: one for messages, one for calls, one for the
-						exit of something it watches. The struct is built by a constructor, which is what a DI
-						container calls, and the loop is <C>actor.Run</C>, which is the same for every actor.
+						A process is a receive loop with a switch in it, which suits one that does one thing.
+						For a service, the switch grows a case per operation. An actor is a struct holding its
+						dependencies and its state, with a method per kind of message: one for messages, one
+						for calls, one for the exit of something it watches. A constructor builds the struct,
+						so a DI container can, and <C>actor.Run</C> is the loop.
 					</p>
 					<Code>{`type Orders struct{ repo *Repo }
 
@@ -50,21 +43,20 @@ func (o *Orders) HandleMessage(p *grpcproc.Process[*orderspb.Order], m grpcproc.
 addr, err := node.Spawn(actor.Run(NewOrders(repo)), grpcproc.WithName("orders"))`}</Code>
 					<p>
 						<C>Run</C> turns the handler into a process function, the one <C>Spawn</C> takes, so an
-						actor is spawned, named, monitored and addressed like any process. Nothing about it is
-						visible from outside.
+						actor is spawned, named, monitored and addressed like any process.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'handlers',
-			title: 'The handler and its methods',
+			title: 'Handler methods',
 			body: (
 				<>
 					<p>
 						One method is required, <C>HandleMessage</C>: it is the <C>Handler[M]</C> interface. The
 						rest are optional interfaces that <C>Run</C> looks for once, by type assertion, when the
-						actor starts. An actor implements the ones it needs and no others.
+						actor starts.
 					</p>
 					<Table
 						head={['Method', 'Runs for, and what its result means']}
@@ -119,10 +111,8 @@ addr, err := node.Spawn(actor.Run(NewOrders(repo)), grpcproc.WithName("orders"))
 						]}
 					/>
 					<p>
-						The method names are the interfaces' names shifted: <C>Initializer</C>,{' '}
-						<C>CallHandler</C>, <C>DownHandler</C>, <C>ExitedHandler</C> and <C>Terminator</C>, each
-						with one method. A test can assert an actor satisfies one with a variable of the
-						interface type.
+						The interfaces are <C>Initializer</C>, <C>CallHandler</C>, <C>DownHandler</C>,{' '}
+						<C>ExitedHandler</C> and <C>Terminator</C>, each with one method.
 					</p>
 					<p>
 						All of them run on the actor's goroutine, one at a time, in the order the messages
@@ -143,25 +133,23 @@ addr, err := node.Spawn(actor.Run(NewOrders(repo)), grpcproc.WithName("orders"))
 		},
 		{
 			id: 'errors',
-			title: 'An error is a reply, or a reason',
+			title: 'Errors: a reply, or an exit reason',
 			body: (
 				<>
 					<p>
-						The same Go error means two different things in two handlers, and the difference is the
-						point of the package. From <C>HandleCall</C>, an error is the answer: the caller gets it
-						as a <C>*RemoteError</C>, and the actor goes on to the next message. A refused
-						reservation, a bad quantity, an item that does not exist: none of these is the actor's
-						failure, and none should end it.
+						From <C>HandleCall</C>, an error is the answer: the caller gets it as a{' '}
+						<C>*RemoteError</C>, and the actor goes on to the next message. Use it for a refused
+						reservation or a bad quantity, which are not the actor's failure.
 					</p>
 					<p>
 						From <C>HandleMessage</C>, <C>HandleDown</C> and <C>HandleExited</C>, an error is the
-						exit reason. Nobody waits for an answer to a send, so there is nobody to give the error
-						to but the actor's supervisor, which sees it as a crash and starts a fresh actor. That
-						is the reason to keep what must survive outside the actor, in the dependency the
-						constructor takes, and to load it in <C>Init</C>.
+						exit reason: nobody waits for an answer to a send, so the error goes to the actor's
+						supervisor, which sees a crash and starts a fresh actor. So keep what must survive
+						outside the actor, in the dependency the constructor takes, and load it in{' '}
+						<C>Init</C>.
 					</p>
 					<p>
-						Two sentinel errors change the rule. <C>actor.ErrStop</C> from any handler ends the
+						Two sentinel errors are exceptions. <C>actor.ErrStop</C> from any handler ends the
 						actor with reason <C>normal</C>; from <C>HandleCall</C>, the reply is sent first, so a
 						caller that asked the actor to stop gets its answer. <C>actor.ErrNoReply</C> from{' '}
 						<C>HandleCall</C> sends nothing: the actor keeps the message and answers later with{' '}
@@ -174,12 +162,12 @@ addr, err := node.Spawn(actor.Run(NewOrders(repo)), grpcproc.WithName("orders"))
 		},
 		{
 			id: 'calls-only',
-			title: 'An actor that only answers calls',
+			title: 'Call-only actors',
 			body: (
 				<>
 					<p>
-						Many actors are pure request and reply: a pricer, a cashier, a lookup. They have no
-						use for <C>HandleMessage</C>, but the interface requires it. <C>actor.CallsOnly[M]</C>,
+						An actor that only answers calls, a pricer or a lookup, has no use for{' '}
+						<C>HandleMessage</C>, but the interface requires it. <C>actor.CallsOnly[M]</C>,
 						embedded by value, provides one: a message sent without a call is logged at Warn and
 						dropped, and the actor carries on.
 					</p>
@@ -194,30 +182,29 @@ func (pr *Pricer) HandleCall(p *grpcproc.Process[*pricespb.Quote], m grpcproc.Ms
 
 addr, err := node.Spawn(actor.Run(&Pricer{table: table}))`}</Code>
 					<p>
-						Dropping rather than crashing is deliberate. The message was delivered, so it is not a
-						dead letter; but a stray sender on another node is not a reason to end this actor, as{' '}
-						<C>gen_server</C>'s default <C>handle_info</C> decides too. The log line names the
-						sender and the type, which is what finding the stray needs.
+						The message was delivered, so it is not a dead letter, and a stray sender on another
+						node is no reason to end this actor: <C>gen_server</C>'s default{' '}
+						<C>handle_info</C> drops it too. The log line names the sender and the type.
 					</p>
 					<p>
 						<C>Run</C> panics for an actor that embeds <C>CallsOnly</C> and has no{' '}
 						<C>HandleCall</C>. The usual way to get there is to spawn <C>Pricer{'{}'}</C> where{' '}
 						<C>HandleCall</C> has a pointer receiver: the value has the embedded method and not the
 						real one. The panic happens at spawn, with a message saying so, rather than at the first
-						call, with an error nobody reads.
+						call.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'example',
-			title: 'An inventory, walked through',
+			title: 'Example: an inventory',
 			body: (
 				<>
 					<p>
 						The example's actor holds a stock and records reservations in a <C>Ledger</C>, its one
 						dependency. Its mailbox holds <C>*shoppb.Stock</C>, a oneof of a reservation and a
-						restock. <C>Init</C> runs on the actor's goroutine before the first message:
+						restock:
 					</p>
 					<Code caption="examples/actors/main.go">{region(actors, /^\/\/ Inventory is an actor/, /^}/) + '\n\n' + region(actors, /^\/\/ Init runs on the actor/, /^}/)}</Code>
 					<p>
@@ -239,10 +226,10 @@ addr, err := node.Spawn(actor.Run(&Pricer{table: table}))`}</Code>
 					<Code caption="examples/actors/main.go">{region(actors, /^\/\/ Terminate runs however/, /^}/)}</Code>
 					<p>
 						The program spawns the actor under a name and calls it through a{' '}
-						<C>shoppb.StockAddr</C>, whose methods are its protocol, as{' '}
-						<A to="concepts/addressing/#protocol">an address with its protocol</A> describes. It parks
-						a reservation until a restock, gets a refusal back as an error, then breaks the protocol
-						on purpose, with a raw <C>Stock</C> that the address's methods would not send:
+						<C>shoppb.StockAddr</C>, whose methods are its protocol (
+						<A to="concepts/addressing/#protocol">an address with its protocol</A>). It parks a
+						reservation until a restock, gets a refusal back as an error, then breaks the protocol
+						with a raw <C>Stock</C> that the address's methods would not send:
 					</p>
 					<Code caption="examples/actors/main.go">{region(actors, /addr, err := node.Spawn\(actor.Run/, /fmt.Println\("then:", err\)/)}</Code>
 					<Output>{actorsOutput}</Output>
@@ -257,7 +244,7 @@ addr, err := node.Spawn(actor.Run(&Pricer{table: table}))`}</Code>
 		},
 		{
 			id: 'parent',
-			title: 'An actor and its parent',
+			title: 'The parent link',
 			body: (
 				<>
 					<p>
@@ -268,11 +255,10 @@ addr, err := node.Spawn(actor.Run(&Pricer{table: table}))`}</Code>
 						which a linked process's exit arrives as an <C>Exited</C> message.
 					</p>
 					<p>
-						With one exception. An <C>Exited</C> from the actor's own parent ends the actor all
-						the same, with the parent's reason, before <C>HandleExited</C> sees it. A{' '}
-						<C>gen_server</C> ends when its parent does, whatever it traps, and an actor here does
-						too: a subtree whose supervisor is gone must not go on running under nobody. That rule
-						is in <C>actor.Run</C>, not in the core; a plain process that traps exits decides for
+						An <C>Exited</C> from the actor's own parent is the exception: it ends the actor, with
+						the parent's reason, before <C>HandleExited</C> sees it, as a <C>gen_server</C> ends
+						when its parent does, so no subtree outlives its supervisor. That rule is in{' '}
+						<C>actor.Run</C>, not in the core; a plain process that traps exits decides for
 						itself. <A to="concepts/monitors-and-links/">Monitors and links</A> has the details.
 					</p>
 				</>
@@ -280,12 +266,12 @@ addr, err := node.Spawn(actor.Run(&Pricer{table: table}))`}</Code>
 		},
 		{
 			id: 'testing',
-			title: 'Testing an actor alone',
+			title: 'Testing an actor',
 			body: (
 				<>
 					<p>
 						An actor is a process, so a test spawns it on a node and talks to it. A node with no
-						peers needs only a name and an empty resolver, and stops when the test ends. Run inside
+						peers needs a name, an empty resolver and <C>AdmitAll</C>, and stops when the test ends. Run inside
 						Go's <C>testing/synctest</C>, the test needs no timeout to tell a parked call from a slow
 						one: <C>synctest.Wait</C> returns once every process waits, so a reservation not
 						answered by then is parked, and one answered after the restock was answered by it:

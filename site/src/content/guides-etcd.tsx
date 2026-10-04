@@ -5,17 +5,14 @@ import type { Doc } from './types.ts';
 
 export const guidesEtcd: Doc = {
 	path: 'guides/etcd/',
-	title: 'Running on etcd',
+	title: 'etcd',
 	description:
-		'Cluster membership on etcd leases: nodes register under a lease, peers resolve them from it, and an expired lease drops the links to a node that stopped answering.',
+		'Discovery and membership on etcd: nodes register under a lease, peers resolve them from it, and an expired lease drops the links to a dead node.',
 	lead: (
 		<p>
-			<C>grpcproc/etcd</C> implements <C>Resolver</C>, <C>Registrar</C> and <C>Membership</C> on one
-			etcd client. A node registers under a lease it keeps alive; peers resolve its address from the
-			key; and when the lease ends, because the node stopped or stopped answering, every node
-			watching the cluster drops its links to it. It is a separate module.{' '}
-			<A to="concepts/discovery/">Discovery and membership</A> says what the three interfaces are
-			for.
+			<C>grpcproc/etcd</C> implements <C>Resolver</C>, <C>Registrar</C> and <C>Membership</C> (
+			<A to="concepts/discovery/">Discovery and membership</A>) on one etcd client. It is a
+			separate module.
 		</p>
 	),
 	sections: [
@@ -42,15 +39,15 @@ err = node.Start(ctx) // registers; Stop withdraws`}</Code>
 					<p>
 						<C>New</C> takes a <C>*clientv3.Client</C> and a prefix; every key the cluster writes is
 						under it, so one etcd serves several clusters under different prefixes. <C>Advertise</C>{' '}
-						is required here where the core does not need it: it is what the node is registered
-						with, and what peers dial. Give it the address the server listens on as other hosts see
-						it, not <C>0.0.0.0</C> or <C>localhost</C>.
+						is required here: it is what the node is registered with, and what peers dial. Give it
+						the address the server listens on as other hosts see it, not <C>0.0.0.0</C> or{' '}
+						<C>localhost</C>.
 					</p>
 					<p>
 						One <C>Cluster</C> value serves every node in a program, and whatever reaches nodes
-						through the node, <C>node.Dial</C>: the Inspector forwards to the others through the
-						same registry with no option of its own; see <A to="guides/inspector/">The Inspector</A>.
-						A <C>leader</C> elector with no <C>Membership</C> of its own follows the node's.
+						through <C>node.Dial</C>: the <A to="guides/inspector/">Inspector</A> forwards to the
+						others through the same registry with no option of its own. A <C>leader</C> elector
+						with no <C>Membership</C> of its own follows the node's.
 					</p>
 				</>
 			)
@@ -114,14 +111,14 @@ err = node.Start(ctx) // registers; Stop withdraws`}</Code>
 		},
 		{
 			id: 'superseding',
-			title: 'A restarted node supersedes itself',
+			title: 'Restarts',
 			body: (
 				<>
 					<p>
 						A node that registers a name already present replaces it: a restarted node supersedes
 						its previous incarnation, whose lease may not have expired yet. Its peers see the new
 						incarnation come up and drop their links to the old one, with the cause "restarted as
-						incarnation N", so a fast restart is not mistaken for a node that was never gone.
+						incarnation N".
 					</p>
 					<p>
 						An older incarnation never replaces a newer one's record, which a compare-and-swap
@@ -129,7 +126,7 @@ err = node.Start(ctx) // registers; Stop withdraws`}</Code>
 						and an instance that was replaced, and comes back to etcd after losing its lease, stops
 						registering when it finds a newer incarnation registered, rather than take the name
 						back. Peers that have seen the newer one refuse the old one's links too, as{' '}
-						<A to="concepts/nodes/#incarnations">Nodes and the cluster</A> explains. Incarnations
+						<A to="concepts/nodes/#incarnations">Nodes and links</A> explains. Incarnations
 						must therefore grow with each start: with the default, the start time, the hosts'
 						clocks must agree to within the time between two starts of a node.
 					</p>
@@ -138,11 +135,11 @@ err = node.Start(ctx) // registers; Stop withdraws`}</Code>
 		},
 		{
 			id: 'why',
-			title: 'Why a lease, and not just the links',
+			title: 'Leases and keepalive',
 			body: (
 				<>
 					<p>
-						grpcproc notices a lost link by itself, as fast as gRPC keepalive allows — or never, for
+						grpcproc notices a lost link by itself, as fast as gRPC keepalive allows, or never, for
 						a node that died without closing its connections where keepalive is not configured. Its
 						lease ends after the TTL regardless: every watching node then drops its links, monitors
 						across them fire <C>Down{'{'}noconnection{'}'}</C>, and pending calls fail with "left
@@ -150,11 +147,11 @@ err = node.Start(ctx) // registers; Stop withdraws`}</Code>
 						node's view.
 					</p>
 					<p>
-						Both signals are worth having. Keepalive is faster and needs no round trip to etcd; set
-						it in the node's <C>DialOptions</C> and on the server, as{' '}
-						<A to="guides/configuration/#connections">Configuring a node</A> shows. The lease catches
-						what keepalive misses, and it is what removes a dead node from the addresses peers
-						resolve.
+						Use both. Keepalive is faster and needs no round trip to etcd; set it in the node's{' '}
+						<C>DialOptions</C> and on the server, as{' '}
+						<A to="guides/operations/#failure-detection">Running in production</A> shows. The lease
+						catches what keepalive misses, and it is what removes a dead node from the addresses
+						peers resolve.
 					</p>
 				</>
 			)
@@ -187,7 +184,7 @@ err = node.Start(ctx) // registers; Stop withdraws`}</Code>
 		},
 		{
 			id: 'operations',
-			title: 'In operation',
+			title: 'Operating it',
 			body: (
 				<>
 					<ul>
@@ -198,7 +195,7 @@ err = node.Start(ctx) // registers; Stop withdraws`}</Code>
 							reached its peers.
 						</li>
 						<li>
-							<strong>etcd down is not the cluster down.</strong> Links stay up while etcd is
+							<strong>An etcd outage.</strong> Links stay up while etcd is
 							unreachable; only registration and the watch pause, and both resume after the retry
 							interval. A lease may expire meanwhile, in which case the node registers again when it
 							can, and its peers see it leave and come back.

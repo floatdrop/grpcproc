@@ -10,14 +10,11 @@ export const guidesCron: Doc = {
 	path: 'guides/cron/',
 	title: 'Cron jobs',
 	description:
-		'Jobs on crontab schedules, in a process the application starts: every run is a process of its own, whose exit reason is its result.',
+		'Jobs on crontab schedules, run by a process you start: every run is a process of its own, whose exit reason is its result.',
 	lead: (
 		<p>
-			<C>grpcproc/cron</C> runs jobs on crontab schedules from a process you start, like any other,
-			on a node or under a supervisor. Every run is a process too, spawned by the cron process and
-			linked to it, so a run's exit reason is its result, a run still going when the next is due can
-			be left alone, skipped or replaced, and one that takes too long is told to exit. It is a
-			package of the core module, released with it.
+			<C>grpcproc/cron</C> is a package of the core module. The cron process runs on a node or
+			under a supervisor, like any other.
 		</p>
 	),
 	sections: [
@@ -40,11 +37,10 @@ export const guidesCron: Doc = {
 }}}, grpcproc.WithName("cron"))`}</Code>
 					<p>
 						<C>Start</C> checks the whole spec first, every schedule parsed and every job
-						complete, so a mistake is its error rather than a process that fails later. It returns
-						the cron process's address. Under a supervisor, <C>cron.Child(name, spec)</C> returns
-						the <C>actor.ChildSpec</C> instead, checked the same way. Every node that starts a cron
-						process runs its jobs; for a job that runs once in a cluster, see{' '}
-						<A to="guides/cron/#cluster">the last section</A>.
+						complete, and returns the cron process's address. Under a supervisor,{' '}
+						<C>cron.Child(name, spec)</C> returns the <C>actor.ChildSpec</C> instead, checked the
+						same way. Every node that starts a cron process runs its jobs; for a job that runs once
+						in a cluster, see <A to="guides/cron/#cluster">Once in a cluster</A>.
 					</p>
 				</>
 			)
@@ -82,8 +78,8 @@ export const guidesCron: Doc = {
 					/>
 					<p>
 						<C>cron.Parse(spec)</C> returns the <C>Schedule</C>, and <C>Next(t)</C> the first
-						minute after <C>t</C> it names, in <C>t</C>'s zone: when a job runs next, previewed with
-						exactly the rules the cron process runs by.
+						minute after <C>t</C> it names, in <C>t</C>'s zone, by the rules the cron process runs
+						by.
 					</p>
 				</>
 			)
@@ -95,20 +91,19 @@ export const guidesCron: Doc = {
 				<>
 					<p>
 						A job's <C>Spec</C> is read in its <C>Location</C>, UTC when it is nil, so the nodes of
-						a cluster read a spec alike whatever their own zone. Two jobs of one process can run on
-						two continents' clocks.
+						a cluster read a spec alike whatever their own zone, and each job of a process can have
+						its own.
 					</p>
 					<p>
-						Where clocks move, the wall clock decides. A minute clocks skip when they go forward
-						does not exist, and a job due in it does not run that day. A minute they repeat when
-						they go back runs the first time only. <C>Next</C> answers the same way, which this
-						example from the module's tests checks:
+						Where clocks change, the wall clock decides. A job due in a minute the clocks skip when
+						they go forward does not run that day. A minute they repeat when they go back runs the
+						first time only. <C>Next</C> answers the same way:
 					</p>
 					<Code caption="cron/example_test.go">{region(cronExample, /^func ExampleSchedule_Next/, /^}/)}</Code>
 					<p>
 						The cron process checks the time at the start of every minute by the wall clock. A
 						clock stepped back runs no minute twice, and one stepped forward skips minutes as a
-						process that was stopped would, which the next section is about.
+						process that was stopped would (<A to="guides/cron/#missed">Missed runs</A>).
 					</p>
 				</>
 			)
@@ -158,8 +153,8 @@ export const guidesCron: Doc = {
 					/>
 					<p>
 						A job's <C>Timeout</C> bounds its runs: one that outlives it is told to exit, with
-						reason <C>timeout</C>. Telling is all grpcproc can do to a goroutine, so an{' '}
-						<C>Action</C> that does I/O should pass its context on. That context ends at the run's{' '}
+						reason <C>timeout</C>. A goroutine cannot be killed, so an <C>Action</C> that does I/O
+						should pass its context on. That context ends at the run's{' '}
 						<C>Deadline</C>, so a call made with it, <C>cron.Call</C>'s included, carries the time left
 						to the callee.
 					</p>
@@ -215,20 +210,19 @@ c = cron.Named("a", "cron")        // a cron process by its name`}</Code>
 		},
 		{
 			id: 'inspector',
-			title: 'In the Inspector',
+			title: 'Inspecting jobs',
 			body: (
 				<>
 					<p>
-						The cron process publishes a line per job, which <C>grpcprocctl inspect</C> and the{' '}
-						<A to="guides/inspector/">Inspector</A> show among what the process says about itself:
-						its spec and zone, when it runs next, when it last ran, how many runs are going, and why
-						the last one that failed did.
+						The cron process publishes a line per job, which <C>grpcprocctl inspect</C> shows: its
+						spec and zone, when it runs next, when it last ran, how many runs are going, and why
+						the last one that failed did. <A to="guides/grpcprocctl/#cron">grpcprocctl cron</A> and
+						the <A to="guides/web/">Web UI</A> list the jobs of every cron process.
 					</p>
 					<Code lang="txt">{`  every-quarter:   */15 * * * * UTC, disabled
   nightly-report:  10 3 * * * Europe/Berlin, next 2026-09-29T03:10:00+02:00, last 2026-09-28T03:10:00+02:00, running 1, failed: timeout`}</Code>
 					<p>
-						Each run is in the process list, under its label, with its parent the cron process, so a
-						run that is stuck is found, and inspected, like any other process.
+						Each run is in the process list, under its label, with the cron process as its parent.
 					</p>
 				</>
 			)
@@ -246,7 +240,7 @@ c = cron.Named("a", "cron")        // a cron process by its name`}</Code>
 					</p>
 					<Code caption="examples/singleton/singleton_test.go">{region(singleton, /^func election/, /^}/)}</Code>
 					<p>
-						The two modules do not import each other: they meet at <C>actor.ChildSpec</C>, which{' '}
+						The two packages do not import each other: they meet at <C>actor.ChildSpec</C>, which{' '}
 						<C>cron.Child</C> returns and a singleton is, and at the state, which <C>OnState</C>{' '}
 						reports and <C>Lease.Save</C> takes. The{' '}
 						<Ext href={file('examples/singleton/singleton_test.go')}>example's test</Ext> crashes
@@ -254,9 +248,8 @@ c = cron.Named("a", "cron")        // a cron process by its name`}</Code>
 						due during the election included.
 					</p>
 					<p>
-						That test, and the module's own, run in a <C>testing/synctest</C> bubble: its clock is
-						fake and moves on when every goroutine in it waits, so the minutes and hours a schedule
-						spans pass at once, and a test can start on the day clocks change.
+						That test, and the package's own, run in a <C>testing/synctest</C> bubble, whose fake
+						clock makes the minutes and hours a schedule spans pass at once.
 					</p>
 				</>
 			)

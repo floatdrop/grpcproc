@@ -4,22 +4,21 @@ import type { Doc } from './types.ts';
 
 export const guidesMcp: Doc = {
 	path: 'guides/mcp/',
-	title: 'An AI agent over MCP',
+	title: 'AI agents (MCP)',
 	description:
-		'grpcprocctl serves the Inspector as MCP tools, so an agent can investigate a cluster the way a person would: read-only unless told otherwise.',
+		'grpcprocctl serves the Inspector as MCP tools, so an AI agent can inspect a cluster, read-only unless told otherwise.',
 	lead: (
 		<p>
-			<C>grpcprocctl mcp</C> is an MCP server over stdio. It offers an agent the questions{' '}
-			<A to="guides/grpcprocctl/">grpcprocctl</A> answers, as tools that return the same objects its{' '}
-			<C>--json</C> prints, and explains grpcproc to the agent first: what a pid and a label are, what a
-			deep mailbox or a busy process means. So "orders are slow since the deploy" becomes a symptom it
-			can chase through the cluster itself.
+			<C>grpcprocctl mcp</C> is an MCP server over stdio. Its tools answer what the{' '}
+			<A to="guides/grpcprocctl/">command line</A> answers and return the same objects its{' '}
+			<C>--json</C> prints. The server's instructions explain grpcproc to the agent: what a pid and a
+			label are, what a deep mailbox or a busy process means.
 		</p>
 	),
 	sections: [
 		{
 			id: 'connecting',
-			title: 'Connecting an agent',
+			title: 'Connecting',
 			body: (
 				<>
 					<p>For Claude Code:</p>
@@ -94,10 +93,10 @@ export const guidesMcp: Doc = {
 		},
 		{
 			id: 'investigating',
-			title: 'An investigation',
+			title: 'Example',
 			body: (
 				<>
-					<p>Asked why orders are slow, an agent would:</p>
+					<p>Asked why orders are slow, an agent might:</p>
 					<ol>
 						<li>
 							call <C>cluster_nodes</C>, and see every node up, and no link failing;
@@ -116,16 +115,15 @@ export const guidesMcp: Doc = {
 						</li>
 					</ol>
 					<p>
-						It reasons over the snapshots a person would read in grpcprocctl's tables, and says what
-						it saw; with writes allowed, it can then act, raising the log level of the process to
-						see what its handler is doing.
+						With writes allowed, it could then raise the log level of the process to see what its
+						handler is doing.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'safety',
-			title: 'What keeps it safe',
+			title: 'Safety',
 			body: (
 				<>
 					<ul>
@@ -140,8 +138,7 @@ export const guidesMcp: Doc = {
 						</li>
 						<li>
 							<strong>Bounded answers.</strong> Lists are capped, watches last at most a minute, and
-							every input an agent sends is checked before it reaches a node, so a tool cannot be
-							made to hold a node or return everything it has.
+							every input an agent sends is checked before it reaches a node.
 						</li>
 					</ul>
 				</>

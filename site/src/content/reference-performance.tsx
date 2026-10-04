@@ -19,7 +19,7 @@ export const referencePerformance: Doc = {
 	path: 'reference/performance/',
 	title: 'Performance',
 	description:
-		'grpcproc measured against GoAkt, Hollywood, Proto.Actor and Ergo: local and remote sends and requests, and how to read the numbers.',
+		'grpcproc measured against GoAkt, Hollywood, Proto.Actor and Ergo on local and remote sends and requests.',
 	lead: (
 		<p>
 			<Ext href={file('benchmarks/README.md')}>benchmarks</Ext> is a module of its own, so grpcproc
@@ -28,13 +28,13 @@ export const referencePerformance: Doc = {
 			<Ext href="https://github.com/anthdm/hollywood">Hollywood</Ext> v1.0.5,{' '}
 			<Ext href="https://github.com/asynkron/protoactor-go">Proto.Actor</Ext> on its development
 			branch, which has no Go-style release tags, and <Ext href="https://ergo.services">Ergo</Ext>{' '}
-			3.3.0, each used the way it is meant to be.
+			3.3.0.
 		</p>
 	),
 	sections: [
 		{
 			id: 'method',
-			title: 'What is measured',
+			title: 'Method',
 			body: (
 				<>
 					<ul>
@@ -54,7 +54,7 @@ export const referencePerformance: Doc = {
 						<li>
 							<strong>Remote</strong> is two engines, systems or nodes over real TCP on loopback, the
 							connection warmed up before timing. grpcproc's own benchmarks in the root module use
-							in-memory connections, which would flatter it here. GoAkt's remote actors are found with
+							in-memory connections, which would favour it here. GoAkt's remote actors are found with
 							the public <C>PID.RemoteLookup</C> and reached through its remoting client, as an
 							application would; Ergo's nodes find each other through its embedded registrar, on a
 							port of their own.
@@ -111,7 +111,7 @@ export const referencePerformance: Doc = {
 		},
 		{
 			id: 'reading',
-			title: 'How to read it',
+			title: 'Reading the results',
 			body: (
 				<>
 					<ul>
@@ -151,7 +151,7 @@ export const referencePerformance: Doc = {
 		},
 		{
 			id: 'ergo',
-			title: 'A note on Ergo',
+			title: 'Ergo and its keepalive',
 			body: (
 				<>
 					<p>
@@ -168,16 +168,15 @@ export const referencePerformance: Doc = {
 		},
 		{
 			id: 'running',
-			title: 'Running them',
+			title: 'Running the benchmarks',
 			body: (
 				<>
 					<Code lang="sh">{`cd benchmarks
 go test -run '^$' -bench . -count=6 ./... | sed 's|pkg: .*/benchmarks/|pkg: |' > new.txt
 benchstat -table goos,goarch,cpu -col pkg -row .name new.txt`}</Code>
 					<p>
-						CI only checks that the benchmarks still build and run briefly; the numbers above are from
-						one machine and one afternoon, and a change to grpcproc's hot path is measured again by
-						hand.
+						CI only checks that the benchmarks still build and run briefly. The numbers above are from
+						one machine, and a change to grpcproc's hot path is measured again by hand.
 					</p>
 				</>
 			)

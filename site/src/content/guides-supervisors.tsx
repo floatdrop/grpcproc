@@ -19,19 +19,19 @@ export const guidesSupervisors: Doc = {
 	path: 'guides/supervisors/',
 	title: 'Supervisors',
 	description:
-		'Building a supervision tree with grpcproc/actor: specs, children, strategies, restarts, and adding or stopping children at run time.',
+		'Build a supervision tree with grpcproc/actor, and add or stop children while it runs.',
 	lead: (
 		<p>
-			This page is the API. <A to="concepts/supervision/">Supervision trees</A> says why a tree, which
-			strategy to pick and where state should live; read it first if supervisors are new. The code
-			here is from <Ext href={file('examples/supervisor/main.go')}>examples/supervisor</Ext> and the
-			tutorial's <Ext href={file('examples/guide/internal/inventory/inventory.go')}>inventory service</Ext>.
+			<A to="concepts/supervision/">Supervision</A> says which strategy to pick and where state
+			should live; read it first if supervisors are new. The code is from{' '}
+			<Ext href={file('examples/supervisor/main.go')}>examples/supervisor</Ext> and the tutorial's{' '}
+			<Ext href={file('examples/guide/internal/inventory/inventory.go')}>inventory service</Ext>.
 		</p>
 	),
 	sections: [
 		{
 			id: 'spec',
-			title: 'A supervisor is a Spec',
+			title: 'The Spec',
 			body: (
 				<>
 					<p>
@@ -96,8 +96,8 @@ export const guidesSupervisors: Doc = {
 						]}
 					/>
 					<p>
-						A spec is checked when the supervisor starts: an unknown strategy, a name used twice, a
-						significant permanent child, are all errors from <C>Supervise</C>, not surprises later.
+						A spec is checked when the supervisor starts: an unknown strategy, a name used twice
+						and a significant permanent child are errors from <C>Supervise</C>.
 					</p>
 				</>
 			)
@@ -113,8 +113,8 @@ export const guidesSupervisors: Doc = {
 					<ul>
 						<li>
 							<C>actor.Child(name, newHandler)</C> runs an actor. It takes a factory rather than a
-							handler, and calls it at every start, so a restart begins from a fresh struct and
-							never sees the state that crashed. The factory closes over the dependencies:{' '}
+							handler, and calls it at every start, so a restart begins from a fresh struct. The
+							factory closes over the dependencies:{' '}
 							<C>func() *Inventory {'{'} return &amp;Inventory{'{'}ledger: ledger{'}'} {'}'}</C>.
 						</li>
 						<li>
@@ -122,8 +122,7 @@ export const guidesSupervisors: Doc = {
 							not an actor.
 						</li>
 						<li>
-							<C>actor.ChildSupervisor(name, spec)</C> runs another supervisor, which is how a tree
-							gets its depth.
+							<C>actor.ChildSupervisor(name, spec)</C> runs another supervisor.
 						</li>
 					</ul>
 					<p>
@@ -184,25 +183,25 @@ export const guidesSupervisors: Doc = {
 		},
 		{
 			id: 'tree',
-			title: 'A tree of trees',
+			title: 'Nested supervisors',
 			body: (
 				<>
 					<p>
-						<C>ChildSupervisor</C> is a child whose spec is another <C>Spec</C>. That is how an
-						application gets one supervisor per service, each with its own strategy and intensity,
-						under one root. The tutorial's inventory service builds its subtree in a function that
-						takes the service's dependencies from the container:
+						<C>ChildSupervisor</C> is a child whose spec is another <C>Spec</C>, so an application
+						can have one supervisor per service, each with its own strategy and intensity, under
+						one root. The tutorial's inventory service builds its subtree in a function that takes
+						the service's dependencies from the container:
 					</p>
 					<Code caption="examples/guide/internal/inventory/inventory.go">{region(inventory, /^\/\/ tree is the service's supervision tree/, /^}/)}</Code>
 					<p>
 						The root, in <A to="shop/platform/">the tutorial's platform</A>, is a <C>OneForOne</C>{' '}
 						supervisor whose children are every service's tree. A service that gives up, past its
 						own intensity, exits with <C>max restarts</C>, an abnormal reason; the root restarts that
-						subtree alone, and the others carry on. That is escalation, and it stops at the root:
-						a root that gives up ends the program, for whatever runs it to start again.
+						subtree alone, and the others carry on. A root that gives up ends the program, for
+						whatever runs it to start again.
 					</p>
 					<p>
-						Stopping runs the other way. A supervisor told to exit stops its children in reverse
+						A supervisor told to exit stops its children in reverse
 						order, and a child supervisor has as long as it takes, <C>Infinity</C>, to stop its own.
 						grpcproc cannot kill a goroutine, so a worker that outlives its <C>Shutdown</C> is
 						logged and left behind; a named one keeps its name until it exits, and the supervisor
@@ -223,8 +222,8 @@ export const guidesSupervisors: Doc = {
 						address's <C>Call</C>, and <C>sup</C> is a PID or a name. The child is the supervisor's
 						like the others, with one difference: once it ends for good, because it is temporary, or
 						transient and ended normally, or <C>StopChild</C> stopped it, the supervisor forgets it.
-						So a pool of workers — a <C>OneForOne</C> supervisor with anonymous children added as
-						they are needed — does not grow with every worker that ever ran.
+						So a pool of workers, a <C>OneForOne</C> supervisor with anonymous children added as
+						they are needed, does not grow with every worker that ever ran.
 					</p>
 					<Code>{`worker, err := actor.StartChild(ctx, node, pool, actor.ChildFunc("", handle(job)).WithRestart(actor.Temporary))`}</Code>
 					<p>
@@ -269,8 +268,8 @@ if err != nil && !errors.Is(err, actor.ErrAlreadyStarted) {
 			body: (
 				<>
 					<p>
-						A spec is Go functions, and no message carries those. A supervisor that other nodes ask
-						for children declares what they may ask for instead: <C>Spec.Factories</C>, a factory per
+						A supervisor that other nodes ask for children declares what they may ask for, since
+						a spec cannot travel: <C>Spec.Factories</C>, a factory per
 						name, each built with <C>actor.ChildFactory</C> from a function that takes an argument, a
 						protobuf message, and returns the spec to start. The functions, and the dependencies they
 						close over, stay on the supervisor's node; only the name and the argument travel.
@@ -322,7 +321,7 @@ case err != nil && !errors.Is(err, actor.ErrAlreadyStarted):
 		},
 		{
 			id: 'busy',
-			title: 'A busy supervisor',
+			title: 'Calling a busy supervisor',
 			body: (
 				<>
 					<p>
@@ -331,8 +330,7 @@ case err != nil && !errors.Is(err, actor.ErrAlreadyStarted):
 						while it is being stopped, from <C>Terminate</C> say, would hold the whole chain until
 						the call gave up. So a supervisor that has waited more than 100ms answers the calls
 						queued meanwhile, <C>StartChild</C> and <C>StopChild</C> among them, with{' '}
-						<C>actor.ErrBusy</C>, and handles the rest once the wait is over. A quick stop is
-						invisible to callers; a stuck one holds none of them.
+						<C>actor.ErrBusy</C>, and handles the rest once the wait is over.
 					</p>
 					<p>
 						From a process, call a supervisor with <C>p.Context()</C>. A supervisor that is stopping
@@ -345,7 +343,7 @@ case err != nil && !errors.Is(err, actor.ErrAlreadyStarted):
 		},
 		{
 			id: 'inspect',
-			title: 'What a supervisor says about itself',
+			title: 'Inspecting a supervisor',
 			body: (
 				<>
 					<p>
@@ -365,16 +363,15 @@ case err != nil && !errors.Is(err, actor.ErrAlreadyStarted):
 						<C>StartChild</C>.
 					</p>
 					<p>
-						Restarts are the number to watch. A count that keeps climbing without reaching the
-						limit is a child that fails, waits out the window and fails again: it is never healthy,
-						and never escalates either.
+						Watch the restarts: a count that keeps climbing without reaching the limit is a child
+						that fails, waits out the window and fails again, and never escalates.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'example',
-			title: 'A crash and a restart, walked through',
+			title: 'Example: a crash and a restart',
 			body: (
 				<>
 					<p>

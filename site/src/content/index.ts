@@ -23,6 +23,7 @@ import { guidesObservability } from './guides-observability.tsx';
 import { guidesPubsub } from './guides-pubsub.tsx';
 import { guidesSupervisors } from './guides-supervisors.tsx';
 import { guidesTesting } from './guides-testing.tsx';
+import { guidesWeb } from './guides-web.tsx';
 import { landing } from './landing.tsx';
 import { referenceErrors } from './reference-errors.tsx';
 import { referencePerformance } from './reference-performance.tsx';
@@ -46,18 +47,19 @@ const all: Doc[] = [
 	conceptsDiscovery,
 	guidesActors,
 	guidesSupervisors,
-	guidesBlockingIO,
 	guidesPubsub,
-	guidesConfiguration,
+	guidesBlockingIO,
+	guidesCron,
+	guidesLeader,
 	guidesTesting,
+	guidesConfiguration,
+	guidesEtcd,
+	guidesOperations,
 	guidesObservability,
 	guidesInspector,
 	guidesGrpcprocctl,
+	guidesWeb,
 	guidesMcp,
-	guidesEtcd,
-	guidesCron,
-	guidesLeader,
-	guidesOperations,
 	shop,
 	shopServices,
 	shopPlatform,

@@ -9,12 +9,11 @@ export const conceptsProcesses: Doc = {
 	path: 'concepts/processes/',
 	title: 'Processes and messages',
 	description:
-		'What a process can do, message by message: spawning, receiving, sending and calling, replying, timers, its context, its options, and how it ends.',
+		'What a process can do: spawn, receive, send, call, reply, and exit.',
 	lead: (
 		<p>
 			A process is a function <C>func(p *grpcproc.Process[M]) error</C>, run on its own goroutine until
-			it returns. <C>M</C> is the type of message its mailbox holds. Everything below is a method of{' '}
-			<C>p</C>, or an option to the spawn that started it.
+			it returns. <C>M</C> is the type of message its mailbox holds.
 		</p>
 	),
 	sections: [
@@ -72,8 +71,8 @@ child, ref, err := p.SpawnMonitor(worker)`}</Code>
 	}
 }`}</Code>
 					<p>
-						The error is the process's signal to stop, and returning it is all the handling it
-						needs: an <C>*ExitError</C> carrying the reason after <C>Exit</C> or a linked process's
+						The error tells the process to stop, and the process returns it: an{' '}
+						<C>*ExitError</C> carrying the reason after <C>Exit</C> or a linked process's
 						exit, <C>context.Canceled</C> when the node stops. <C>ReceiveTimeout</C> is the same with
 						a deadline, and returns <C>context.DeadlineExceeded</C> when nothing came.
 					</p>
@@ -147,11 +146,10 @@ child, ref, err := p.SpawnMonitor(worker)`}</Code>
 
 r, err := stock.Call[*shoppb.Reserved](ctx, p, &shoppb.Stock{Op: &shoppb.Stock_Reserve{Reserve: reserve}})`}</Code>
 					<p>
-						The oneof and the reply type are the protocol; spelling them at every call is the job of
-						the package that owns the process, not of its callers. It writes each operation once, as
-						a method on an address type of its own, which takes the sender, <C>p</C> or the node, as
-						an argument. The examples' <C>shoppb.StockAddr</C> does, and{' '}
-						<A to="concepts/addressing/#protocol">an address with its protocol</A> shows how:
+						The oneof and the reply type are the protocol. The package that owns the process writes
+						each operation once, as a method on an address type of its own, which takes the sender,{' '}
+						<C>p</C> or the node, as an argument. The examples' <C>shoppb.StockAddr</C> does, and{' '}
+						<A to="concepts/addressing/#protocol">Addresses</A> shows how:
 					</p>
 					<Code>{`inventory := shoppb.StockAddr{Addr: stock}
 
@@ -169,7 +167,7 @@ r, err := inventory.Reserve(ctx, p, reserve)`}</Code>
 					<p>
 						The caller's deadline travels with the call. <C>m.Deadline()</C> says when the caller
 						stops waiting, and <C>m.Context(parent)</C> gives a context that ends then, so work for
-						a caller that gave up can stop, a deferred reply's above all. Between nodes it travels
+						a caller that gave up can stop. Between nodes it travels
 						as the time left, as gRPC's does, so clocks need not agree, and counts from when the
 						call arrives. It is not applied to the callee's own sends and calls unless it passes
 						that context on, since a callee may have to finish what it started. Only the deadline
@@ -211,8 +209,7 @@ if t.Stop() {
 					<p>
 						<C>p.Log()</C> is a <C>*slog.Logger</C> with the process's PID and label attached. Its
 						threshold can be changed at runtime, per process, with <C>Node.SetLogLevel</C> or from
-						the <A to="guides/inspector/">Inspector</A>, which is how a noisy process is turned up
-						in production without restarting anything.
+						the <A to="guides/inspector/">Inspector</A>, without restarting anything.
 					</p>
 				</>
 			)
@@ -281,7 +278,7 @@ if t.Stop() {
 		},
 		{
 			id: 'exit',
-			title: 'How a process ends',
+			title: 'Exit reasons',
 			body: (
 				<>
 					<p>
@@ -309,8 +306,8 @@ if t.Stop() {
 					<p>
 						A process cannot be killed: a goroutine has no such operation. <C>Exit</C> is a request
 						the process sees at its next <C>Receive</C>, and one that is busy in a handler ends when
-						the handler returns. That is why long work takes <C>p.Context()</C>, and why a
-						supervisor gives a child a shutdown timeout rather than a guarantee.
+						the handler returns. So long work takes <C>p.Context()</C>, and a supervisor gives a
+						child a shutdown timeout rather than a guarantee.
 					</p>
 					<Code caption="examples/quickstart/main.go">
 						{region(quickstart, /A monitor across nodes works/, /fmt.Println\("stock exited:"/)}
@@ -320,7 +317,7 @@ if t.Stop() {
 		},
 		{
 			id: 'delivery',
-			title: 'What delivery guarantees',
+			title: 'Delivery guarantees',
 			body: (
 				<>
 					<ul>
@@ -347,13 +344,12 @@ if t.Stop() {
 						<li>
 							<strong>Local sends share the pointer.</strong> Within a node a message is not encoded,
 							and the receiver gets the value the sender built; the sender must not change it after
-							sending. <C>Config.CopyLocal</C> clones every local message instead, for a team that
-							wants the isolation of the wire everywhere.
+							sending. <C>Config.CopyLocal</C> clones every local message instead.
 						</li>
 					</ul>
 					<Aside title="Coming from Erlang">
 						<p>
-							The same guarantees, with one difference in kind: an Erlang exit signal can be trapped,
+							The same guarantees, with one difference: an Erlang exit signal can be trapped,
 							and grpcproc's <C>Exit</C> cannot, because the goroutine behind the process cannot be
 							killed if it refused. What a link delivers is trapped, as{' '}
 							<A to="concepts/monitors-and-links/">Monitors and links</A> explains.

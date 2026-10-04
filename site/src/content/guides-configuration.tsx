@@ -7,22 +7,20 @@ import type { Doc } from './types.ts';
 
 export const guidesConfiguration: Doc = {
 	path: 'guides/configuration/',
-	title: 'Configuring a node',
-	description:
-		'Every field of grpcproc.Config, what it defaults to, and the order a node is built, registered, started and stopped in.',
+	title: 'Configuration',
+	description: 'Every field of grpcproc.Config and its default, and the order a node is built, started and stopped in.',
 	lead: (
 		<p>
-			A node is configured once, in <C>NewNode</C>, which fails on a bad configuration rather than
-			later. Three fields are required, <C>Name</C>, <C>Resolver</C> and <C>Admit</C>; the rest
-			have defaults that suit a first program and need thought for a deployment, which{' '}
-			<A to="guides/operations/">Running in production</A> goes through. The{' '}
-			<Ext href={`${PKG_DOC}#Config`}>API reference</Ext> has each field's full comment.
+			A node is configured once, in <C>NewNode</C>, which fails on a bad configuration. Three
+			fields are required: <C>Name</C>, <C>Resolver</C> and <C>Admit</C>.{' '}
+			<A to="guides/operations/">Running in production</A> says what a deployment should set, and
+			the <Ext href={`${PKG_DOC}#Config`}>API reference</Ext> has each field's full comment.
 		</p>
 	),
 	sections: [
 		{
 			id: 'summary',
-			title: 'At a glance',
+			title: 'Fields',
 			body: (
 				<Table
 					head={['Field', 'Default, and what it is']}
@@ -74,8 +72,8 @@ export const guidesConfiguration: Doc = {
 						its replacement. Zero picks the current Unix time in nanoseconds, which grows as long as
 						the clocks of the hosts the node starts on agree to within the time between two starts.
 						A random or hashed value would be refused whenever it came out lower than the last;
-						a counter from a deployment system, or an etcd revision, works.{' '}
-						<A to="concepts/nodes/#incarnations">Nodes and the cluster</A> has why.
+						a counter from a deployment system, or an etcd revision, works (
+						<A to="concepts/nodes/#incarnations">Nodes and links</A>).
 					</p>
 				</>
 			)
@@ -95,8 +93,7 @@ export const guidesConfiguration: Doc = {
 						<A to="guides/etcd/">grpcproc/etcd</A>. With <C>Membership</C> set, a peer that leaves
 						the cluster, or comes back as a newer incarnation, has its links dropped, which fires{' '}
 						<C>Down{'{'}noconnection{'}'}</C> for monitors across them and fails pending calls, even
-						when its connection never closed. <A to="concepts/discovery/">Discovery and membership</A>{' '}
-						explains the three together.
+						when its connection never closed (<A to="concepts/discovery/">Discovery and membership</A>).
 					</p>
 				</>
 			)
@@ -111,8 +108,8 @@ export const guidesConfiguration: Doc = {
 						keepalive, and any interceptors. Keepalive is what turns a peer that went silent into a
 						broken link, and it takes both halves: the dial's pings end this node's link to the
 						peer, and the server's end the peer's link to this node, whose end is what declares the
-						peer down, firing <C>Down</C>s and failing calls. grpcproc sets neither, because the
-						server is the application's. The tutorial's platform sets both:
+						peer down, firing <C>Down</C>s and failing calls. grpcproc sets neither. The tutorial's
+						platform sets both:
 					</p>
 					<Code caption="examples/guide/internal/platform/platform.go">
 						{region(platform, /^\/\/ dialOptions are for every connection/, /^}/)}
@@ -121,10 +118,10 @@ export const guidesConfiguration: Doc = {
 						{region(platform, /^func newServer/, /^}/)}
 					</Code>
 					<p>
-						The client pings every ten seconds and gives up five seconds after an unanswered ping;
-						the server's enforcement policy has to allow pings that often, and without an active
-						stream, or it closes the connection for pinging too much. A partition is then a link
-						error within fifteen seconds, and the calls waiting on it fail rather than hang.
+						The client pings every ten seconds and gives up five seconds after an unanswered ping,
+						so a partition is a link error within fifteen seconds. The server's enforcement policy
+						has to allow pings that often, and without an active stream, or it closes the connection
+						for pinging too much (<A to="guides/operations/#failure-detection">Failure detection</A>).
 					</p>
 					<p>
 						<C>DialTimeout</C> bounds one dial, five seconds by default, as long as the resolver and
@@ -133,17 +130,16 @@ export const guidesConfiguration: Doc = {
 						the peer fails at once with <C>ErrNoConnection</C>, and a <C>Monitor</C> of a process
 						there gets <C>Down{'{'}noconnection{'}'}</C> at once. The first wait is a 32nd of it,
 						and each failure doubles it. A link that ends within <C>DialTimeout</C> of coming up
-						counts as a failed dial, so a path that keeps breaking backs off too, rather than
-						redial at every send. Set it negative to dial again at once, which is what{' '}
-						<C>grpcproctest</C> does so that a test's call right after a heal reaches the peer.
+						counts as a failed dial, so a path that keeps breaking backs off too. Set it negative
+						to dial again at once, as <C>grpcproctest</C> does.
 					</p>
 					<p>
 						<C>MaxQueued</C> and <C>MaxQueuedBytes</C> bound the link to each peer, which is
 						unbounded by default. While a link holds that many envelopes not yet written, or that
 						many bytes of message bodies, a send or a call to its peer fails at once with a{' '}
 						<C>*LinkError</C> whose <C>Err</C> is <C>ErrLinkBusy</C> and whose <C>Unsent</C> is set:
-						the peer cannot keep up, and the message is still on this node, for the sender to drop
-						or send again later. Only that peer's senders are refused. Replies, <C>Down</C>s,
+						the message is still on this node, for the sender to drop or send again later. Only
+						that peer's senders are refused. Replies, <C>Down</C>s,
 						monitors and exits are queued regardless. <C>LinkInfo.Queued</C> and{' '}
 						<C>QueuedBytes</C> show how close each link is to its bound.
 					</p>
@@ -166,14 +162,13 @@ export const guidesConfiguration: Doc = {
 			body: (
 				<>
 					<p>
-						A link is a gRPC stream, so it is secured the way the server's other services are: TLS
-						or mutual TLS in the server's credentials, and the matching{' '}
-						<C>grpc.WithTransportCredentials</C> in <C>DialOptions</C>. The node's identity travels
-						in the stream's metadata: its name, incarnation and protocol version. Nothing checks by
-						itself that the certificate a peer presents belongs to the name it claims; that is what{' '}
-						<C>Admit</C> is for, and a node needs one: <C>NewNode</C> fails without it. It runs for
-						every inbound link, with the peer's transport credentials in the ctx, before the link
-						is accepted. <C>grpcproc.AdmitTLS</C> admits a peer whose verified client certificate
+						A link is a gRPC stream, secured as the server's other services are: TLS or mutual TLS
+						in the server's credentials, and the matching <C>grpc.WithTransportCredentials</C> in{' '}
+						<C>DialOptions</C>. The node's identity travels in the stream's metadata: its name,
+						incarnation and protocol version. Nothing else checks that the certificate a peer
+						presents belongs to the name it claims, so <C>Admit</C> is required. It runs for every
+						inbound link, with the peer's transport credentials in the ctx, before the link is
+						accepted. <C>grpcproc.AdmitTLS</C> admits a peer whose verified client certificate
 						names its node, as a DNS or IP subject alternative name, so the server must verify
 						client certificates:
 					</p>
@@ -194,16 +189,15 @@ node, err := grpcproc.NewNode(grpcproc.Config{
 						for a node, and exit any process.
 					</p>
 					<p>
-						<C>Admit</C> proves who dialed this node. That the node this one dials is the one it
-						meant is for the dial's credentials, as for any gRPC client: give each peer's TLS a{' '}
-						<C>ServerName</C> of its node name in <C>DialOptionsFor</C>, and the peer's server
-						certificate must name its node too. A certificate names a node exactly: a wildcard
-						names none.
+						<C>Admit</C> proves who dialed this node. To check the node this one dials, give each
+						peer's TLS a <C>ServerName</C> of its node name in <C>DialOptionsFor</C>. A certificate
+						names a node exactly: a wildcard names none.{' '}
+						<A to="guides/operations/#admission">Admission</A> has the whole set-up.
 					</p>
 					<p>
 						An admitted peer may ask anything of any process, <C>Exit</C> included, which a process
-						cannot trap. That suits the nodes of one installation. A node of another one, a
-						partner's or a tenant's, gets a <C>Policy</C> instead: it judges every message, call,
+						cannot trap. A node of another installation, a partner's or a tenant's, gets a{' '}
+						<C>Policy</C> instead: it judges every message, call,
 						monitor and exit the peer sends over the link, by the name of the process it is for.{' '}
 						<C>grpcproc.Export</C> is the usual one: the names listed, by name or PID, for sends,
 						calls and monitors, and no exits. What a policy refuses does not exist for the peer: a
@@ -233,8 +227,8 @@ DialOptionsFor: func(peer string) []grpc.DialOption {
 						a process here can call and monitor the partner's processes whatever the partner may
 						reach here. The Inspector, if the node serves one, is a second gRPC service on
 						the same server and takes the same interceptors; <C>inspect.ReadOnly()</C> refuses its
-						writes outright, for a deployment that shares the node's port without authenticating.{' '}
-						<A to="guides/inspector/">The Inspector</A> has the rest.
+						writes, for a deployment that shares the node's port without authenticating (
+						<A to="guides/inspector/">Inspector</A>).
 					</p>
 				</>
 			)
@@ -250,26 +244,24 @@ DialOptionsFor: func(peer string) []grpc.DialOption {
 						level can be raised or lowered at runtime. <C>Hooks</C> is the one synchronous tap for
 						everything the node does: spawns, exits, sends, receives, dead letters, links up and
 						down. <C>grpcproc/otel</C> implements it with OpenTelemetry, and <C>JoinHooks</C>{' '}
-						combines several. <A to="guides/observability/">Observability</A> covers both.
+						combines several (<A to="guides/observability/">Observability</A>).
 					</p>
 					<p>
 						<C>CopyLocal</C> clones every locally delivered message, so a sender can keep mutating
-						what it sent. It is off by default: a local send shares the pointer, and the rule is not
-						to touch a message after sending it, which is also the rule the wire imposes for free.
+						what it sent. It is off by default: a local send shares the pointer, and the sender must
+						not change a message after sending it.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'lifecycle',
-			title: 'The lifecycle',
+			title: 'Lifecycle',
 			body: (
 				<>
-					<p>The order is fixed by what depends on what:</p>
 					<ul>
 						<li>
-							<C>NewNode</C> checks the configuration and builds the node. A missing name or resolver
-							fails here, and nothing runs yet.
+							<C>NewNode</C> checks the configuration and builds the node. Nothing runs yet.
 						</li>
 						<li>
 							<C>Register</C> mounts <C>grpcproc.v1.Node</C> on the gRPC server, and must come
@@ -288,17 +280,16 @@ DialOptionsFor: func(peer string) []grpc.DialOption {
 						</li>
 					</ul>
 					<p>
-						With a dependency-injection container, that order falls out of the dependencies: the
-						tutorial's platform builds the server, then the node on it, then the Inspector, then
-						the root supervisor, and stops them in reverse.
+						The tutorial's platform builds the server, then the node on it, then the Inspector,
+						then the root supervisor, and stops them in reverse:
 					</p>
 					<Code caption="examples/guide/internal/platform/platform.go">
 						{region(platform, /^\/\/ Module registers the node and what it stands on/, /^}/)}
 					</Code>
 					<p>
 						The root starts the node itself, once the services' trees run, so that with a registry
-						the node is published only when its processes exist; see{' '}
-						<A to="shop/platform/">The platform</A>.
+						the node is published only when its processes exist (
+						<A to="shop/platform/">Platform</A>).
 					</p>
 				</>
 			)

@@ -10,21 +10,11 @@ export const conceptsMonitorsAndLinks: Doc = {
 	path: 'concepts/monitors-and-links/',
 	title: 'Monitors and links',
 	description:
-		'How a process learns that another one is gone: a monitor turns an exit into a message, a link turns it into an exit of its own, and both work the same across nodes.',
-	lead: (
-		<>
-			<p>
-				A process runs until it returns, and then it is gone. The question is who needs to know: a
-				caller waiting for a reply, so its call can fail instead of hang; a supervisor, so it can
-				start a replacement; a worker whose only reason to exist is another process, so it can stop
-				too. grpcproc has two ways to tell them, and one way to ask a process to go.
-			</p>
-		</>
-	),
+		'How a process learns that another is gone: a monitor delivers the exit as a message, a link makes it an exit of its own.',
 	sections: [
 		{
 			id: 'monitor',
-			title: 'A monitor turns an exit into a message',
+			title: 'Monitors',
 			body: (
 				<>
 					<p>
@@ -47,40 +37,37 @@ if m.Down != nil && m.Down.Ref == ref {
 						that watches several targets tells their notices apart. The <C>Down</C> also carries the{' '}
 						<C>PID</C> that exited, the <C>Name</C> the monitor was placed by, if it was, and the{' '}
 						<C>Reason</C>. <C>Demonitor(ref)</C> stops watching; a <C>Down</C> already in the mailbox
-						stays there, since taking it back would leave the mailbox with a hole in what it
-						promised.
+						stays there.
 					</p>
 					<p>
 						Two cases need no exit at all. A monitor on a process that does not exist, because it
 						never did or already went, answers at once with reason <C>noproc</C>. A monitor on a
 						process whose node cannot be reached, now or later, answers with <C>noconnection</C>,
-						the moment the node is declared down. In both the watcher gets exactly one <C>Down</C>,
-						so it never waits for one that cannot come.
+						the moment the node is declared down. In both the watcher gets exactly one <C>Down</C>.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'order',
-			title: 'The Down comes last',
+			title: 'Ordering',
 			body: (
 				<>
 					<p>
 						A process's <C>Down</C> arrives after every message that process sent to the watcher.
-						That is a guarantee, not a likelihood: when a worker sends its result and then exits,
-						the watcher sees the result, then the <C>Down</C>, never the other way around. A watcher
-						that has the <C>Down</C> knows there is nothing more to come.
+						When a worker sends its result and then exits, the watcher sees the result, then the{' '}
+						<C>Down</C>, and after the <C>Down</C> nothing more comes.
 					</p>
 					<p>
 						Within a node it holds because the <C>Down</C> is queued in the watcher's mailbox like a
 						message, by the same code, behind what came before. Across nodes it holds because
 						everything one node sends to another travels on one gRPC stream, in order: messages,
-						replies, monitor notices. There is no side channel a <C>Down</C> could overtake on.{' '}
-						<A to="concepts/nodes/">Nodes and the cluster</A> has the link in detail.
+						replies, monitor notices. <A to="concepts/nodes/">Nodes and links</A> has the link in
+						detail.
 					</p>
 					<p>
-						The quick start's watcher relies on this. It monitors the stock, asks it to exit, and
-						the next thing it receives is the <C>Down</C>, with the reason it asked for:
+						The quick start's watcher monitors the stock, asks it to exit, and next receives the{' '}
+						<C>Down</C>, with the reason it asked for:
 					</p>
 					<Code caption="examples/quickstart/main.go">
 						{region(quickstart, /A monitor across nodes works/, /fmt.Println\("stock exited:"/)}
@@ -90,15 +77,14 @@ if m.Down != nil && m.Down.Ref == ref {
 		},
 		{
 			id: 'spawn-monitor',
-			title: 'Monitoring from before the start',
+			title: 'Spawning monitored',
 			body: (
 				<>
 					<p>
 						There is a gap between <C>Spawn</C> returning an address and <C>Monitor</C> being called
-						on it. A child that fails at once, in its first line, exits inside that gap, and a monitor
-						placed after it finds no process and reports <C>noproc</C>. The real reason, the error
-						the child returned, is lost. A supervisor reading <C>noproc</C> would take a transient
-						child's clean, immediate exit for a crash and restart it in a loop.
+						on it. A child that exits inside that gap is reported as <C>noproc</C>, and its real
+						reason is lost: a supervisor would take a transient child's clean, immediate exit for a
+						crash and restart it in a loop.
 					</p>
 					<p>
 						<C>p.SpawnMonitor(fn)</C> closes the gap: it spawns the child and monitors it in one
@@ -144,7 +130,7 @@ return m.Reply(&roomspb.Placed{Peer: peer.PID().Proto()}, nil)`}</Code>
 		},
 		{
 			id: 'exit',
-			title: 'Asking a process to exit',
+			title: 'Exit requests',
 			body: (
 				<>
 					<p>
@@ -162,26 +148,24 @@ if err != nil {
 	return err
 }`}</Code>
 					<p>
-						An exit request cannot be refused. A Go goroutine cannot be killed from outside, so the
-						request is delivered as the error above and the process is expected to return. That is
-						why grpcproc makes it the one signal a process cannot configure away: if trapping exits
-						could turn a request into a message, a process could keep running through the node's
-						shutdown, and nothing could stop it. A process that needs to clean up does so on the way
-						out, after <C>Receive</C> returns, or in an actor's <C>Terminate</C>.
+						A goroutine cannot be killed from outside, so the request is delivered as the error
+						above and the process is expected to return. Trapping exits does not turn it into a
+						message: if it could, a process could keep running through the node's shutdown. A
+						process that needs to clean up does so after <C>Receive</C> returns, or in an actor's{' '}
+						<C>Terminate</C>.
 					</p>
 				</>
 			)
 		},
 		{
 			id: 'link',
-			title: 'A link turns an exit into an exit',
+			title: 'Links',
 			body: (
 				<>
 					<p>
-						Sometimes a process has no use for a <C>Down</C>, because the only thing it would do with
-						one is stop. A session that serves one connection, a worker that feeds one consumer: when
-						the other side is gone, so is their reason to run. <C>p.Link(target)</C> says that. When
-						the target exits, <C>p</C> exits too, with the target's reason, whatever it is.
+						<C>p.Link(target)</C> is for a process that would only stop on a <C>Down</C>: a session
+						that serves one connection, a worker that feeds one consumer. When the target exits,{' '}
+						<C>p</C> exits too, with the target's reason, whatever it is.
 					</p>
 					<Code>{`// A session cannot outlive the connection process it serves.
 p.Link(conn)
@@ -195,10 +179,9 @@ p.Link(conn)
 						<C>Exited</C> already in the mailbox stays there, as a <C>Down</C> does.
 					</p>
 					<p>
-						The linker takes the reason as it is, <C>normal</C> included. A link says "this process
-						cannot go on without that one", and a target that finished cleanly is gone all the same.
-						This matters for supervision: a child linked to a supervisor that was stopped in an
-						orderly way must still go, and a transient child whose dependency ended <C>normal</C>{' '}
+						The linker takes the reason as it is, <C>normal</C> included: a target that finished
+						cleanly is gone all the same. So a child linked to a supervisor that was stopped in an
+						orderly way still goes, and a transient child whose dependency ended <C>normal</C>{' '}
 						ended normally too, so its own supervisor does not restart it.
 					</p>
 					<p>
@@ -262,9 +245,8 @@ for {
 	// …
 }`}</Code>
 					<p>
-						Trapping turns a link into something between a link and a monitor: the process learns of
-						the exit and chooses what to do. It applies to links only. An <C>Exit</C> request still
-						ends the process, for the reason given above. And an actor run by <C>actor.Run</C> still
+						Trapping applies to links only. An <C>Exit</C> request still ends the process. And an
+						actor run by <C>actor.Run</C> still
 						ends when its parent exits, whether it traps or not, as a <C>gen_server</C> does; that
 						rule lives in the actor loop, and a raw process that traps exits decides for itself.
 					</p>
@@ -273,13 +255,13 @@ for {
 		},
 		{
 			id: 'reasons',
-			title: 'The reasons',
+			title: 'Exit reasons',
 			body: (
 				<>
 					<p>
-						A <C>Down</C> and an <C>Exited</C> carry a reason, a string. It is what a supervisor
-						reads to decide whether an exit was normal, and what a log or the Inspector shows.
-						These are the ones grpcproc sets; <C>Exit</C> sets whatever the caller asked for.
+						A <C>Down</C> and an <C>Exited</C> carry a reason, a string, which a supervisor reads to
+						decide whether an exit was normal. These are the ones grpcproc sets; <C>Exit</C> sets
+						whatever the caller asked for.
 					</p>
 					<Table
 						head={['Reason', 'What happened']}
@@ -319,35 +301,17 @@ for {
 						the same events: <C>ErrNoProc</C> and <C>ErrNoConnection</C> are the caller's side of{' '}
 						<C>noproc</C> and <C>noconnection</C>.
 					</p>
-				</>
-			)
-		},
-		{
-			id: 'supervision',
-			title: 'From here to supervision',
-			body: (
-				<>
-					<p>
-						A supervisor is nothing but these pieces and a policy. It starts each child with{' '}
-						<C>SpawnMonitor</C> and <C>LinkParent</C>, so it learns of every exit with its real reason
-						and no child outlives it. When a <C>Down</C> arrives, it reads the reason, compares it with
-						the child's restart type, and starts a fresh child under the same name or gives up and
-						exits with <C>max restarts</C>, which is a <C>Down</C> for the supervisor above it. There
-						is no mechanism in it that this page has not shown.{' '}
-						<A to="concepts/supervision/">Supervision trees</A> is the rest.
-					</p>
 					<Aside title="Coming from Erlang">
 						<p>
 							Two things differ. A link is one way, as in{' '}
-							<Ext href="https://ergo.services">ergo</Ext>: <C>p.Link(b)</C> is a promise about{' '}
-							<C>p</C> only. Erlang's two-way link needs the rule that a non-trapping process
+							<Ext href="https://ergo.services">ergo</Ext>. Erlang's two-way link needs the rule that a non-trapping process
 							ignores a <C>normal</C> exit, or a helper that finishes would take its parent with it;
 							and it needs both nodes to agree on the link, which is why the link protocol gained
 							unlink ids and acknowledgements in OTP 23. A one-way link is a monitor on the wire,
 							which each side handles alone. And an exit signal from <C>Exit</C> is never trapped,
 							where Erlang's <C>exit/2</C> is, unless the reason is <C>kill</C>: grpcproc cannot kill
 							a goroutine, so the request is the only <C>kill</C> it has. The{' '}
-							<Ext href={file('docs/DESIGN.md')}>design notes</Ext> have the full reasoning.
+							<Ext href={file('docs/DESIGN.md')}>design notes</Ext> have the reasoning.
 						</p>
 					</Aside>
 				</>

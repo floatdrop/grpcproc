@@ -66,7 +66,7 @@ function Nav({ doc, docs }: PageProps) {
 	);
 }
 
-/** The landing page's opening: the pitch, the install line, and the scene. */
+/** The landing page's opening: the pitch, the install line, and where to start. */
 function Hero() {
 	return (
 		<header className="gp-page gp-hero">
@@ -91,10 +91,14 @@ function Hero() {
 						</Button.Icon>
 					</Button>
 				</div>
+				<div className="gp-hero__actions">
+					{hero.actions.map((action, i) => (
+						<Button key={action.to} view={i === 0 ? 'action' : 'outlined'} size="l" href={url(action.to)}>
+							{action.title}
+						</Button>
+					))}
+				</div>
 			</div>
-			{/* The scene: a node, its processes, and the nodes it is linked to. The
-			    lead says the same in words, so it is decorative. */}
-			<img className="gp-hero__art" src={url('scene.svg')} alt="" width={560} height={320} />
 		</header>
 	);
 }

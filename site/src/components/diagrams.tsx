@@ -75,10 +75,14 @@ export function Note({ x, y, children, anchor = 'start' }: { x: number; y: numbe
 	);
 }
 
-/** The svg element, its accessible name, and this drawing's arrowheads. */
-export function Diagram({ id, width, height, label, children }: { id: string; width: number; height: number; label: string; children: ReactNode }) {
+/**
+ * The svg element, its accessible name, and this drawing's arrowheads. One
+ * that moves takes the focus, so that the keyboard can hold it still, as the
+ * pointer does (main.css).
+ */
+export function Diagram({ id, width, height, label, moving = false, children }: { id: string; width: number; height: number; label: string; moving?: boolean; children: ReactNode }) {
 	return (
-		<svg className="gp-diagram" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label}>
+		<svg className="gp-diagram" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label} tabIndex={moving ? 0 : undefined}>
 			<defs>
 				<marker id={`${id}-end`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
 					<path className="gp-d-head" d="M0,0 L10,5 L0,10 z" />
