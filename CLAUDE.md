@@ -23,7 +23,8 @@ error types), `queue.go` (the mailbox and link queue), `admit.go` (`Policy`,
 `Export`), `names.go` (global names), `hooks.go`, `events.go`, `info.go`
 (the inspection types). Packages of the core module: `grpcproctest`
 (clusters over bufconn), `inspect` (the Inspector service), `actor`
-(handler loop, supervisor), `pubsub`, `cron`, `leader`. Nested modules:
+(handler loop, supervisor), `pubsub`, `cron`, `leader`, `saga` (durable
+sagas behind a `Store`; `saga/sagatest` checks a store). Nested modules:
 `otel`, `etcd`, `tools` (released), `examples`, `benchmarks` (not). `site/`
 is the documentation site. Protos are under `proto/` and beside the packages
 that own them.
@@ -94,11 +95,11 @@ the core's API can break it, `go vet ./... && golangci-lint run ./... &&
 go test -run '^$' -bench . -benchtime=50ms ./...`.
 
 Then coverage, which must stay at 100% for each package CI lists — in the
-root `. ./inspect ./actor ./pubsub ./cron ./leader`, in `otel` and `etcd`
+root `. ./inspect ./actor ./pubsub ./cron ./leader ./saga`, in `otel` and `etcd`
 `.`, in `tools` `./client ./dot ./cli ./mcpserver ./web`:
 
 ```sh
-for pkg in . ./inspect ./actor ./pubsub ./cron ./leader; do
+for pkg in . ./inspect ./actor ./pubsub ./cron ./leader ./saga; do
   go test -count=1 -coverprofile=coverage.out -coverpkg=$pkg $pkg >/dev/null
   echo "$pkg $(go tool cover -func=coverage.out | awk '/^total:/ {print $3}')"
 done
@@ -222,6 +223,16 @@ election's stance), `singleton.go` (the singleton's phase) and `peers.go`
 through the payload, never built in `init`. Their diagrams are
 `leader/testdata/*.dot` and the Mermaid blocks in `leader/README.md`, both
 kept current by `TestDiagrams`; `TestMachines` asserts no dead ends.
+
+**A saga's run is a record, and its engine has no state.** `saga` keeps a
+run's fsm state and data in a `Store`, saved before each effect and when
+the run waits; an
+engine claims due runs by a lease, each claim raising the run's epoch, and
+only the owner writes its state (`Save` is fenced by the epoch). An effect
+runs at least once, with `Run.Key` the same for every attempt; signals are
+kept beside the state and added by anyone. An engine claims only runs whose
+`SagaVersion` its `Definition.Version` reaches, so an older program never
+works on a newer one's runs. A store must pass `sagatest.Store`.
 
 ## Invariants that are easy to break
 

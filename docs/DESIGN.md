@@ -72,6 +72,7 @@ grpcproc/actor               optional helpers: handler loop, supervisor
 grpcproc/pubsub              optional: topics with a replay buffer, relayed once per node
 grpcproc/cron                optional: jobs on crontab schedules, every run a process
 grpcproc/leader              optional: leader election, and a singleton that runs on the leader with its state
+grpcproc/saga                optional: durable sagas, an fsm machine and its data per run, behind a Store
 grpcproc/etcd     (nested module)   Resolver + Registrar + Membership on etcd leases
 grpcproc/otel     (nested module)   Hooks implementation: OTel metrics + trace propagation
 grpcproc/tools    (nested module)   grpcprocctl over the Inspector: CLI, Graphviz, MCP server, web UI
@@ -1366,6 +1367,160 @@ c.Names(); c.CutNames("b"); c.RestoreNames("b")
   and its Inspector answers `FailedPrecondition`. The Inspector's RPCs are
   in the core; `grpcprocctl names` reads them.
 
+## Sagas (`grpcproc/saga`)
+
+A saga is work that spans services and outlasts a process: reserve, charge,
+ship, and undo what was done when a later step cannot be. The shop's order
+desk is one in memory, and what it cannot settle it logs for whoever
+reconciles orders. `grpcproc/saga` keeps each run in a store, so that a
+crash, a restart or a lost node is followed by the run going on from where
+it was. It is a package of the core, built on the public API and `fsm`.
+
+```go
+var order = fsm.MustNew("order",
+    fsm.Initial(Reserving),
+    fsm.From(Reserving).On(reserved).To(Charging),
+    fsm.From(Reserving).On(refused).To(Refused),
+    fsm.From(Charging).On(charged).To(Done),
+    fsm.From(Charging).On(declined).To(Releasing),
+    fsm.From(Releasing).On(released).To(Refused),
+)
+
+orders := saga.Define[*ordersv1.Order]("order", order).
+    Do(Reserving, func(ctx context.Context, r *saga.Run[State, *ordersv1.Order]) error {
+        res, err := stock.Reserve(ctx, r.Process(), &inventoryv1.Reserve{Order: r.ID(), Sku: r.Data.Sku})
+        if err != nil {
+            return err // tried again, with the same key
+        }
+        if res.Refused != "" {
+            return r.Fire(ctx, refused, res.Refused)
+        }
+        return r.Fire(ctx, reserved, fsm.Unit{})
+    }).
+    Do(Charging, charge).
+    Do(Releasing, release)
+
+eng, err := saga.Start(node, saga.Config{Store: store}, orders)
+created, err := orders.Begin(ctx, eng, "order-123", &ordersv1.Order{Sku: "apple"})
+snap, err := orders.Wait(ctx, eng, "order-123") // its state, data and status, once it is done or stuck
+```
+
+- **A run is an fsm machine's state and a protobuf message.** `fsm` keeps
+  the state with its caller, as a value, so the two are one record, saved
+  whole. Nothing is replayed: the code that runs after
+  a crash is the code of the state the record is in, so an effect is
+  ordinary Go, goroutines and `select` included, and a new version of the
+  program takes a run up where the record says it is. Temporal replays a
+  history through the workflow's code, which forbids both; DBOS runs the
+  function again and skips the steps it has, which still asks for the same
+  steps in the same order.
+- **Two versions of a program can share a store.** In a rolling deploy the
+  old program meets the new one's runs, in states its machine lacks. So a
+  saga has a version (`Definition.Version`), a run keeps the highest that
+  began, signalled or worked on it, and an engine claims only the runs its
+  version reaches: the old program leaves alone what the new one has
+  touched, letting go of a run the new one signals while it works on it,
+  and the new one takes up the old one's runs as they are. Raise
+  it when the machine gains a state, an event or a timer. DBOS stamps a
+  run with its application's version for the same reason. A record a
+  program cannot read though its version says it can is `Stuck`, with why.
+- **A state has an effect, or waits.** `Do` gives a state the function that
+  runs when a run enters it, before a signal that waited or its timer can
+  move the run on. The effect fires the event that moves the run
+  on, with `Run.Fire`; what it wrote to `Run.Data` is saved with the new
+  state. One that returns `nil` without firing has done its part, and the
+  run waits in the state. A state with no effect waits from the start. A
+  run that waits leaves it by a signal or by its timer. A state with no
+  transition out ends the run: it is `Done`. An internal transition (fsm's
+  `Stay`) takes its event without a new visit: the effect is not run
+  again, and the state's timer stands.
+- **An effect runs at least once.** The record is saved after the effect,
+  so a crash between the two runs the effect again. That cannot be
+  avoided, only made safe: `Run.Key` is the same for every attempt of one
+  visit to a state (the saga's name, the run's id, the state and how many
+  states the run has entered), and it travels, with the fence, in the
+  metadata of every send and call the effect makes with its ctx
+  (`saga.KeyOf` reads them from a message's). A participant that keeps the
+  key with what it did answers a repeat with what it answered before.
+- **An error is tried again; an unknown outcome is an error.** An effect
+  that returns an error is run again after a backoff that doubles
+  (`Backoff`, 100ms to a minute by default); how many times it failed, and
+  why, are in the record. A call that timed out may have been handled, so
+  the effect returns its error and is tried again with the same key; it is
+  never taken for a refusal. A refusal is an answer, and the effect fires
+  an event for it. `Attempts(n)` bounds the tries, and `Permanent(err)`
+  ends them at once. Then `Otherwise(ev)` fires `ev` with the error's text,
+  for a machine that has a way on from there; with none, the run is `Stuck`,
+  kept as it is and shown as such, until `Resume` has it tried again. A
+  compensation that keeps failing has no automatic answer, and a run that
+  is dropped is worse than one that waits for a person.
+- **Signals wait for the state that takes them.** `Signal` saves an event
+  and its payload, a protobuf message, with the run; the machine takes it
+  when it is in a state that accepts it, in the order they came. One that
+  comes early is kept, where luno/workflow drops it. `Accept` names the
+  events a saga takes from outside. A signal makes its run due without
+  touching when its effect is next tried, which the record keeps apart
+  (`RetryAt`), so one that comes during a backoff does not cut it short;
+  nor does a timer the machine refuses. One that cannot be delivered, of
+  an event the saga does not accept, with a payload that does not decode,
+  or whose taking panics, is dropped, and the run stays as it was; one
+  whose taking fails by the machine's action stays, those behind it
+  waiting, and is tried again a `Poll` later. A run holds 64 that wait, and refuses
+  more; one that no state takes waits until the run ends, so a sender that
+  repeats itself can fill it (open work).
+- **A timer is a time in the record.** `After(state, d, ev)` fires `ev` on
+  a run that is still in that visit to `state` when `d` has passed, between
+  attempts if its effect is failing. The store finds the runs whose time
+  has come; no process waits for them. It fires once: a machine that
+  refuses it, by a guard or for want of the transition, stays, and one
+  whose action fails is asked again a `Poll` later.
+- **One owner at a time, and a fence.** An engine claims runs that have
+  something to do from the store, each for a lease it renews, every quarter
+  of it, while it works on it, and each claim raises the run's epoch. Only
+  the owner writes the run's state, and the store refuses a write with an
+  older epoch, so an engine that was cut off, and whose lease another took,
+  cannot save over it. Its effect's ctx ends when the store says the run is
+  another's, or when a quarter of its lease is left and none of its
+  renewals got through, before another engine may have it (a renewal
+  that hangs is one that failed); what it had not saved is run again
+  by the new owner, with the same key. A save leaves the lease as it is.
+  The owner saves before each effect, so that what came before is kept,
+  and when it lets the run go: a run that waits costs one write. A save
+  the store fails is asked again, a `Poll` apart, while the lease holds. The epoch is the fence in the metadata, for
+  a participant that must refuse the old owner's late request too. Signals
+  are added by anyone, beside the state, and a run let go while one is
+  unseen stays due.
+- **The store is the only moving part.** luno/workflow needs a record store
+  with an outbox, an event stream, a role scheduler and a timeout store.
+  Here the next step is driven by the process that owns the run, ownership
+  is a lease in the store, a timer is a field of the record, and nothing is
+  published, so `Store` is one interface: `Create` if absent, `Claim`,
+  `Save` (fenced), `Renew`, `Signal`, `Resume`, `Get` and `List`.
+  `saga.Memory` is the one in the core, for tests and for sagas that need
+  not outlast their program, and `sagatest.Store` is what every store must
+  pass.
+- **A run at work is a process.** The engine is a process on each node
+  that runs sagas, named `saga`; it claims on a tick (`Config.Poll`, a
+  second), when told a run has something to do, and when a run it let go
+  is due, and spawns a process for each run it claims, labelled
+  `saga:<name>`, which lives while the run has work and exits when it
+  waits. So a run at work is in the process list and the Inspector, its
+  effect's calls come from it, and the node's stop ends it: its ctx is
+  cancelled, nothing is saved, its lease is let go, and another engine
+  claims the run at once. A node that dies leaves the lease to run out
+  (`Config.Lease`, 30s). A run that waits is a record and no more.
+- **`Sequence` is the saga of the textbooks, as a machine.** Steps in
+  order, each with what undoes it: a step that fails for good before the
+  pivot has the steps before it undone, last first, itself included, since
+  it may have happened, and the run ends `failed`, with why in its
+  `Cause`; after the pivot the
+  steps are tried until they work, and one that cannot is `Stuck`. An undo
+  must do nothing for a step that never happened. It compiles to an
+  `fsm.Machine`, so it is drawn and inspected like any other.
+
+Not built: stores that outlast a process, a wrapper for participants,
+steps side by side, and retention; see Open work.
+
 ## What was rejected, and why
 
 | Idea | Seen in | Why not |
@@ -1379,7 +1534,7 @@ c.Names(); c.CutNames("b"); c.RestoreNames("b")
 | A UI served by every node | ergo Observer | A UI is a client: `grpcprocctl web` is one, over the Inspector, and a node serves nothing but gRPC |
 | gob / custom codec | first prototype | protobuf is already the service's contract; a body travels as its full name and bytes, and generated types register themselves |
 | Delivery beyond at-most-once in the core | Akka Reliable Delivery, GoAkt | Every send would pay for a store and acknowledgements most do not need, and both Akka and GoAkt made it a layer one opts into. Here it is a module, open work below; the core's `LinkError.Unsent` tells it what is safe to send again |
-| Sagas that live in memory | ergo `gen.Saga` (v2, gone in v3), Elixir's Sage | A crashed coordinator leaves steps done and nothing to undo them. Every saga framework that calls itself production-ready (Akka's workflows, Dapr Workflow, Commanded) has a coordinator that outlives a crash, and steps that are idempotent for it. A recipe and a durable module are open work, below |
+| Sagas that live in memory | ergo `gen.Saga` (v2, gone in v3), Elixir's Sage | A crashed coordinator leaves steps done and nothing to undo them. Every saga framework that calls itself production-ready (Akka's workflows, Dapr Workflow, Commanded) has a coordinator that outlives a crash, and steps that are idempotent for it. `grpcproc/saga` keeps every run in a `Store` (see Sagas) |
 | One membership across installations | Orleans multi-cluster (removed in 3.2), Akka ClusterClient (deprecated in 2.6) | Two installations are operated apart: a registry or a singleton spanning both needs agreement over a network neither side controls, and the systems that tried went back to an explicit boundary: grpcproc's is `Admit` and `DialOptionsFor` (see Admission) |
 
 ## Open work
@@ -1399,25 +1554,14 @@ OpenTelemetry are.
   if one side can dial out and not in (a customer's VPC, a factory floor)
   does the link need turning around: a bridge with a gRPC service of its own,
   so the core keeps one link per direction.
-- **Sagas.** The shop's order desk is one already, in memory: it reserves,
-  charges, releases the stock on a decline, and logs an error from the bank
-  as unsettled, since the card may have been charged. A guide first: an
-  idempotency key per step, the saga's id and the step's, in the request or
-  the metadata; a step sent again only when it cannot have left
-  (`ErrNoProc`, `LinkError.Unsent`), the rule `leader.Call` follows; each
-  compensation registered before its step, so a step that timed out but
-  happened is undone too; a pivot step, after which recovery retries forward
-  instead of compensating; and reconciliation for what stays unknown. Then a
-  coordinator that needs nothing new: a leader's singleton whose state is
-  the sagas in flight, saved with `Lease.Checkpoint` after each step, with
-  `Lease.Term` passed to participants as a fence. That holds tens or
-  hundreds in flight, since the whole state travels with the heartbeats.
-  Then, for volume, a `grpcproc/saga` module: each step's result saved behind
-  a `Store` (create, append with compare-and-swap, claim with a lease and an
-  epoch, list what is in flight), as DBOS checkpoints steps, rather than
-  Temporal's replay of a history, whose determinism rules forbid the
-  `select` and goroutines processes are written with. The leader takes over
-  the sagas of a node that left. Steps' timeouts need durable timers (below).
+- **Sagas, the rest** (see Sagas): stores that outlast a process, Postgres
+  as a nested module, etcd in `grpcproc/etcd`, and one kept in a leader's
+  checkpoint for an installation with no database; a wrapper for
+  participants that answers a repeated key with the stored reply and refuses
+  a lower fence; steps that run side by side; retention of finished runs;
+  dropping the signals no state of a run will take;
+  `grpcprocctl saga` and a view in the web UI; and the shop's order desk
+  rewritten as one.
 - **Process groups**, Erlang's `pg` and Akka's Receptionist: the live
   members of a group, found and watched. Pub/sub topics already monitor their
   subscribers through a relay per node, so it is a thin module.
@@ -1438,10 +1582,10 @@ OpenTelemetry are.
   links to peers whose servers take less. Deferred: it needs the node to be
   told its server's limit, which it cannot read, and the default, 4 MiB on
   both sides, agrees; the operations guide gives the order to raise them in.
-- **Delivery beyond at-most-once**, as a module beside sagas, on the same
-  `Store`: idempotency keys, sending again what `Unsent` says never left, and
-  an outbox fenced by an epoch, so a writer on a node that left cannot commit,
-  as GoAkt's durable queue is. The core stays at most once.
+- **Delivery beyond at-most-once**, on the saga's `Store`: sending again
+  what `Unsent` says never left, and an outbox fenced by an epoch, so a
+  writer on a node that left cannot commit, as GoAkt's durable queue is.
+  The core stays at most once.
 - **Keyed entities**: a consistent hash over `Membership` picks the node,
   `StartChildFrom` starts the entity there or answers with the one that runs
   (`ErrAlreadyStarted`), and an entity idle for a while stops. Orleans' grains
