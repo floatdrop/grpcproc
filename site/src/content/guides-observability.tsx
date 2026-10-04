@@ -166,7 +166,8 @@ state, err := node.Inspect(ctx, pid)`}</Code>
 				<>
 					<p>
 						<C>node.Subscribe(ctx, buffer)</C> is a channel of what happens on the node: a spawn, an
-						exit with its reason, a link up or down, a dead letter. Each <C>Event</C> has a{' '}
+						exit with its reason, a session with a peer beginning or ending (its first link up, the peer
+						declared down), a dead letter. Each <C>Event</C> has a{' '}
 						<C>Kind</C> and the fields that kind fills: the <C>Process</C> snapshot for a spawn or an
 						exit, the <C>Peer</C> and an error for a link, <C>From</C>, <C>To</C>, the message{' '}
 						<C>Type</C> and a reason for a dead letter.

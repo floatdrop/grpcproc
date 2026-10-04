@@ -28,8 +28,8 @@ func (k EventKind) String() string { return enumName(eventKinds[:], int(k), "Eve
 //
 //	EventSpawn       Process
 //	EventExit        Process, Reason
-//	EventLinkUp      Peer
-//	EventLinkDown    Peer, Err
+//	EventLinkUp      Peer: a session with it began (see Hooks.OnLinkUp)
+//	EventLinkDown    Peer, Err: the session ended, the peer declared down
 //	EventDeadLetter  From, To, Type (proto full name), Reason
 type Event struct {
 	Kind    EventKind

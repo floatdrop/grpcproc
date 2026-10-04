@@ -142,11 +142,28 @@ time, made strictly increasing, which also keeps it fresh inside a
 **`settling` orders a peer's sessions.** A change to a peer's links decided
 under `n.mu` is counted in `settling` until it is carried out: a teardown
 (`takeLinks`, and `outLost` when no inbound link is left) until the peer is
-declared down, a new inbound link until `linkUp` has announced it. A new
-inbound link waits on `settled` until none is under way, so nothing the new
-session carries overtakes the old session's `Down`s, and link events come in
-order. Every `settling[peer]++` has its `settle(peer)`, or the peer's next
-inbound link waits for ever.
+declared down, a new inbound link until it is announced. A new link either
+way waits on `settled` until none is under way — `serveLink` before it goes
+in, a dial in `admit` — so nothing the new session carries overtakes the old
+session's `Down`s, and the old session's end fails nothing that went on the
+new one. Every `settling[peer]++` has its `settle(peer)`, or the peer's next
+link waits for ever.
+
+**A call or a watch of a peer's process is recorded once its link is
+known.** `callRemote` puts the call in `pending`, `placeWatch` records the
+monitor or link, and a CallMonitor's `await` records its watch, only after
+`getOut` returned the link they go on; a session that ends while they wait
+for a dial is not theirs, and its `nodeDown`, which matches by peer name,
+must not reach them. For the same reason `getOut` dials once more when the
+dial it joined made a link of a session that ended meanwhile
+(`errSessionEnded`).
+
+**Link events are per session.** `linkUp` runs when the first link with a
+peer goes in, either way (`began`), `linkDown` when the peer is declared
+down. `announcing` counts the link-ups decided and not yet published, and
+`linkDown` waits for it, so a session's end is never announced before its
+start; `Stop` waits for it too, so no hook runs once it returns. `Stop`
+announces no session's end.
 
 **Lock order.** An inbound link's `mu` is outermost: it is held while a frame
 is dispatched and while the link closes, and dispatch takes `n.mu`, process
@@ -161,7 +178,13 @@ or user code runs under it.
 **Dispatch never waits for a dial.** The goroutine reading a link dispatches
 each frame itself; answers it makes (no such process, wrong type) to a peer
 it has no link to yet are queued on the dial and written first once it is
-up. The inbound handler never selects on the stream's context: a peer's
+up.
+
+**An answer that cannot go back cuts the link its request came by.** A
+peer's call carries `via`, the inbound link it arrived on, into its open
+call (`answerTo.via`), and a watch into the watched process's `watchers`;
+`routeOrCut` aborts that link, never `n.in[peer]`, which may belong to a
+newer session that is owed nothing. The inbound handler never selects on the stream's context: a peer's
 cancel is seen through `Recv`, after everything that preceded it.
 
 **Types live on the address.** `Addr[M]` carries the message type, so every

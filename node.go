@@ -253,8 +253,12 @@ type Node struct {
 	// events come in order. (A dial is not held up: its link carries nothing
 	// in.)
 	settling map[string]int
-	settled  *sync.Cond
-	wg       sync.WaitGroup
+	// announcing counts, per peer, the sessions with it that began (see
+	// linkUp) and are still being announced: the end of one is announced
+	// only after it, so a peer's link events come up, down, in that order.
+	announcing map[string]int
+	settled    *sync.Cond
+	wg         sync.WaitGroup
 
 	spawned, exited, deadLetters atomic.Uint64
 	subs                         subscribers
@@ -331,6 +335,8 @@ func NewNode(cfg Config) (*Node, error) {
 		epochs:   map[string]uint64{},
 		members:  map[string]Member{},
 		settling: map[string]int{},
+
+		announcing: map[string]int{},
 	}
 	n.settled = sync.NewCond(&n.mu)
 	n.linkBound = bound{items: int64(cfg.MaxQueued), bytes: int64(cfg.MaxQueuedBytes)}
@@ -562,10 +568,10 @@ func (n *Node) Stop(ctx context.Context) error {
 
 	n.mu.Lock()
 	n.stopped = true
-	dialing := len(n.dialing) > 0
 	outs, ins := n.out, n.in
 	n.out, n.in = map[string]*outLink{}, map[string]*inLink{}
 	n.mu.Unlock()
+	n.settled.Broadcast() // a dial or a link waiting for a peer's links to settle gives up
 	// Let the Down{shutdown} envelopes reach their peers before the links go:
 	// every link flushes at once, then each is waited for.
 	for _, l := range outs {
@@ -582,6 +588,24 @@ func (n *Node) Stop(ctx context.Context) error {
 	}
 	for _, l := range ins {
 		l.close()
+	}
+	// A link that came up before the node stopped may still be announced
+	// (OnLinkUp): no hook runs once Stop has returned.
+	announced := make(chan struct{})
+	go func() {
+		n.mu.Lock()
+		for len(n.announcing) > 0 {
+			n.settled.Wait()
+		}
+		n.mu.Unlock()
+		close(announced)
+	}()
+	select {
+	case <-announced:
+	case <-ctx.Done():
+		if err == nil {
+			err = fmt.Errorf("grpcproc: stop: %w", ctx.Err())
+		}
 	}
 	// Calls still waiting on a peer will get no answer, and nothing declares
 	// the peers down any more: fail them. They may have been handled.
@@ -600,16 +624,16 @@ func (n *Node) Stop(ctx context.Context) error {
 		p.failLocalCalls(ErrNodeStopped)
 	}
 	// A dial that was in flight when the node stopped completes, and
-	// finishDial discards its link: wait for it to let go of the node.
-	if dialing {
-		dialed := make(chan struct{})
-		go func() { n.dialWG.Wait(); close(dialed) }()
-		select {
-		case <-dialed:
-		case <-ctx.Done():
-			if err == nil {
-				err = fmt.Errorf("grpcproc: stop: %w", ctx.Err())
-			}
+	// finishDial discards its link: wait for it to let go of the node. One
+	// that installed its link may still be announcing it, so every dial is
+	// waited for, not only those under way.
+	dialed := make(chan struct{})
+	go func() { n.dialWG.Wait(); close(dialed) }()
+	select {
+	case <-dialed:
+	case <-ctx.Done():
+		if err == nil {
+			err = fmt.Errorf("grpcproc: stop: %w", ctx.Err())
 		}
 	}
 	// Global names its processes held are given up before the node is
@@ -846,7 +870,7 @@ func (n *Node) SendTo(ctx context.Context, to Target, m proto.Message) error {
 // CallTo calls an untyped target from the node, as Addr.Call does a typed
 // one, and types the reply as R.
 func (n *Node) CallTo[R proto.Message](ctx context.Context, to Target, req proto.Message) (R, error) {
-	return typed[R](n.doCall(ctx, n.PID(), nil, destOf(to), req, MetadataFrom(ctx), 0))
+	return typed[R](n.doCall(ctx, n.PID(), nil, destOf(to), req, MetadataFrom(ctx), 0, nil))
 }
 
 // Exit asks a process anywhere to terminate with reason. As for SendTo, ctx
@@ -898,8 +922,9 @@ func (n *Node) send(ctx context.Context, from PID, sender *proc, to dest, body p
 
 // doCall calls to and waits for the answer. watch, unless 0, is the ref the
 // call goes by, and asks the callee to place its caller's watch under (see
-// WatchedBy).
-func (n *Node) doCall(ctx context.Context, from PID, caller *proc, to dest, req proto.Message, md Metadata, watch uint64) (r callResult) {
+// WatchedBy); await then records the watch, and reports false if the caller
+// has exited: it runs once the call's way is known, just before it leaves.
+func (n *Node) doCall(ctx context.Context, from PID, caller *proc, to dest, req proto.Message, md Metadata, watch uint64, await func() bool) (r callResult) {
 	to = n.resolveDest(to)
 	pid, name := to.pid, to.name
 	md, done := n.hookSend(from, caller, pid, name, req, md, true)
@@ -916,9 +941,12 @@ func (n *Node) doCall(ctx context.Context, from PID, caller *proc, to dest, req 
 		defer func() { caller.callsInFlight.Add(-1); caller.setState(StateRunning) }()
 	}
 	if pid.Node == n.id.Name {
+		if await != nil && !await() {
+			return callResult{err: ErrNoProc}
+		}
 		return n.callLocal(ctx, from, pid, name, req, md, watch)
 	}
-	return n.callRemote(ctx, from, pid, name, req, md, watch)
+	return n.callRemote(ctx, from, pid, name, req, md, watch, await)
 }
 
 // callRef is the ref a call goes by: watch, the ref of the watch it asks for,
@@ -955,19 +983,28 @@ func (n *Node) callLocal(ctx context.Context, from, to PID, name string, req pro
 }
 
 // callRemote calls a process of a peer, which answers by ref: the call
-// waits in n.pending.
-func (n *Node) callRemote(ctx context.Context, from, to PID, name string, req proto.Message, md Metadata, watch uint64) callResult {
+// waits in n.pending. It goes there, and its watch is recorded (await), only
+// once the link it goes on is known: a session with the peer that ends while
+// it waits for a dial is not one it went on, so its end does not fail it.
+func (n *Node) callRemote(ctx context.Context, from, to PID, name string, req proto.Message, md Metadata, watch uint64, await func() bool) callResult {
 	ref := n.callRef(watch)
 	env := wire(grpcprocv1.Kind_KIND_CALL, from, to, name)
 	env.Ref, env.Metadata, env.Watch = ref, md, watch != 0
-	if d, ok := ctx.Deadline(); ok {
-		// Time left rather than the deadline, so that the peer's clock need
-		// not agree with this one's; at least 1ns, which still says "a
-		// deadline", for one that has just passed.
-		env.TimeoutNanos = max(int64(time.Until(d)), 1)
-	}
 	if err := encodeBody(env, req); err != nil {
 		return callResult{err: err}
+	}
+	l, err := n.getOut(ctx, to.Node)
+	if err != nil {
+		return callResult{err: err}
+	}
+	if d, ok := ctx.Deadline(); ok {
+		// Time left once the link is there, rather than the deadline, so
+		// that the peer's clock need not agree with this one's; at least
+		// 1ns, which still says "a deadline", for one that has just passed.
+		env.TimeoutNanos = max(int64(time.Until(d)), 1)
+	}
+	if await != nil && !await() {
+		return callResult{err: ErrNoProc}
 	}
 	pc := &pendingCall{node: to.Node, ch: make(chan callResult, 1)}
 	n.pendingMu.Lock()
@@ -984,7 +1021,7 @@ func (n *Node) callRemote(ctx context.Context, from, to PID, name string, req pr
 			n.pendingMu.Unlock()
 		}
 	}()
-	if err := n.route(ctx, to.Node, env); err != nil {
+	if err := l.send(env); err != nil {
 		return callResult{err: err}
 	}
 	select {
@@ -1022,21 +1059,24 @@ func (n *Node) reply(from, to PID, ref uint64, a answerTo, body proto.Message, s
 			return err
 		}
 	}
-	return n.routeOrCut(to.Node, env, dispatching)
+	return n.routeOrCut(to.Node, env, a.via, dispatching)
 }
 
 // routeOrCut routes a reply or a Down. The peer waits for those over a link
 // of its own, which stays up when this node cannot reach it back, so it would
 // never learn that one was lost. When one cannot be routed, that link goes
 // too, told why: the peer sees this node as unreachable, its calls fail and
-// its monitors fire, as if the connection had broken both ways.
+// its monitors fire, as if the connection had broken both ways. That link is
+// via, the one the call or the watch came by: one that has replaced it since
+// belongs to a session owed nothing, and a closed one takes no cut. A nil via
+// (a request of this node's, or one already answered) cuts nothing.
 //
-// An answer dispatch makes itself (no such process, wrong type) runs on the
-// link the peer's frame came by, holding it: closing that link, as Stop and
-// Disconnect do, waits for the frame. It must not wait for a dial there. With
-// no link to the peer yet, it is queued on the dial, which writes it first,
-// in order with the other answers, once the link is up.
-func (n *Node) routeOrCut(node string, env *grpcprocv1.Envelope, dispatching bool) error {
+// An answer dispatch makes itself (no such process, wrong type) runs on via,
+// holding it: closing that link, as Stop and Disconnect do, waits for the
+// frame. It must not wait for a dial there. With no link to the peer yet, it
+// is queued on the dial, which writes it first, in order with the other
+// answers, once the link is up.
+func (n *Node) routeOrCut(node string, env *grpcprocv1.Envelope, via *inLink, dispatching bool) error {
 	var err error
 	if dispatching {
 		n.mu.Lock()
@@ -1045,10 +1085,8 @@ func (n *Node) routeOrCut(node string, env *grpcprocv1.Envelope, dispatching boo
 			var d *dialOp
 			if d, err = n.dialFor(node); err == nil {
 				d.answers = append(d.answers, env)
-				// The frame came by n.in[node], unless that is being torn
-				// down (see settling): the link to cut if the answer fails.
-				if in := n.in[node]; in != nil && !slices.Contains(d.cut, in) {
-					d.cut = append(d.cut, in)
+				if via != nil && !slices.Contains(d.cut, via) {
+					d.cut = append(d.cut, via)
 				}
 				n.mu.Unlock()
 				return nil
@@ -1061,13 +1099,8 @@ func (n *Node) routeOrCut(node string, env *grpcprocv1.Envelope, dispatching boo
 	} else {
 		err = n.route(context.Background(), node, env)
 	}
-	if le, ok := errors.AsType[*LinkError](err); ok {
-		n.mu.Lock()
-		in := n.in[node]
-		n.mu.Unlock()
-		if in != nil {
-			in.abort(le.Err)
-		}
+	if le, ok := errors.AsType[*LinkError](err); ok && via != nil {
+		via.abort(le.Err)
 	}
 	return err
 }
@@ -1092,15 +1125,17 @@ func (n *Node) unwatch(c openCall, watched PID) {
 	}
 }
 
-func (n *Node) monitor(from PID, to Target, ref uint64) error {
+// monitor places from's watch of to under ref: on a process of this node at
+// once, with l nil, and on one of a peer over l, the link to it.
+func (n *Node) monitor(from PID, to Target, ref uint64, l *outLink) error {
 	pid, name := to.target()
-	if pid.Node == n.id.Name {
-		n.deliverMonitor(from, pid, name, ref)
+	if l == nil {
+		n.deliverMonitor(from, pid, name, ref, nil)
 		return nil
 	}
 	env := wire(grpcprocv1.Kind_KIND_MONITOR, from, pid, name)
 	env.Ref = ref
-	return n.route(context.Background(), pid.Node, env)
+	return l.send(env)
 }
 
 func (n *Node) demonitor(from PID, to Target, ref uint64) error {
@@ -1114,16 +1149,16 @@ func (n *Node) demonitor(from PID, to Target, ref uint64) error {
 	return n.route(context.Background(), pid.Node, env)
 }
 
-// down tells a watcher that what it monitors is gone. dispatching is as for
-// reply.
-func (n *Node) down(from, to PID, ref uint64, reason string, dispatching bool) error {
+// down tells a watcher that what it monitors is gone. via is the inbound
+// link its watch came by, and dispatching is as for reply.
+func (n *Node) down(from, to PID, ref uint64, reason string, via *inLink, dispatching bool) error {
 	if to.Node == n.id.Name {
 		n.deliverDown(from, to, ref, reason)
 		return nil
 	}
 	env := wire(grpcprocv1.Kind_KIND_DOWN, from, to, "")
 	env.Ref, env.Reason = ref, reason
-	return n.routeOrCut(to.Node, env, dispatching)
+	return n.routeOrCut(to.Node, env, via, dispatching)
 }
 
 func (n *Node) exit(ctx context.Context, from PID, to Target, reason string) error {
@@ -1145,9 +1180,6 @@ func (n *Node) exit(ctx context.Context, from PID, to Target, reason string) err
 // Exit, and timers wait for the dial, which Config.DialTimeout bounds.
 // While dials to node are backed off, route fails at once.
 func (n *Node) route(ctx context.Context, node string, env *grpcprocv1.Envelope) error {
-	if node == "" {
-		return errors.New("grpcproc: empty destination node")
-	}
 	l, err := n.getOut(ctx, node)
 	if err != nil {
 		return err
@@ -1165,14 +1197,14 @@ func (n *Node) deliver(to PID, name string, it item, reply chan<- callResult) {
 	if p == nil {
 		n.deadLetter(it.from, to, it.body, ReasonNoProc)
 		if it.ref != 0 {
-			_ = n.reply(to, it.from, it.ref, answerTo{ch: reply}, nil, grpcprocv1.Status_STATUS_NOPROC, "", true)
+			_ = n.reply(to, it.from, it.ref, answerTo{ch: reply, via: it.via}, nil, grpcprocv1.Status_STATUS_NOPROC, "", true)
 		}
 		return
 	}
 	if !p.accept(it.body) {
 		n.deadLetter(it.from, p.pid, it.body, ReasonType)
 		if it.ref != 0 {
-			_ = n.reply(p.pid, it.from, it.ref, answerTo{ch: reply}, nil, grpcprocv1.Status_STATUS_TYPE, "", true)
+			_ = n.reply(p.pid, it.from, it.ref, answerTo{ch: reply, via: it.via}, nil, grpcprocv1.Status_STATUS_TYPE, "", true)
 		}
 		return
 	}
@@ -1188,7 +1220,7 @@ func (n *Node) deliver(to PID, name string, it item, reply chan<- callResult) {
 	if !queued {
 		n.deadLetter(it.from, p.pid, it.body, ReasonNoProc)
 		if it.ref != 0 {
-			_ = n.reply(p.pid, it.from, it.ref, answerTo{ch: reply}, nil, grpcprocv1.Status_STATUS_NOPROC, "", true)
+			_ = n.reply(p.pid, it.from, it.ref, answerTo{ch: reply, via: it.via}, nil, grpcprocv1.Status_STATUS_NOPROC, "", true)
 		}
 	}
 }
@@ -1211,11 +1243,13 @@ func (n *Node) deliverReply(ref uint64, body proto.Message, status grpcprocv1.St
 	}
 }
 
-func (n *Node) deliverMonitor(from, to PID, name string, ref uint64) {
+// deliverMonitor places a monitor, or a link, of from on a process of this
+// node; via is the inbound link it came by, nil for one of this node.
+func (n *Node) deliverMonitor(from, to PID, name string, ref uint64, via *inLink) {
 	r := Ref{Node: from.Node, ID: ref}
 	p := n.lookup(to, name)
-	if p == nil || !p.addWatcher(r, from) {
-		_ = n.down(to, from, ref, ReasonNoProc, true)
+	if p == nil || !p.addWatcher(r, watcher{pid: from, via: via}) {
+		_ = n.down(to, from, ref, ReasonNoProc, via, true)
 	}
 }
 
@@ -1257,11 +1291,12 @@ func (n *Node) deadLetter(from, to PID, body proto.Message, reason string) {
 	n.log.Debug("dead letter", "from", from, "to", to, "reason", reason, "type", typeName(body))
 }
 
-// dispatch handles an envelope that arrived on the inbound link from peer:
-// its sender is a process of peer, its target one of this node. pol, the
-// link's Policy, judges what the peer asks; what it refuses is answered as
-// for a process that does not exist.
-func (n *Node) dispatch(peer string, pol Policy, env *grpcprocv1.Envelope) {
+// dispatch handles an envelope that arrived on via, the inbound link from
+// peer: its sender is a process of peer, its target one of this node. pol,
+// the link's Policy, judges what the peer asks; what it refuses is answered
+// as for a process that does not exist. An answer that cannot go back cuts
+// via (see routeOrCut).
+func (n *Node) dispatch(via *inLink, peer string, pol Policy, env *grpcprocv1.Envelope) {
 	from := PID{Node: peer, Incarnation: env.GetFromIncarnation(), ID: env.GetFromId()}
 	to := PID{Node: n.id.Name, Incarnation: env.GetToIncarnation(), ID: env.GetToId()}
 	name, ref := env.GetToName(), env.GetRef()
@@ -1269,9 +1304,9 @@ func (n *Node) dispatch(peer string, pol Policy, env *grpcprocv1.Envelope) {
 		n.deadLetter(from, to, nil, ReasonDenied)
 		switch op {
 		case OpCall:
-			_ = n.reply(to, from, ref, answerTo{}, nil, grpcprocv1.Status_STATUS_NOPROC, "", true)
+			_ = n.reply(to, from, ref, answerTo{via: via}, nil, grpcprocv1.Status_STATUS_NOPROC, "", true)
 		case OpMonitor:
-			_ = n.down(to, from, ref, ReasonNoProc, true)
+			_ = n.down(to, from, ref, ReasonNoProc, via, true)
 		}
 		return
 	}
@@ -1288,10 +1323,10 @@ func (n *Node) dispatch(peer string, pol Policy, env *grpcprocv1.Envelope) {
 		body, err := decodeBody(env)
 		if err != nil {
 			n.log.Warn("undecodable call", "err", err)
-			_ = n.reply(to, from, ref, answerTo{}, nil, grpcprocv1.Status_STATUS_TYPE, "", true)
+			_ = n.reply(to, from, ref, answerTo{via: via}, nil, grpcprocv1.Status_STATUS_TYPE, "", true)
 			return
 		}
-		it := item{from: from, body: body, md: env.GetMetadata(), ref: ref, watch: env.GetWatch()}
+		it := item{from: from, body: body, md: env.GetMetadata(), ref: ref, watch: env.GetWatch(), via: via}
 		if t := env.GetTimeoutNanos(); t > 0 {
 			it.deadline = unixNanos(time.Now().Add(time.Duration(t)))
 		}
@@ -1315,7 +1350,7 @@ func (n *Node) dispatch(peer string, pol Policy, env *grpcprocv1.Envelope) {
 		}
 		n.deliverReply(ref, body, env.GetStatus(), env.GetReason())
 	case grpcprocv1.Kind_KIND_MONITOR:
-		n.deliverMonitor(from, to, name, ref)
+		n.deliverMonitor(from, to, name, ref, via)
 	case grpcprocv1.Kind_KIND_DEMONITOR:
 		n.deliverDemonitor(from, to, name, ref)
 	case grpcprocv1.Kind_KIND_DOWN:

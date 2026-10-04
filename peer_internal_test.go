@@ -302,8 +302,8 @@ func TestLinkBound(t *testing.T) {
 
 		for _, err := range []error{
 			n.reply(from, to, 1, answerTo{}, &ping{}, grpcprocv1.Status_STATUS_OK, "", false),
-			n.down(from, to, 2, ReasonNormal, false),
-			n.monitor(from, to, 3),
+			n.down(from, to, 2, ReasonNormal, nil, false),
+			n.monitor(from, to, 3, l),
 			n.demonitor(from, to, 3),
 			n.exit(t.Context(), from, to, ReasonKilled),
 		} {
