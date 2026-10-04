@@ -7,7 +7,7 @@ replaced, and a slow one is told to exit. A package of grpcproc's, built
 on its public API alone.
 
 ```sh
-go get github.com/floatdrop/grpcproc/cron
+go get github.com/floatdrop/grpcproc # cron is a package of the core module
 ```
 
 ```go

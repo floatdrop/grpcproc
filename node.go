@@ -97,7 +97,7 @@ func (s StaticResolver) Resolve(_ context.Context, node string) (string, error) 
 	return "", fmt.Errorf("grpcproc: unknown node %q", node)
 }
 
-// Config configures a Node. Name and Resolver are required.
+// Config configures a Node. Name, Resolver and Admit are required.
 type Config struct {
 	// Name is the node's logical name; peers address it by this.
 	Name string
@@ -140,7 +140,8 @@ type Config struct {
 	Membership Membership
 	// DialOptions are used for every outbound connection: credentials,
 	// keepalive, interceptors. Keepalive is what turns a silent partition
-	// into a link error; set it.
+	// into a link error; set it here and on the server, whose pings end a
+	// silent peer's link to this node, which is what declares it down.
 	DialOptions []grpc.DialOption
 	// DialOptionsFor, if set, gives more options for the connections to one
 	// peer, its link's and Dial's. They come after DialOptions, so they

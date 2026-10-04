@@ -67,7 +67,8 @@ export const shopPlatform: Doc = {
 						<Lifecycle />
 					</Drawing>
 					<p>
-						Keepalive in the dial options is what turns a silent peer into a broken link. The
+						Keepalive, in the dial options and on the server, is what turns a silent peer into a
+						broken link, and so into <C>Down</C>s and failed calls. The
 						Inspector is read-only, since it shares the node's port and nothing here checks who
 						calls it.
 					</p>

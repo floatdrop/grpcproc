@@ -5,7 +5,7 @@ singleton that runs on the leader only, carrying its state from one leader to
 the next. A package of grpcproc's, built on its public API alone.
 
 ```sh
-go get github.com/floatdrop/grpcproc/leader
+go get github.com/floatdrop/grpcproc # leader is a package of the core module
 ```
 
 ```go

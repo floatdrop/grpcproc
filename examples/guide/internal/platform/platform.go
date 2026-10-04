@@ -80,8 +80,9 @@ func listen(cfg Config) (net.Listener, error) { return net.Listen("tcp", cfg.Lis
 
 // dialOptions are for every connection to another node: the node's links
 // and the Inspector's forwarding. Keepalive is what turns a peer that went
-// silent into a broken link, and so into Downs and failed calls. Plaintext
-// keeps the guide short; a real deployment puts mTLS here.
+// silent into a broken link; with the server's (newServer), into Downs and
+// failed calls. Plaintext keeps the guide short; a real deployment puts mTLS
+// here.
 func dialOptions() []grpc.DialOption {
 	return []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -97,9 +98,12 @@ type server struct {
 }
 
 func newServer(ln net.Listener) *server {
-	// Accepts the pings dialOptions sends.
+	// Pings its clients, so that a peer gone silent ends its links to this
+	// node, which is what declares it down; and accepts the pings
+	// dialOptions sends.
+	params := keepalive.ServerParameters{Time: 10 * time.Second, Timeout: 5 * time.Second}
 	policy := keepalive.EnforcementPolicy{MinTime: 5 * time.Second, PermitWithoutStream: true}
-	return &server{grpc: grpc.NewServer(grpc.KeepaliveEnforcementPolicy(policy)), ln: ln}
+	return &server{grpc: grpc.NewServer(grpc.KeepaliveParams(params), grpc.KeepaliveEnforcementPolicy(policy)), ln: ln}
 }
 
 func newNode(cfg Config, r grpcproc.Resolver, srv *server, log *slog.Logger) (*grpcproc.Node, error) {

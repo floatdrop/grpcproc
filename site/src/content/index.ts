@@ -13,6 +13,7 @@ import { guidesActors } from './guides-actors.tsx';
 import { guidesBlockingIO } from './guides-blocking-io.tsx';
 import { guidesConfiguration } from './guides-configuration.tsx';
 import { guidesCron } from './guides-cron.tsx';
+import { guidesOperations } from './guides-operations.tsx';
 import { guidesEtcd } from './guides-etcd.tsx';
 import { guidesGrpcprocctl } from './guides-grpcprocctl.tsx';
 import { guidesInspector } from './guides-inspector.tsx';
@@ -56,6 +57,7 @@ const all: Doc[] = [
 	guidesEtcd,
 	guidesCron,
 	guidesLeader,
+	guidesOperations,
 	shop,
 	shopServices,
 	shopPlatform,

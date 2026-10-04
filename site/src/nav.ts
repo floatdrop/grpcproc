@@ -38,7 +38,8 @@ export const groups: NavGroup[] = [
 			'guides/mcp/',
 			'guides/etcd/',
 			'guides/cron/',
-			'guides/leader/'
+			'guides/leader/',
+			'guides/operations/'
 		]
 	},
 	{
