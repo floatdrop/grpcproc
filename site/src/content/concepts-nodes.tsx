@@ -259,10 +259,12 @@ defer node.Stop(ctx)      // before the server stops`}</Code>
 					<p>
 						A remote send encodes the body, queues the envelope on the stream to the peer's node,
 						and returns; a first send to a peer waits for the dial, which is what the ctx of a send
-						bounds. Mailboxes are unbounded on purpose: a full mailbox in one
-						process would otherwise stall the shared stream for every other process behind it.
-						Backpressure is the application's, and the mailbox depth and each link's queue are
-						visible so it can be built. A link's queue is its peer's alone, so it can be bounded
+						bounds. Delivery never waits for a mailbox: one that made it wait in one process would
+						stall the shared stream for every other process behind it. Mailboxes are unbounded by
+						default, and one that <C>WithMailboxLimit</C> bounds refuses instead: a message is a
+						dead letter, a call fails with <C>ErrMailboxFull</C>. Past that, backpressure is the
+						application's, and the mailbox depth and each link's queue are visible so it can be
+						built. A link's queue is its peer's alone, so it can be bounded
 						without stalling anyone else: with <C>MaxQueued</C> or <C>MaxQueuedBytes</C> set, a send
 						or a call to a peer that cannot keep up fails at once with <C>ErrLinkBusy</C>, as{' '}
 						<C>Unsent</C>.

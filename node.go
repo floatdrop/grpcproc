@@ -287,12 +287,17 @@ type callResult struct {
 	err  error
 }
 
-// outcome is what a caller gets for an answer with status.
+// outcome is what a caller gets for an answer with status. A full mailbox
+// is answered STATUS_NOPROC with ReasonMailboxFull, which no handler can
+// send, and which nodes that know no limit read as ErrNoProc.
 func outcome(body proto.Message, status grpcprocv1.Status, errText string) callResult {
 	switch status {
 	case grpcprocv1.Status_STATUS_OK:
 		return callResult{body: body}
 	case grpcprocv1.Status_STATUS_NOPROC:
+		if errText == ReasonMailboxFull {
+			return callResult{err: ErrMailboxFull}
+		}
 		return callResult{err: ErrNoProc}
 	case grpcprocv1.Status_STATUS_TYPE:
 		return callResult{err: ErrType}
@@ -1211,13 +1216,20 @@ func (n *Node) deliver(to PID, name string, it item, reply chan<- callResult) {
 	if n.hooks != nil {
 		it.at = time.Now().UnixNano() // for OnReceive's exact wait
 	}
-	var queued bool
+	var queued, full bool
 	if it.ref == 0 {
-		queued = p.push(it)
+		queued, full = p.offer(it)
 	} else {
-		queued = p.queueCall(it, reply)
+		queued, full = p.queueCall(it, reply)
 	}
-	if !queued {
+	switch {
+	case queued:
+	case full:
+		n.deadLetter(it.from, p.pid, it.body, ReasonMailboxFull)
+		if it.ref != 0 {
+			_ = n.reply(p.pid, it.from, it.ref, answerTo{ch: reply, via: it.via}, nil, grpcprocv1.Status_STATUS_NOPROC, ReasonMailboxFull, true)
+		}
+	default:
 		n.deadLetter(it.from, p.pid, it.body, ReasonNoProc)
 		if it.ref != 0 {
 			_ = n.reply(p.pid, it.from, it.ref, answerTo{ch: reply, via: it.via}, nil, grpcprocv1.Status_STATUS_NOPROC, "", true)

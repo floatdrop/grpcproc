@@ -30,6 +30,7 @@ type MailboxInfo struct {
 	// empty. It is read from when its batch started queueing: exact for the
 	// first message of a burst, an upper bound for later ones.
 	OldestAge time.Duration
+	Limit     int // WithMailboxLimit; 0 is none
 }
 
 // ProcessInfo is a snapshot of one process, the same for local inspection,

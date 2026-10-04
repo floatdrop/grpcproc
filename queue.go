@@ -57,11 +57,29 @@ func newQueue[T any](stamped bool) *queue[T] {
 }
 
 func (q *queue[T]) push(v T) bool {
+	ok, _ := q.pushBelow(v, 0)
+	return ok
+}
+
+// pushBelow queues v as push does, unless limit is set and the queue holds
+// that many items already: then full is set.
+func (q *queue[T]) pushBelow(v T, limit int64) (ok, full bool) {
 	q.mu.Lock()
-	if q.closed {
+	switch {
+	case q.closed:
 		q.mu.Unlock()
-		return false
+		return false, false
+	case limit > 0 && q.pushed-q.popped.Load() >= limit:
+		q.mu.Unlock()
+		return false, true
 	}
+	q.put(v)
+	return true, false
+}
+
+// put queues v and wakes the consumer. It is called holding mu, which it
+// lets go.
+func (q *queue[T]) put(v T) {
 	if q.stamped && len(q.in) == 0 {
 		q.inSince = time.Now().UnixNano()
 	}
@@ -72,7 +90,6 @@ func (q *queue[T]) push(v T) bool {
 	case q.notify <- struct{}{}:
 	default:
 	}
-	return true
 }
 
 // bound is how much a queue may hold before offer refuses more, in items
@@ -99,15 +116,9 @@ func (q *queue[T]) offer(v T, size int64, limit bound) (ok, full bool) {
 		q.mu.Unlock()
 		return false, true
 	}
-	q.in = append(q.in, v)
-	q.pushed++
 	q.held++
 	q.heldBytes += size
-	q.mu.Unlock()
-	select {
-	case q.notify <- struct{}{}:
-	default:
-	}
+	q.put(v)
 	return true, false
 }
 

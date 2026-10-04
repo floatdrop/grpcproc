@@ -201,7 +201,10 @@ counts as a failed dial. Only a `LinkError` whose `Unsent` is set is known
 safe to send again; a call that ends with its context, or is waiting when its
 node stops, may have been handled. Replies and `Down`s are never refused by
 `MaxQueued`, and one that cannot be routed cuts the peer's link, or its
-monitor would never fire.
+monitor would never fire. A mailbox bounded by `WithMailboxLimit` refuses a
+message as a dead letter and a call with `ErrMailboxFull` (sent as
+`STATUS_NOPROC` with reason `mailbox full`, which no handler can send, so no
+protocol change), never a `Down` or an `Exited`.
 
 **Admission is one decision per link.** `Config.Admit` refuses a link, which
 the peer sees as `PermissionDenied`, or returns the `Policy` that judges the
@@ -302,7 +305,8 @@ kept current by `TestDiagrams`; `TestMachines` asserts no dead ends.
 - **Errors are values with what a caller needs:** `LinkError` with `Peer`
   and `Unsent`, `ExitError` with the reason, `RemoteError` matching by
   message; sentinels (`ErrNoProc`, `ErrNoConnection`, `ErrType`,
-  `ErrLinkBusy`, `ErrNodeStopped`) are matched with `errors.Is`.
+  `ErrLinkBusy`, `ErrMailboxFull`, `ErrNodeStopped`) are matched with
+  `errors.Is`.
 
 ## Tooling caveats
 

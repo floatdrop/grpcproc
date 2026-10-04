@@ -213,10 +213,12 @@ export const conceptsActors: Doc = {
 							process that does not exist is a dead letter.
 						</li>
 						<li>
-							<strong>Unbounded mailboxes.</strong> A send never blocks on the receiver. Every process
-							on a node shares the link to a peer, so a mailbox that refused messages would stall the
-							link for all of them. Backpressure is the application's, and the depth of every
-							mailbox is visible to make it one.
+							<strong>Mailboxes that never block.</strong> A send never waits for the receiver.
+							Every process on a node shares the link to a peer, so a mailbox that made it wait would
+							stall the link for all of them. A mailbox is unbounded unless{' '}
+							<C>WithMailboxLimit</C> bounds it, and then refuses what it has no room for: a message
+							is a dead letter, a call fails with <C>ErrMailboxFull</C>. Past that, backpressure is
+							the application's, and the depth of every mailbox is visible to make it one.
 						</li>
 					</ul>
 					<Aside title="Coming from Erlang">

@@ -437,10 +437,12 @@ func (x *NodeInfo) GetMetadata() map[string]string {
 }
 
 type Mailbox struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Depth         uint32                 `protobuf:"varint,1,opt,name=depth,proto3" json:"depth,omitempty"`
-	Peak          uint32                 `protobuf:"varint,2,opt,name=peak,proto3" json:"peak,omitempty"`
-	OldestAge     *durationpb.Duration   `protobuf:"bytes,3,opt,name=oldest_age,json=oldestAge,proto3" json:"oldest_age,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Depth     uint32                 `protobuf:"varint,1,opt,name=depth,proto3" json:"depth,omitempty"`
+	Peak      uint32                 `protobuf:"varint,2,opt,name=peak,proto3" json:"peak,omitempty"`
+	OldestAge *durationpb.Duration   `protobuf:"bytes,3,opt,name=oldest_age,json=oldestAge,proto3" json:"oldest_age,omitempty"`
+	// What WithMailboxLimit bounds it to; 0 is no bound.
+	Limit         uint32 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -494,6 +496,13 @@ func (x *Mailbox) GetOldestAge() *durationpb.Duration {
 		return x.OldestAge
 	}
 	return nil
+}
+
+func (x *Mailbox) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
 }
 
 type ProcessInfo struct {
@@ -2228,12 +2237,13 @@ const file_grpcproc_inspect_v1_inspect_proto_rawDesc = "" +
 	"\bmetadata\x18\t \x03(\v2+.grpcproc.inspect.v1.NodeInfo.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"m\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x83\x01\n" +
 	"\aMailbox\x12\x14\n" +
 	"\x05depth\x18\x01 \x01(\rR\x05depth\x12\x12\n" +
 	"\x04peak\x18\x02 \x01(\rR\x04peak\x128\n" +
 	"\n" +
-	"oldest_age\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\toldestAge\"\xfc\x04\n" +
+	"oldest_age\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\toldestAge\x12\x14\n" +
+	"\x05limit\x18\x04 \x01(\rR\x05limit\"\xfc\x04\n" +
 	"\vProcessInfo\x12\"\n" +
 	"\x03pid\x18\x01 \x01(\v2\x10.grpcproc.v1.PIDR\x03pid\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +

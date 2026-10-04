@@ -100,6 +100,8 @@ message Mailbox {
   uint32 depth = 1;
   uint32 peak = 2;
   google.protobuf.Duration oldest_age = 3;
+  // What WithMailboxLimit bounds it to; 0 is no bound.
+  uint32 limit = 4;
 }
 
 message ProcessInfo {

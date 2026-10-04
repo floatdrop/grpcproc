@@ -106,6 +106,7 @@ const (
 	ReasonKilled       = "killed"
 	ReasonType         = "type"
 	ReasonDenied       = "denied"        // a dead letter a peer's Policy refused
+	ReasonMailboxFull  = "mailbox full"  // a dead letter a full mailbox refused (see WithMailboxLimit)
 	ReasonNameLost     = "name lost"     // a global name's claim was lost (see Process.Claim)
 	ReasonNameConflict = "name conflict" // a KeepOnLoss claim found its name taken (see KeepOnLoss)
 )
@@ -114,6 +115,7 @@ var (
 	ErrNoProc       = errors.New("grpcproc: no such process")
 	ErrNoConnection = errors.New("grpcproc: no connection to node")
 	ErrLinkBusy     = errors.New("grpcproc: link queue full") // see Config.MaxQueued
+	ErrMailboxFull  = errors.New("grpcproc: mailbox full")    // see WithMailboxLimit
 	ErrNameTaken    = errors.New("grpcproc: name already registered")
 	ErrNotLocal     = errors.New("grpcproc: pid does not belong to this node")
 	ErrNodeStopped  = errors.New("grpcproc: node stopped")

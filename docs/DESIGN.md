@@ -226,7 +226,7 @@ message Envelope {                                   // one flat message, decode
   count. A message or a call to a peer whose link is full fails at once, as a `LinkError` whose
   `Err` is `ErrLinkBusy` and whose `Unsent` is set, and the sender decides:
   drop it, send it again later, or shed the load behind it. Each peer has a
-  link of its own, so this is not the bounded mailbox that was rejected: a
+  link of its own, so this is not the blocking mailbox that was rejected: a
   peer that cannot keep up refuses what is sent to it, and holds up no one
   else. Erlang suspends a sender on a busy distribution port (`+zdbbl`);
   grpcproc fails the send instead, since a sender that blocks on a peer can
@@ -385,12 +385,25 @@ process. Local sends are checked at compile time and skip the assertion.
 
 `Down` arrives through the same `Receive`, in order with messages, so the
 guarantee "a process's last message is seen before its `Down`" holds for typed
-processes too. Mailboxes are unbounded so that delivery never blocks a link
-(the Erlang choice; a bounded mailbox in one process would stall every other
-process behind it on the shared stream). Backpressure is an application
-concern; the mailbox depth, and each link's queue, are visible (see
-Observability) so it can be one. A link's queue is its peer's alone, so it
-can be bounded as well (`Config.MaxQueued`, under Wire protocol).
+processes too. Delivery never waits for a mailbox: one that made it wait
+would stall every other process behind it on the shared stream. Mailboxes
+are unbounded by default, the Erlang choice, and a process that cannot be
+trusted to shed load itself is spawned `WithMailboxLimit(n)`: while its
+mailbox holds n items, a message to it is a dead letter with reason `mailbox
+full`, and a call fails with `ErrMailboxFull`, never handled, so it is safe
+to make again. `Down`s and `Exited`s always get in, and count, or a monitor
+would not fire. A send is refused without an error, from this node or
+another: `Send`'s error means only that the message could not leave its
+node, wherever the receiver runs, and a sender that must know calls. A
+peer's call is answered `STATUS_NOPROC` with reason `mailbox full`, which
+the caller's node turns into `ErrMailboxFull`: no handler can answer so, so
+a handler that passes a downstream `ErrMailboxFull` on stays a
+`RemoteError`, which may have been handled; and the protocol is unchanged,
+a node of a release without limits reading `ErrNoProc`, never handled
+either. Past that, backpressure is the application's; the mailbox
+depth, its limit, and each link's queue are visible (see Observability). A
+link's queue is its peer's alone, so it can be bounded as well
+(`Config.MaxQueued`, under Wire protocol).
 
 Exit reasons: `normal`, `noproc`, `noconnection`, `shutdown`, `killed`, a
 panic (`panic: …` with the stack logged), or the error string the function
@@ -588,7 +601,7 @@ type ProcessInfo struct {
     Parent     PID               // zero for Node.Spawn
     State      ProcessState      // Idle | Running | WaitingReply | Exiting
     StartedAt  time.Time
-    Mailbox    MailboxInfo       // Depth, OldestAge (latency), Peak
+    Mailbox    MailboxInfo       // Depth, OldestAge (latency), Peak, Limit
     Received   uint64            // messages taken from the mailbox
     Sent       uint64
     CallsInFlight uint32
@@ -1318,7 +1331,7 @@ c.Names(); c.CutNames("b"); c.RestoreNames("b")
 | One monitor = one stream | — | Loses message-before-Down ordering, costs a goroutine per monitor |
 | Priority mailbox queues | ergo (4 queues), GoAkt | Inspection runs inside `Receive` instead; `Down` must stay in order with messages; and `Exit` cancels the process's context rather than wait in its mailbox, so no signal is stuck behind a backlog |
 | Two-way links | Erlang/OTP | A one-way link is a monitor on the wire and needs no agreement between nodes; see Links. Erlang needed unlink ids and acknowledgements (OTP 23) to settle the races two-way links have |
-| Mailboxes that block when full | GoAkt | A full mailbox would stall the shared link for everyone; a link's queue is per peer, and can be bounded (`Config.MaxQueued`). A bound that refuses instead is open work, below |
+| Mailboxes that block when full | GoAkt | A full mailbox would stall the shared link for everyone; a link's queue is per peer, and can be bounded (`Config.MaxQueued`), and a mailbox's bound refuses instead (`WithMailboxLimit`) |
 | Metrics per PID | GoAkt | Cardinality; the label is the key, and a PID's own numbers are in `Processes()` and the Inspector |
 | A UI served by every node | ergo Observer | A UI is a client: `grpcprocctl web` is one, over the Inspector, and a node serves nothing but gRPC |
 | gob / custom codec | first prototype | protobuf is already the service's contract; a body travels as its full name and bytes, and generated types register themselves |
@@ -1388,17 +1401,17 @@ OpenTelemetry are.
   `Store`: idempotency keys, sending again what `Unsent` says never left, and
   an outbox fenced by an epoch, so a writer on a node that left cannot commit,
   as GoAkt's durable queue is. The core stays at most once.
-- **A mailbox bound that refuses** rather than blocks: optional, per process.
-  A local send fails at once, a remote call is answered busy, a remote send
-  is a dead letter with reason `mailbox full`, and `Down`s and exits always
-  get in. Depth is visible already; this is for a process that cannot be
-  trusted to shed load itself.
 - **Keyed entities**: a consistent hash over `Membership` picks the node,
   `StartChildFrom` starts the entity there or answers with the one that runs
   (`ErrAlreadyStarted`), and an entity idle for a while stops. Orleans' grains
   and Akka's sharding, without the strongly consistent directory that made
   Orleans' multi-cluster mode admit duplicates; state only through the saga
   module's `Store`.
+- **A send acknowledged once it is queued**, ergo's `SendImportant`: deferred
+  until a use asks for it. It costs a round trip per send, and confirms only
+  that the message is in a mailbox, not that it was handled; monitoring the
+  target before sending finds one that is gone, and a call finds one whose
+  mailbox is full.
 - **A protoc plugin** that writes contract address types like `StockAddr`
   from a service definition, as Proto.Actor generates its grains' clients.
 

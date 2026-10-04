@@ -109,7 +109,8 @@ enum Status {
   STATUS_OK = 1;
   // The handler returned an error; reason carries its text.
   STATUS_ERROR = 2;
-  // No such process, or it exited before answering.
+  // No such process, or it exited before answering; or, with reason
+  // "mailbox full", its mailbox had no room, and the call was never handled.
   STATUS_NOPROC = 3;
   // The process exists but does not accept this message type.
   STATUS_TYPE = 4;
