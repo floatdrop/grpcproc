@@ -1,8 +1,10 @@
 package saga_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,6 +29,13 @@ type flaky struct {
 	onRelease func()
 	// hang, if set, holds every Renew until it is closed, or its ctx ends.
 	hang chan struct{}
+	// slow, if set, is how long every Renew takes, unless its ctx ends first.
+	slow time.Duration
+	// late, if set, is how long after the store claimed runs Claim answers.
+	late time.Duration
+	// behind, if set, is how far the leases Claim reports lag, as on a store
+	// whose clock is behind.
+	behind time.Duration
 }
 
 func (f *flaky) fail(method string, err error) {
@@ -59,7 +68,18 @@ func (f *flaky) Claim(ctx context.Context, owner string, sagas map[string]uint64
 	if err := f.err("Claim"); err != nil {
 		return nil, err
 	}
-	return f.Store.Claim(ctx, owner, sagas, ttl, n)
+	runs, err := f.Store.Claim(ctx, owner, sagas, ttl, n)
+	for i := range runs {
+		runs[i].LeaseUntil = runs[i].LeaseUntil.Add(-f.behind)
+	}
+	f.mu.Lock()
+	late := f.late
+	f.mu.Unlock()
+	select {
+	case <-time.After(late):
+	case <-ctx.Done():
+	}
+	return runs, err
 }
 
 func (f *flaky) Save(ctx context.Context, r saga.Record) (saga.Record, error) {
@@ -85,6 +105,16 @@ func (f *flaky) Renew(ctx context.Context, name, id string, epoch uint64, ttl ti
 	if hang != nil {
 		select {
 		case <-hang:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	f.mu.Lock()
+	slow := f.slow
+	f.mu.Unlock()
+	if slow > 0 {
+		select {
+		case <-time.After(slow):
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -725,6 +755,146 @@ func TestARenewThatHangs(t *testing.T) {
 			t.Fatalf("%+v", s)
 		}
 	})
+}
+
+// An engine that cannot renew gives the run up a quarter of its lease
+// before the lease ends, counted from before it asked for the claim, and not
+// before: whether its renewals fail slowly, or at once after a claim that
+// answered late. It gives the run up at once when the store says the run is
+// another's.
+func TestTheLeaseIsGivenUpAQuarterBeforeItEnds(t *testing.T) {
+	unreachable := errors.New("store unreachable")
+	for name, tc := range map[string]struct {
+		slow, late time.Duration
+		err        error
+		by         time.Duration // when the effect's ctx ends, from the claim
+	}{
+		"slow renewals": {slow: 7*time.Second + 400*time.Millisecond, err: unreachable, by: 22500 * time.Millisecond},
+		"a late claim":  {late: 6 * time.Second, err: unreachable, by: 22500 * time.Millisecond},
+		"another's":     {err: saga.ErrLost, by: 7500 * time.Millisecond},
+	} {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				store := &flaky{Store: saga.Memory(), slow: tc.slow}
+				store.fail("Renew", tc.err)
+				h := &held{}
+				d := heldSaga(h)
+				e := engine(t, grpcproctest.New(t, "a").Node("a"), store, d)
+				synctest.Wait() // the engine has claimed nothing: the next claim is the run's
+				store.mu.Lock()
+				store.late = tc.late
+				store.mu.Unlock()
+				begin(t, d, e, "1")
+				time.Sleep(tc.by - time.Second)
+				synctest.Wait()
+				if _, _, causes := h.seen(); len(causes) != 0 {
+					t.Fatalf("given up early: %v", causes)
+				}
+				time.Sleep(2 * time.Second)
+				synctest.Wait()
+				if _, _, causes := h.seen(); len(causes) != 1 || !errors.Is(causes[0], saga.ErrLost) {
+					t.Fatalf("causes %v", causes)
+				}
+				store.fail("Renew", nil)
+				if s := wait(t, d, e, "1"); s.Status != saga.Done {
+					t.Fatalf("%+v", s)
+				}
+			})
+		})
+	}
+}
+
+// An engine keeps a run whose claim answered after half its lease had gone,
+// one whose store was unreachable for a while, since a renewal that failed
+// is tried again soon, and one whose store reports a lease end by a clock
+// behind its own, since it counts by its own.
+func TestTheLeaseIsKept(t *testing.T) {
+	for name, tc := range map[string]struct {
+		late, down, behind time.Duration
+	}{
+		"a claim, past half its lease": {late: 16 * time.Second},
+		"a store down for a while":     {down: 16 * time.Second},
+		"a store's clock behind":       {behind: time.Hour},
+	} {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				store := &flaky{Store: saga.Memory(), behind: tc.behind}
+				h := &held{}
+				d := heldSaga(h)
+				e := engine(t, grpcproctest.New(t, "a").Node("a"), store, d)
+				synctest.Wait()
+				store.mu.Lock()
+				store.late = tc.late
+				store.mu.Unlock()
+				store.fail("Renew", errors.New("store unreachable"))
+				begin(t, d, e, "1")
+				time.Sleep(tc.down)
+				store.fail("Renew", nil)
+				time.Sleep(2 * time.Minute)
+				synctest.Wait()
+				if _, _, causes := h.seen(); len(causes) != 0 {
+					t.Fatalf("given up: %v", causes)
+				}
+			})
+		})
+	}
+}
+
+// logs is a log a node writes to, and its tests read.
+type logs struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *logs) Write(b []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(b)
+}
+
+func (l *logs) count(s string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return strings.Count(l.buf.String(), s)
+}
+
+// A renewal that fails is logged once until one gets through, and one cut
+// short by the end of the work is not logged at all.
+func TestRenewalWarnings(t *testing.T) {
+	for name, tc := range map[string]struct {
+		hang     bool          // renewals hang, and the node stops while the first does
+		after    time.Duration // when the log is read, from the claim
+		warnings int
+	}{
+		"failing":                {after: 20 * time.Second, warnings: 1}, // from 7.5s, a sixteenth of the lease apart
+		"stopped while it hangs": {hang: true, after: 10 * time.Second},  // from 7.5s, until 15s
+	} {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				store := &flaky{Store: saga.Memory()}
+				if tc.hang {
+					store.hang = make(chan struct{}) // in the bubble, which waits on it
+				} else {
+					store.fail("Renew", errors.New("store unreachable"))
+				}
+				var log logs
+				c := grpcproctest.NewWith(t, []grpcproctest.Option{grpcproctest.WithLogger(slog.New(slog.NewTextHandler(&log, nil)))}, "a")
+				d := heldSaga(&held{})
+				e := engine(t, c.Node("a"), store, d)
+				begin(t, d, e, "1")
+				time.Sleep(tc.after)
+				if tc.hang {
+					if err := c.Node("a").Stop(t.Context()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				synctest.Wait()
+				if n := log.count("saga: renew"); n != tc.warnings {
+					t.Fatalf("%d warnings:\n%s", n, log.buf.String())
+				}
+			})
+		})
+	}
 }
 
 // A save the store refuses as another owner's ends the work on the run; one

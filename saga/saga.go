@@ -73,11 +73,13 @@ type Record struct {
 	// Visit counts the states the run has entered, the first included. It
 	// tells two visits to one state apart, in Run.Key and for a timer.
 	Visit uint64
-	// EffectDone is set once the state's effect returned nil without firing:
-	// the run waits, and the effect is not run again in this visit.
+	// EffectDone is set once the state's effect is through for this visit:
+	// it returned nil without firing, or failed for good and its Otherwise
+	// kept the run in the state. The run waits, and the effect is not run
+	// again in this visit.
 	EffectDone bool
-	Attempts   int    // how many times the effect failed in this visit
-	Error      string // why it failed last in this visit, or why the run is Stuck
+	Attempts   int    // how many times the effect failed in this visit, while it is tried
+	Error      string // why it failed last while it is tried, or why the run is Stuck
 	// Cause is the error an Otherwise last fired with: why the run left its
 	// way, kept for the rest of it.
 	Cause string
