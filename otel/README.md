@@ -67,6 +67,7 @@ message type) is the unit, and every other attribute is bounded.
 | `grpcproc.link.messages`, `grpcproc.link.bytes` | counter (Observe) | `grpcproc.peer`, `grpcproc.direction` — what each link had carried at the collections that saw it, added up across links, so a broken link does not take it back |
 
 `error.type` is one of `noproc`, `type`, `mailbox_full` (the callee's
-mailbox was full: `WithMailboxLimit`), `busy` (the link to the peer was
+mailbox was full: `WithMailboxLimit`), `too_large` (the message, or the
+reply, was over `Config.MaxMessageSize`), `busy` (the link to the peer was
 full: `Config.MaxQueued`), `noconnection`, `timeout`, `canceled`, `remote`
 (the handler returned an error), `other`.

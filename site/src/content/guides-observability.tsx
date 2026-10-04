@@ -363,7 +363,8 @@ defer span.End()`}</Code>
 					/>
 					<p>
 						<C>error.type</C> is one of <C>noproc</C>, <C>type</C>, <C>mailbox_full</C> (the
-						callee's mailbox was full), <C>busy</C> (the link to the peer was full),{' '}
+						callee's mailbox was full), <C>too_large</C> (the message or its reply was over{' '}
+						<C>MaxMessageSize</C>), <C>busy</C> (the link to the peer was full),{' '}
 						<C>noconnection</C>, <C>timeout</C>, <C>canceled</C>, <C>remote</C> (the
 						handler returned an error) or <C>other</C>. <A to="reference/errors/">Errors and exit reasons</A> says what each means.
 					</p>
