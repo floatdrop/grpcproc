@@ -58,13 +58,13 @@ message type) is the unit, and every other attribute is bounded.
 | `grpcproc.process.duration` | histogram, s | `grpcproc.label` — time from taking a message to the next `Receive` |
 | `grpcproc.call.duration` | histogram, s | `grpcproc.label`, `grpcproc.remote`, `error.type` on failure |
 | `grpcproc.processes.spawned` | counter | `grpcproc.label` |
-| `grpcproc.processes.exited` | counter | `grpcproc.label`, `grpcproc.reason` (`normal`, `shutdown`, `killed`, `noproc`, `noconnection`, `type`; `max restarts` from actor, `timeout` and `replaced` from cron, `demoted` from leader; `panic`, `error`) |
+| `grpcproc.processes.exited` | counter | `grpcproc.label`, `grpcproc.reason` (`normal`, `shutdown`, `killed`, `noproc`, `noconnection`, `type`, `name lost`, `name conflict`; `max restarts` from actor, `timeout` and `replaced` from cron, `demoted` from leader; `panic`, `error`) |
 | `grpcproc.dead_letters` | counter | `grpcproc.reason`, `grpcproc.message.type` |
-| `grpcproc.links.up`, `grpcproc.links.down` | counter | `grpcproc.peer` |
+| `grpcproc.links.up`, `grpcproc.links.down` | counter | `grpcproc.peer` — sessions with the peer begun and ended (`OnLinkUp`, `OnLinkDown`) |
 | `grpcproc.processes` | gauge (Observe) | `grpcproc.label` |
 | `grpcproc.mailbox.depth` | gauge (Observe) | `grpcproc.label`, summed |
 | `grpcproc.mailbox.oldest` | gauge (Observe), s | `grpcproc.label`, maximum |
-| `grpcproc.link.messages`, `grpcproc.link.bytes` | counter (Observe) | `grpcproc.peer`, `grpcproc.direction` |
+| `grpcproc.link.messages`, `grpcproc.link.bytes` | counter (Observe) | `grpcproc.peer`, `grpcproc.direction` — what each link had carried at the collections that saw it, added up across links, so a broken link does not take it back |
 
 `error.type` is one of `noproc`, `type`, `busy` (the link to the peer was
 full: `Config.MaxQueued`), `noconnection`, `timeout`, `canceled`, `remote`
