@@ -653,8 +653,10 @@ body {
 	border-bottom: none;
 }
 
+/* The first column names what the row is about: a word stays whole, and a
+   phrase wraps rather than take the width of the column beside it. */
 .gp-table td:first-child {
-	white-space: nowrap;
+	min-width: 10em;
 }
 
 .gp-table .gp-code {
