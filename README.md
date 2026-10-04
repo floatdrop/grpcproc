@@ -128,10 +128,10 @@ your `*grpc.Server` next to your other services, start and stop.
   [`grpcproc/leader`](leader/README.md): jobs on crontab schedules, every
   run a process of its own; and a singleton that runs on the elected leader
   and carries its state to the next, so a job can run once in a cluster.
-- **Sagas** in `grpcproc/saga`: work that spans services and outlasts a
-  process, as an fsm machine and its data per run, kept in a store, with
-  retries, durable timers and signals; `Sequence` for steps with what
-  undoes each. [Design](docs/DESIGN.md#sagas-grpcprocsaga)
+- **Sagas** in [`grpcproc/saga`](saga/README.md): work that spans services
+  and outlasts a process, as an fsm machine and its data per run, kept in a
+  store, with retries, durable timers and signals; `Sequence` for steps with
+  what undoes each. [Guide](https://floatdrop.github.io/grpcproc/guides/sagas/)
 - **OpenTelemetry** in [`grpcproc/otel`](otel/README.md), **etcd** membership
   in [`grpcproc/etcd`](etcd/README.md), and `grpcproctest`, which runs a
   cluster inside one `go test`, partitions and crashes included.
