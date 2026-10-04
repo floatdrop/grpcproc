@@ -30,9 +30,11 @@ type Config struct {
 	// through this engine is claimed at once. Default 1s.
 	Poll time.Duration
 	// Lease is how long a claim holds a run without being renewed: how long
-	// a run whose engine died waits for another. The engine renews it every
-	// quarter of that, and an effect whose engine could not, with a quarter
-	// of it left, has its ctx ended. Default 30s; at least a millisecond.
+	// a run whose engine died waits for another. The engine renews it a
+	// quarter of that after each claim or renewal, and tries one that failed
+	// again a sixteenth later; an effect whose engine could not renew it,
+	// with a quarter of it left, has its ctx ended. Default 30s; at least a
+	// millisecond.
 	Lease time.Duration
 	// Concurrency is how many runs the engine works on at once. Default 64.
 	Concurrency int
@@ -152,6 +154,8 @@ func (e *Engine) claim(p *grpcproc.Process[proto.Message], n int) int {
 	if n <= 0 {
 		return 0
 	}
+	// A lease is counted from before the call, by this clock, not the store's.
+	claimed := time.Now()
 	runs, err := e.cfg.Store.Claim(p.Context(), e.n.Name(), e.versions, e.cfg.Lease, n)
 	if err != nil {
 		p.Log().Warn("saga: claim", "err", err)
@@ -160,44 +164,56 @@ func (e *Engine) claim(p *grpcproc.Process[proto.Message], n int) int {
 	for _, r := range runs {
 		// It fails only as the node stops: the run's lease then runs out.
 		_, _, _ = p.SpawnMonitor(func(w *grpcproc.Process[proto.Message]) error {
-			e.work(w, r)
+			e.work(w, r, claimed)
 			return nil
 		}, grpcproc.WithLabel("saga:"+r.Saga), grpcproc.LinkParent())
 	}
 	return len(runs)
 }
 
-// work is a run's process: it keeps the lease while the saga works on the
-// run, and ends the work once the lease is lost, or has run out unrenewed.
-func (e *Engine) work(p *grpcproc.Process[proto.Message], r Record) {
+// work is a run's process, its lease counted from claimed: it keeps the
+// lease while the saga works on the run, and ends the work once the lease is
+// lost, or has run out unrenewed.
+func (e *Engine) work(p *grpcproc.Process[proto.Message], r Record, claimed time.Time) {
 	ctx, cancel := context.WithCancelCause(p.Context())
 	var renewing sync.WaitGroup
 	renewing.Go(func() {
 		every := e.cfg.Lease / 4
-		tick := time.NewTicker(every)
-		defer tick.Stop()
-		until := r.LeaseUntil
+		// Given up at last, a quarter before the lease ends, unless renewed.
+		last := claimed.Add(e.cfg.Lease - every)
+		next := time.Now().Add(min(every, time.Until(last)/2))
+		wake := time.NewTimer(time.Until(soonest(next, last)))
+		defer wake.Stop()
+		failing := false // since the last renewal that got through
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-tick.C:
+			case <-wake.C:
 			}
-			// The lease is counted from before the call, and the call does not
-			// outlast the tick: a store that hangs is one that failed.
 			asked := time.Now()
-			rctx, done := context.WithTimeout(ctx, every)
+			if !asked.Before(last) {
+				cancel(ErrLost)
+				return
+			}
+			rctx, done := context.WithDeadline(ctx, soonest(asked.Add(every), last))
 			err := e.cfg.Store.Renew(rctx, r.Saga, r.ID, r.Epoch, e.cfg.Lease)
 			done()
 			switch {
 			case err == nil:
-				until = asked.Add(e.cfg.Lease)
-			case errors.Is(err, ErrLost) || !time.Now().Add(every).Before(until):
-				// Another engine has the run, or may by the next tick: the
-				// store cannot be asked, and the lease is all but over.
+				last, next, failing = asked.Add(e.cfg.Lease-every), asked.Add(every), false
+			case errors.Is(err, ErrLost):
 				cancel(ErrLost)
 				return
+			case ctx.Err() != nil:
+				return // cut short by the end of the work, not failed
+			default:
+				if !failing {
+					p.Log().Warn("saga: renew", "saga", r.Saga, "run", r.ID, "err", err)
+				}
+				failing, next = true, time.Now().Add(every/4)
 			}
+			wake.Reset(time.Until(soonest(next, last)))
 		}
 	})
 	e.sagas[r.Saga].work(ctx, e, p, r)
@@ -445,12 +461,17 @@ func (d *Definition[S, D]) run(ctx context.Context, e *Engine, p *grpcproc.Proce
 		return true // it waits for that, unless a signal or its timer comes first
 	}
 	if s.otherwise != nil {
+		stays := d.stays(st, *s.otherwise)
 		if ok, ferr := safely(func() (bool, error) {
 			_, ok, err := d.m.TryFire(ctx, &st, *s.otherwise, r.Error)
 			return ok, err
 		}); ferr == nil && ok {
 			r.Cause = r.Error
-			d.enter(r, st, now)
+			if stays { // an internal transition: the run waits in this visit
+				r.EffectDone, r.Attempts, r.Error, r.RetryAt = true, 0, "", time.Time{}
+			} else {
+				d.enter(r, st, now)
+			}
 			return true
 		}
 	}

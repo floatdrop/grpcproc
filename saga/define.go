@@ -100,7 +100,9 @@ func Backoff(lo, hi time.Duration) StepOption { return func(s *step) { s.min, s.
 
 // Otherwise fires ev, with the error's text, when the effect has failed for
 // good: it returned a Permanent error, or ran out of Attempts. With none, or
-// if the machine refuses ev, the run is Stuck.
+// if the machine refuses ev, the run is Stuck. One the machine takes by an
+// internal transition keeps the run in the state, waiting for a signal or its
+// timer.
 func Otherwise(ev fsm.Event[string]) StepOption { return func(s *step) { s.otherwise = &ev } }
 
 // wait is how long to wait before attempt n+1, after n failures.
@@ -328,9 +330,9 @@ func (d *Definition[S, D]) Begin(ctx context.Context, e *Engine, id string, data
 	return created, nil
 }
 
-// Signal sends ev with its payload to a run. It is kept with the run, and
-// its machine takes it once it is in a state that accepts it, after those
-// sent before it. ev must be one the saga Accepts.
+// Signal sends ev with its payload to a run. It is kept with the run until
+// its machine is in a state that accepts it; of the signals a state accepts,
+// the earlier is taken first. ev must be one the saga Accepts.
 func (d *Definition[S, D]) Signal[P proto.Message](ctx context.Context, e *Engine, id string, ev fsm.Event[P], p P) error {
 	b, err := proto.Marshal(p)
 	if err != nil {

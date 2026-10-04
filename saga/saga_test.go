@@ -403,6 +403,36 @@ func TestStatusAndKeyOf(t *testing.T) {
 	}
 }
 
+// An Otherwise the machine takes by an internal transition keeps the run in
+// its visit: the effect is not run again, and the timer stands.
+func TestAnOtherwiseThatStays(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m := fsm.MustNew("stays on failure",
+			fsm.Initial(first),
+			fsm.From(first).On(evFailed).Stay(),
+			fsm.From(first).On(evTimeout).To(timedOut),
+		)
+		var tries atomic.Int32
+		d := saga.Define[text]("stays", m).
+			Do(first, func(context.Context, *run) error {
+				tries.Add(1)
+				return saga.Permanent(errors.New("refused"))
+			}, saga.Otherwise(evFailed)).
+			After(first, time.Minute, evTimeout)
+		e, store := start(t, d)
+		began := time.Now()
+		begin(t, d, e, "1")
+		time.Sleep(30 * time.Second)
+		synctest.Wait()
+		if r, _, _ := store.Get(t.Context(), "stays", "1"); tries.Load() != 1 || r.Visit != 1 || !r.EffectDone || r.Attempts != 0 || r.Error != "" || r.Cause != "refused" || r.Status != saga.Active {
+			t.Fatalf("tried %d times: %+v", tries.Load(), r)
+		}
+		if s := wait(t, d, e, "1"); s.State != timedOut || s.Cause != "refused" || s.Updated.Sub(began) != time.Minute {
+			t.Fatalf("%+v, %v after it began", s, s.Updated.Sub(began))
+		}
+	})
+}
+
 // An internal transition takes its event without a new visit to the state:
 // the effect is not run again, its key is not changed, and the timer stands.
 func TestInternalTransitions(t *testing.T) {
