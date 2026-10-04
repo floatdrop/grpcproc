@@ -266,8 +266,6 @@ func TestMetrics(t *testing.T) {
 		{"grpcproc.dead_letters", []attribute.KeyValue{grpcprocotel.AttrReason.String("type"), grpcprocotel.AttrMessageType.String("grpcproc.test.v1.Pong")}, 1},
 		{"grpcproc.messages.sent", []attribute.KeyValue{grpcprocotel.AttrLabel.String(""), grpcprocotel.AttrCall.Bool(true), grpcprocotel.AttrRemote.Bool(true)}, 1},
 		{"grpcproc.messages.received", []attribute.KeyValue{grpcprocotel.AttrLabel.String("busy")}, 1},
-		// a's stream to b, and b's reply stream arriving at a.
-		{"grpcproc.links.up", []attribute.KeyValue{grpcprocotel.AttrPeer.String("b")}, 2},
 		{"grpcproc.processes", []attribute.KeyValue{grpcprocotel.AttrLabel.String("busy")}, 1},
 		{"grpcproc.mailbox.depth", []attribute.KeyValue{grpcprocotel.AttrLabel.String("busy")}, 2},
 	}
@@ -275,6 +273,10 @@ func TestMetrics(t *testing.T) {
 		if got := intValue(rm, ch.name, ch.attrs...); got != ch.want {
 			t.Errorf("%s%v = %d, want %d", ch.name, ch.attrs, got, ch.want)
 		}
+	}
+	// How many link-ups a session makes is the core's to say; one at least.
+	if got := intValue(rm, "grpcproc.links.up", grpcprocotel.AttrPeer.String("b")); got < 1 {
+		t.Errorf("links up = %d", got)
 	}
 	if got := floatValue(rm, "grpcproc.mailbox.oldest", grpcprocotel.AttrLabel.String("busy")); got <= 0 {
 		t.Errorf("oldest = %v", got)
@@ -293,6 +295,52 @@ func TestMetrics(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	if got := intValue(collect(t, e.reader), "grpcproc.links.down", grpcprocotel.AttrPeer.String("b")); got < 1 {
 		t.Errorf("links down = %d", got)
+	}
+}
+
+// The link counters add up the traffic of every link to a peer: a link that
+// breaks does not take its counts with it, and a new one adds to them.
+func TestLinkCountersNeverGoBack(t *testing.T) {
+	e := setup(t)
+	backoff := grpcproctest.WithConfig(func(name string, cfg *grpcproc.Config) {
+		if name == "a" {
+			cfg.DialBackoff = time.Second // a peer it cannot dial shows in Info with no link
+		}
+	})
+	c := grpcproctest.NewWith(t, []grpcproctest.Option{backoff}, "a", "b")
+	a := c.Node("a")
+	reg, err := e.hooks.Observe(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reg.Unregister() }()
+	sent := func() int64 {
+		return intValue(collect(t, e.reader), "grpcproc.link.messages", grpcprocotel.AttrPeer.String("b"), grpcprocotel.AttrDirection.String("out"))
+	}
+	call := func() {
+		t.Helper()
+		remote, _ := c.Node("b").Spawn(echo)
+		if _, err := remote.Call[*testpb.Pong](t.Context(), a, &testpb.Ping{N: 1}); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	call()
+	call()
+	before := sent()
+	c.Kill("b")
+	time.Sleep(20 * time.Millisecond)
+	if err := a.SendTo(t.Context(), grpcproc.Name{Node: "b", Name: "x"}, &testpb.Ping{}); err == nil {
+		t.Fatal("sent to a node that is gone")
+	}
+	if gone := sent(); gone != before {
+		t.Fatalf("with the link gone, %d messages, want %d", gone, before)
+	}
+	c.Restart("b")
+	time.Sleep(100 * time.Millisecond) // past the backoff
+	call()
+	if after := sent(); after <= before {
+		t.Fatalf("after a new link, %d messages, want more than %d", after, before)
 	}
 }
 
@@ -349,6 +397,7 @@ func TestClassification(t *testing.T) {
 		grpcproc.ReasonNormal: "normal", grpcproc.ReasonKilled: "killed", grpcproc.ReasonShutdown: "shutdown",
 		grpcproc.ReasonNoProc: "noproc", grpcproc.ReasonNoConnection: "noconnection", grpcproc.ReasonType: "type",
 		actor.ReasonMaxRestarts: "max restarts", "timeout": "timeout", "replaced": "replaced", "demoted": "demoted",
+		grpcproc.ReasonNameLost: grpcproc.ReasonNameLost, grpcproc.ReasonNameConflict: grpcproc.ReasonNameConflict,
 		"panic: x": "panic", "db timeout for user 42": "error",
 	}
 	for in, want := range reasons {

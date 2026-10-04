@@ -256,6 +256,7 @@ func (h *Hooks) OnLinkDown(peer grpcproc.NodeID, _ error) {
 func ReasonClass(reason string) string {
 	switch reason {
 	case grpcproc.ReasonNormal, grpcproc.ReasonShutdown, grpcproc.ReasonKilled, grpcproc.ReasonNoProc, grpcproc.ReasonNoConnection, grpcproc.ReasonType,
+		grpcproc.ReasonNameLost, grpcproc.ReasonNameConflict,
 		actor.ReasonMaxRestarts,
 		"timeout", "replaced", // cron.ReasonTimeout, cron.ReasonReplaced: modules otel does not require
 		"demoted": // leader.ReasonDemoted, likewise
