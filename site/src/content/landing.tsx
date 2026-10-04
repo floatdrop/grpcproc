@@ -1,4 +1,4 @@
-import { Drawing, Screenshot } from '../components/Figure.tsx';
+import { Adaptive, Screenshot } from '../components/Figure.tsx';
 import { CallAnywhere, CrashRestart, NodeLost } from '../components/diagrams-overview.tsx';
 import { A, C, Cards, Ext } from '../components/prose.tsx';
 import { PKG_DOC, file } from '../config.ts';
@@ -31,9 +31,7 @@ export const landing: Doc = {
 			title: 'One API, local or remote',
 			body: (
 				<>
-					<Drawing caption="a call within a node, and the same call across nodes">
-						<CallAnywhere />
-					</Drawing>
+					<Adaptive caption="a call within a node, and the same call across nodes" wide={<CallAnywhere />} narrow={<CallAnywhere compact />} />
 					<p>
 						A process is a goroutine with a mailbox and an address. <C>Send</C> and <C>Call</C>{' '}
 						take the address and are written the same way wherever the process runs: within a
@@ -52,9 +50,7 @@ export const landing: Doc = {
 			title: 'Failure as a message',
 			body: (
 				<>
-					<Drawing caption="a crash, and the restart">
-						<CrashRestart />
-					</Drawing>
+					<Adaptive caption="a crash, and the restart" wide={<CrashRestart />} narrow={<CrashRestart compact />} />
 					<p>
 						A process that returns an error or panics exits with a reason. Every process that
 						monitors it receives a <C>Down</C> carrying that reason, after the last message the
@@ -74,9 +70,7 @@ export const landing: Doc = {
 			title: 'A lost node',
 			body: (
 				<>
-					<Drawing caption="a node that cannot be reached">
-						<NodeLost />
-					</Drawing>
+					<Adaptive caption="a node that cannot be reached" wide={<NodeLost />} narrow={<NodeLost compact />} />
 					<p>
 						When a node cannot be reached, monitors of its processes fire with reason{' '}
 						<C>noconnection</C>, and calls waiting on it fail with <C>ErrNoConnection</C>. A node

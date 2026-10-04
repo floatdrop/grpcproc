@@ -44,6 +44,20 @@ export function Drawing({ caption, children }: { caption: string; children: Reac
 }
 
 /**
+ * A drawing with two layouts: `wide` at the column's full width, `narrow`
+ * where the column is a phone's, and the wide one's labels would be too
+ * small to read. Both are in the page; main.css shows the one that fits.
+ */
+export function Adaptive({ caption, wide, narrow }: { caption: string; wide: ReactNode; narrow: ReactNode }) {
+	return (
+		<Figure caption={caption}>
+			<div className="gp-figure__drawing gp-figure__drawing_wide">{wide}</div>
+			<div className="gp-figure__drawing gp-figure__drawing_narrow">{narrow}</div>
+		</Figure>
+	);
+}
+
+/**
  * A screenshot from public/screenshots, taken once in each theme as
  * <name>-light.webp and <name>-dark.webp; main.css shows the one that
  * matches the page's. Both are 2560x1600, a 1280x800 window at 2x.

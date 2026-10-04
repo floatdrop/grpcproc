@@ -798,6 +798,28 @@ body {
 	font-size: 12px;
 }
 
+/* A drawing with a layout for each: the portrait one where the column is
+   narrower than the landscape one reads at, drawn at its own size. */
+.gp-figure__drawing_narrow {
+	display: none;
+}
+
+.gp-diagram_compact {
+	min-width: 0;
+	max-width: 420px;
+	margin-inline: auto;
+}
+
+@media (max-width: 42rem) {
+	.gp-figure__drawing_wide {
+		display: none;
+	}
+
+	.gp-figure__drawing_narrow {
+		display: block;
+	}
+}
+
 .gp-d-box rect {
 	fill: var(--g-color-base-float);
 	stroke: var(--g-color-line-generic-accent);
@@ -859,6 +881,11 @@ body {
 .gp-d-frame-title {
 	fill: var(--g-color-text-secondary);
 	font-size: 11px;
+	/* The halo of a note, for a line that crosses the title. */
+	paint-order: stroke;
+	stroke: var(--g-color-base-background);
+	stroke-width: 4px;
+	stroke-linejoin: round;
 }
 
 .gp-d-line {
