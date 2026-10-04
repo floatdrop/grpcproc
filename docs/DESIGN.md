@@ -15,9 +15,10 @@ It is a library, not a framework, in the same sense that `fsm` and `di` are:
   `NewNode`; a local `Send` allocates nothing and never panics.
 - **Introspection is a first-class API**, in stable order, so a test can assert
   on it and a tool can render it.
-- **The core depends on `grpc` and `protobuf` only.** Everything that would pull
-  in another dependency (etcd, OpenTelemetry) is a separate Go module that
-  plugs into an interface the core defines.
+- **The core depends on `grpc` and `protobuf`, and on `fsm`, which depends on
+  nothing.** Everything that would pull in another dependency (etcd,
+  OpenTelemetry) is a separate Go module that plugs into an interface the
+  core defines.
 
 This document describes how grpcproc works and why, what was looked at in
 other frameworks to decide it (ergo.services, Proto.Actor, GoAkt, Hollywood,
