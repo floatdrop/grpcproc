@@ -300,6 +300,7 @@ func (c *Cluster) start(name string) *grpcproc.Node {
 	// this start of it, not to whatever runs under its name later.
 	m := &member{name: name, ln: ln, srv: srv}
 	cfg := grpcproc.Config{
+		Admit:       grpcproc.AdmitAll,
 		Name:        name,
 		Advertise:   name,
 		Incarnation: c.incs.Add(1),

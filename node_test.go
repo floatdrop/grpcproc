@@ -15,13 +15,22 @@ import (
 
 func TestNewNodeValidation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		if _, err := grpcproc.NewNode(grpcproc.Config{}); err == nil {
+		if _, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll}); err == nil {
 			t.Fatal("name required")
 		}
-		if _, err := grpcproc.NewNode(grpcproc.Config{Name: "a"}); err == nil {
+		if _, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a"}); err == nil {
 			t.Fatal("resolver required")
 		}
-		n, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}})
+		if _, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}}); err == nil {
+			t.Fatal("admit required")
+		}
+		if _, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "\xff", Resolver: grpcproc.StaticResolver{}}); err == nil {
+			t.Fatal("a name that is not UTF-8")
+		}
+		if _, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, MaxMessageSize: 1 << 10}); err == nil {
+			t.Fatal("MaxMessageSize below the least taken")
+		}
+		n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -69,7 +78,7 @@ func TestGracefulStopSendsShutdown(t *testing.T) {
 
 func TestStopTimesOut(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		n, _ := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}})
+		n, _ := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}})
 		block := make(chan struct{})
 		_, _ = n.Spawn[*testpb.Ping](func(p *grpcproc.Process[*testpb.Ping]) error { <-block; return nil })
 		ctx, cancel := context.WithCancel(t.Context())
@@ -97,7 +106,7 @@ func TestStopWaitsForDials(t *testing.T) {
 		// A peer that never resolves: the dial ends at its timeout, and Stop
 		// returns only after that.
 		entered, ended := make(chan struct{}), make(chan struct{})
-		n, err := grpcproc.NewNode(grpcproc.Config{Name: "a", DialTimeout: 50 * time.Millisecond,
+		n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", DialTimeout: 50 * time.Millisecond,
 			Resolver: grpcproc.ResolverFunc(func(ctx context.Context, _ string) (string, error) {
 				close(entered)
 				<-ctx.Done()
@@ -124,7 +133,7 @@ func TestStopGivesUpOnADialThatWillNotEnd(t *testing.T) {
 		// A resolver that ignores its ctx: Stop waits for it only as long as its
 		// own ctx allows.
 		entered, release := make(chan struct{}), make(chan struct{})
-		n, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.ResolverFunc(func(context.Context, string) (string, error) {
+		n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.ResolverFunc(func(context.Context, string) (string, error) {
 			close(entered)
 			<-release
 			return "", errors.New("gone")
@@ -177,7 +186,7 @@ func TestStopFailsCallsWaitingOnPeers(t *testing.T) {
 // gone is ErrNoProc, and one still running may answer it.
 func TestStopFailsLocalCallsStillWaiting(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		n, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}})
+		n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}})
 		if err != nil {
 			t.Fatal(err)
 		}

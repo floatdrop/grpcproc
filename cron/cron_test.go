@@ -45,7 +45,7 @@ func at(t *testing.T, start string, f func(t *testing.T, n *grpcproc.Node, logs 
 	synctest.Test(t, func(t *testing.T) {
 		time.Sleep(time.Until(when))
 		logs := &logBuf{}
-		n, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}, Logger: slog.New(slog.NewTextHandler(logs, nil))})
+		n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Logger: slog.New(slog.NewTextHandler(logs, nil))})
 		if err != nil {
 			t.Fatal(err)
 		}

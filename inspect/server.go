@@ -346,6 +346,8 @@ func callStatus(err error) error {
 		return status.Errorf(codes.InvalidArgument, "inspect: %v", err)
 	case errors.Is(err, grpcproc.ErrMailboxFull):
 		return status.Errorf(codes.ResourceExhausted, "inspect: %v", err)
+	case errors.Is(err, grpcproc.ErrTooLarge):
+		return status.Errorf(codes.InvalidArgument, "inspect: %v", err)
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		return status.FromContextError(err).Err()
 	}

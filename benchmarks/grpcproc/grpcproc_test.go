@@ -23,7 +23,8 @@ func glNode(b *testing.B, name string, peers grpcproc.StaticResolver) (*grpcproc
 	}
 	srv := grpc.NewServer()
 	n, err := grpcproc.NewNode(grpcproc.Config{
-		Name: name, Advertise: ln.Addr().String(), Resolver: peers,
+		Admit: grpcproc.AdmitAll,
+		Name:  name, Advertise: ln.Addr().String(), Resolver: peers,
 		DialOptions: []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())},
 	})
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	grpcprocv1 "github.com/floatdrop/grpcproc/proto/grpcproc/v1"
 )
@@ -23,9 +24,21 @@ import (
 // Protocol version carried in the handshake. Bumped on incompatible change.
 const protoVersion = 2
 
-// maxFrame is roughly how large a Frame the writer builds, well under gRPC's
-// default 4 MiB receive limit. An envelope larger than that goes alone.
+// maxFrame is how large a Frame the writer builds, at most, from many
+// envelopes; one larger than that goes alone.
 const maxFrame = 1 << 20
+
+// frameOverhead is what a Frame adds around one envelope, its tag and
+// length, with room for the field set after the size is checked: a call's
+// timeout, once its link is known, or the process a reply names.
+const frameOverhead = 32
+
+// maxText is how long a process name, or a reason sent to a peer, may be.
+const maxText = 16 << 10
+
+// minMessageSize is the least Config.MaxMessageSize, which an envelope with
+// a name and a reason of maxText each fits well within.
+const minMessageSize = 64 << 10
 
 const (
 	mdNode        = "grpcproc-node"
@@ -124,7 +137,7 @@ func (l *outLink) writeLoop() {
 		// load, many envelopes share one gRPC message.
 		batch := l.q.drain()
 		for len(batch) > 0 {
-			k, body := frameOf(batch)
+			k, body := frameOf(batch, min(maxFrame, n.cfg.MaxMessageSize))
 			err := l.stream.Send(&grpcprocv1.Frame{Envelopes: batch[:k]})
 			// Written or lost, the frame is off the link's hands: room for
 			// more (Config.MaxQueued).
@@ -614,27 +627,27 @@ func (l *inLink) deliver(n *Node, f *grpcprocv1.Frame) bool {
 	for _, env := range f.GetEnvelopes() {
 		n.dispatch(l, l.peer.Name, l.policy, env)
 	}
-	_, body := frameOf(f.GetEnvelopes())
+	body := 0
+	for _, env := range f.GetEnvelopes() {
+		body += bodySize(env)
+	}
 	l.messages.Add(uint64(len(f.GetEnvelopes())))
 	l.bytes.Add(uint64(body))
 	return true
 }
 
-// frameOf says how many leading envelopes of batch fit in one frame (at
-// least one) and how many message-body bytes they carry.
-func frameOf(batch []*grpcprocv1.Envelope) (n, body int) {
+// frameOf says how many leading envelopes of batch fit in one frame of at
+// most budget bytes (at least one) and how many message-body bytes they
+// carry.
+func frameOf(batch []*grpcprocv1.Envelope, budget int) (n, body int) {
 	size := 0
 	for i, env := range batch {
-		b := bodySize(env)
-		est := 64 + b
-		for k, v := range env.GetMetadata() {
-			est += len(k) + len(v) + 8
-		}
-		if i > 0 && size+est > maxFrame {
+		est := proto.Size(env) + frameOverhead
+		if i > 0 && size+est > budget {
 			return i, body
 		}
 		size += est
-		body += b
+		body += bodySize(env)
 	}
 	return len(batch), body
 }
@@ -656,19 +669,16 @@ func (n *Node) serveLink(stream grpc.BidiStreamingServer[grpcprocv1.Frame, grpcp
 	case peer.Name == "" || peer.Name == n.id.Name:
 		return status.Errorf(codes.InvalidArgument, "grpcproc: bad node name %q", peer.Name)
 	}
-	var pol Policy
-	if n.cfg.Admit != nil {
-		var err error
-		if pol, err = n.cfg.Admit(ctx, peer); err != nil {
-			n.log.Warn("rejected peer", "peer", peer, "err", err)
-			return status.Errorf(codes.PermissionDenied, "grpcproc: %v", err)
-		}
+	pol, err := n.cfg.Admit(ctx, peer)
+	if err != nil {
+		n.log.Warn("rejected peer", "peer", peer, "err", err)
+		return status.Errorf(codes.PermissionDenied, "grpcproc: %v", err)
 	}
 	// Refused before the Hello, so that the peer's dial fails, and backs off.
 	// The Hello counts the sessions ended as the link will go in: the
 	// peer's count if it is larger, which this node takes (see supersede).
 	n.mu.RLock()
-	err := n.stale(peer)
+	err = n.stale(peer)
 	ours := n.epochs[peer.Name]
 	if peer.Incarnation > n.newest[peer.Name] {
 		ours = 0 // a new incarnation counts from 0

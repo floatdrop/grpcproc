@@ -40,7 +40,8 @@ export const guidesConfiguration: Doc = {
 						[<C>DialBackoff</C>, '5s. The longest wait before dialing a peer again after failed dials; negative dials again at once.'],
 						[<C>MaxQueued</C>, 'None. How many envelopes the link to a peer may hold before sends and calls to it fail at once.'],
 						[<C>MaxQueuedBytes</C>, 'None. The same bound, in bytes of message bodies.'],
-						[<C>Admit</C>, 'None. Runs for every inbound link: refuses it, or admits it with a Policy of what the peer may ask.'],
+						[<C>MaxMessageSize</C>, '4 MiB, gRPC\'s receive limit. The largest message, encoded, the node sends a peer, whose server must take it; larger ones fail at once with ErrTooLarge.'],
+						[<C>Admit</C>, <>Required. Runs for every inbound link: refuses it, or admits it with a Policy of what the peer may ask. <C>AdmitTLS</C> checks the peer's certificate; <C>AdmitAll</C> trusts every peer.</>],
 						[<C>Logger</C>, 'slog.Default().'],
 						[<C>Hooks</C>, 'None. The observability tap.'],
 						[<C>CopyLocal</C>, 'Off. Clone every locally delivered message.']
@@ -143,6 +144,16 @@ export const guidesConfiguration: Doc = {
 						monitors and exits are queued regardless. <C>LinkInfo.Queued</C> and{' '}
 						<C>QueuedBytes</C> show how close each link is to its bound.
 					</p>
+					<p>
+						<C>MaxMessageSize</C> is the largest message the node sends a peer, 4 MiB by default:
+						gRPC's <C>MaxRecvMsgSize</C>, which every peer's server must take. A peer ends a link
+						that sends it more, and with it every call and monitor on the link, so a node checks
+						first: a send or a call that encodes larger, metadata included, fails at once with{' '}
+						<C>ErrTooLarge</C> and is never sent, and a reply that large reaches its caller as{' '}
+						<C>ErrTooLarge</C>, which <C>Reply</C> returns too. Local sends are not limited. Nothing
+						tells a node its peers' limits, so to carry larger messages, raise{' '}
+						<C>grpc.MaxRecvMsgSize</C> on every node's server first, and <C>MaxMessageSize</C> after.
+					</p>
 				</>
 			)
 		},
@@ -157,26 +168,34 @@ export const guidesConfiguration: Doc = {
 						<C>grpc.WithTransportCredentials</C> in <C>DialOptions</C>. The node's identity travels
 						in the stream's metadata: its name, incarnation and protocol version. Nothing checks by
 						itself that the certificate a peer presents belongs to the name it claims; that is what{' '}
-						<C>Admit</C> is for. It runs for every inbound link, with the peer's transport
-						credentials in the ctx, before the link is accepted:
+						<C>Admit</C> is for, and a node needs one: <C>NewNode</C> fails without it. It runs for
+						every inbound link, with the peer's transport credentials in the ctx, before the link
+						is accepted. <C>grpcproc.AdmitTLS</C> admits a peer whose verified client certificate
+						names its node, as a DNS or IP subject alternative name, so the server must verify
+						client certificates:
 					</p>
-					<Code>{`Admit: func(ctx context.Context, peer grpcproc.NodeID) (grpcproc.Policy, error) {
-	p, ok := grpcpeer.FromContext(ctx) // google.golang.org/grpc/peer
-	if !ok {
-		return nil, errors.New("no peer")
-	}
-	tls, ok := p.AuthInfo.(credentials.TLSInfo)
-	if !ok || len(tls.State.PeerCertificates) == 0 {
-		return nil, errors.New("no client certificate")
-	}
-	if cn := tls.State.PeerCertificates[0].Subject.CommonName; cn != peer.Name {
-		return nil, fmt.Errorf("certificate %q does not match node %q", cn, peer.Name)
-	}
-	return nil, nil // a nil Policy: the peer may ask anything
-},`}</Code>
+					<Code>{`srv := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{
+	Certificates: []tls.Certificate{cert},
+	ClientCAs:    pool,
+	ClientAuth:   tls.RequireAndVerifyClientCert,
+})))
+node, err := grpcproc.NewNode(grpcproc.Config{
+	// …
+	Admit: grpcproc.AdmitTLS(nil), // nil: an admitted peer may ask anything
+})`}</Code>
 					<p>
 						A refused peer gets <C>PermissionDenied</C>, its dial fails, and it backs off like any
-						other failed dial.
+						other failed dial. <C>grpcproc.AdmitAll</C> admits every peer, for a network where
+						whoever reaches the server is trusted: a demo on loopback, a test, a mesh that
+						authenticates below gRPC. A peer it admits may claim any node name, and so stand in
+						for a node, and exit any process.
+					</p>
+					<p>
+						<C>Admit</C> proves who dialed this node. That the node this one dials is the one it
+						meant is for the dial's credentials, as for any gRPC client: give each peer's TLS a{' '}
+						<C>ServerName</C> of its node name in <C>DialOptionsFor</C>, and the peer's server
+						certificate must name its node too. A certificate names a node exactly: a wildcard
+						names none.
 					</p>
 					<p>
 						An admitted peer may ask anything of any process, <C>Exit</C> included, which a process
@@ -190,7 +209,7 @@ export const guidesConfiguration: Doc = {
 						shows.
 					</p>
 					<Code>{`Admit: func(ctx context.Context, peer grpcproc.NodeID) (grpcproc.Policy, error) {
-	if err := checkCertificate(ctx, peer); err != nil {
+	if _, err := grpcproc.AdmitTLS(nil)(ctx, peer); err != nil {
 		return nil, err
 	}
 	if strings.HasPrefix(peer.Name, "partner-") {

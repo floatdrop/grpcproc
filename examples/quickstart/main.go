@@ -95,6 +95,7 @@ func node(ctx context.Context, name string) *grpcproc.Node {
 	peers[name] = lis.Addr().String()
 
 	n, err := grpcproc.NewNode(grpcproc.Config{
+		Admit:       grpcproc.AdmitAll, // loopback; AdmitTLS with mTLS across a network
 		Name:        name,
 		Resolver:    peers,
 		DialOptions: []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())},

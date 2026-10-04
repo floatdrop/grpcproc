@@ -20,6 +20,7 @@ node, err := grpcproc.NewNode(grpcproc.Config{
     Registrar:  cluster,
     Membership: cluster,
     Names:      cluster.Names(), // global names: Global targets and Process.Claim
+    Admit:      grpcproc.AdmitTLS(nil), // a peer's certificate must name its node
 })
 node.Start(ctx) // registers; Stop withdraws
 ```

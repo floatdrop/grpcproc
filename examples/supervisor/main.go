@@ -85,7 +85,7 @@ func tree(ledger *Ledger) actor.Spec {
 
 func main() {
 	ctx := context.Background()
-	node, err := grpcproc.NewNode(grpcproc.Config{Name: "shop", Resolver: grpcproc.StaticResolver{}})
+	node, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "shop", Resolver: grpcproc.StaticResolver{}})
 	if err != nil {
 		log.Fatal(err)
 	}

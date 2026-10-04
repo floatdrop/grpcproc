@@ -194,7 +194,7 @@ func TestStartAndStopErrors(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		boom := errors.New("etcd down")
 		down := &fakeMembership{err: boom, events: make(chan grpcproc.MemberEvent)}
-		n, _ := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}, Membership: down})
+		n, _ := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Membership: down})
 		if err := n.Start(t.Context()); !errors.Is(err, boom) || !strings.Contains(err.Error(), "membership") {
 			t.Fatalf("got %v", err)
 		}
@@ -203,7 +203,7 @@ func TestStartAndStopErrors(t *testing.T) {
 			t.Fatalf("the retry: %v", err)
 		}
 		_ = n.Stop(t.Context())
-		n, _ = grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}, Registrar: &fakeRegistrar{err: boom}})
+		n, _ = grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Registrar: &fakeRegistrar{err: boom}})
 		if err := n.Start(t.Context()); !errors.Is(err, boom) || !strings.Contains(err.Error(), "register") {
 			t.Fatalf("got %v", err)
 		}
@@ -217,7 +217,7 @@ func TestStartAndStopErrors(t *testing.T) {
 			return out, nil
 		})
 		flaky := &fakeRegistrar{err: boom}
-		n, _ = grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}, Membership: watch, Registrar: flaky})
+		n, _ = grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Membership: watch, Registrar: flaky})
 		if err := n.Start(t.Context()); !errors.Is(err, boom) {
 			t.Fatalf("got %v", err)
 		}
@@ -234,7 +234,7 @@ func TestStartAndStopErrors(t *testing.T) {
 		_ = n.Stop(t.Context())
 
 		r := &fakeRegistrar{withdrawErr: boom}
-		n, _ = grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}, Registrar: r})
+		n, _ = grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Registrar: r})
 		if err := n.Start(t.Context()); err != nil {
 			t.Fatal(err)
 		}
@@ -255,7 +255,7 @@ func (f membershipFunc) Watch(ctx context.Context) (<-chan grpcproc.MemberEvent,
 // runs is withdrawn by Start itself: Stop has already withdrawn what it knew.
 func TestStartAndStopTogether(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		n, _ := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}})
+		n, _ := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}})
 		_ = n.Stop(t.Context())
 		if err := n.Start(t.Context()); !errors.Is(err, grpcproc.ErrNodeStopped) {
 			t.Fatalf("got %v", err)
@@ -263,7 +263,7 @@ func TestStartAndStopTogether(t *testing.T) {
 
 		entered, release := make(chan struct{}), make(chan struct{})
 		r := &fakeRegistrar{onRegister: func() { close(entered); <-release }}
-		n, _ = grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}, Registrar: r})
+		n, _ = grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Registrar: r})
 		started := make(chan error, 1)
 		go func() { started <- n.Start(t.Context()) }()
 		<-entered
@@ -289,7 +289,7 @@ func TestStartBoundsTheWatch(t *testing.T) {
 			close(out)
 			return out, nil
 		})
-		n, _ := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}, Membership: slow})
+		n, _ := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Membership: slow})
 		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 		defer cancel()
 		if err := n.Start(ctx); !errors.Is(err, context.DeadlineExceeded) || watching.Err() == nil {
@@ -300,11 +300,11 @@ func TestStartBoundsTheWatch(t *testing.T) {
 
 func TestMembershipIsTheConfigs(t *testing.T) {
 	m := &fakeMembership{}
-	with, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}, Membership: m})
+	with, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Membership: m})
 	if err != nil {
 		t.Fatal(err)
 	}
-	without, err := grpcproc.NewNode(grpcproc.Config{Name: "b", Resolver: grpcproc.StaticResolver{}})
+	without, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "b", Resolver: grpcproc.StaticResolver{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +367,7 @@ func TestMembers(t *testing.T) {
 // A node's Metadata is its own copy, in NodeInfo too.
 func TestNodeMetadata(t *testing.T) {
 	md := map[string]string{"zone": "eu-1"}
-	n, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}, Metadata: md})
+	n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Metadata: md})
 	if err != nil {
 		t.Fatal(err)
 	}

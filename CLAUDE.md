@@ -206,8 +206,10 @@ message as a dead letter and a call with `ErrMailboxFull` (sent as
 `STATUS_NOPROC` with reason `mailbox full`, which no handler can send, so no
 protocol change), never a `Down` or an `Exited`.
 
-**Admission is one decision per link.** `Config.Admit` refuses a link, which
-the peer sees as `PermissionDenied`, or returns the `Policy` that judges the
+**Admission is one decision per link.** `Config.Admit` is required, since a
+peer is whoever its metadata says: `AdmitTLS` checks that the peer's
+certificate names its node, `AdmitAll` trusts the network. It refuses a link,
+which the peer sees as `PermissionDenied`, or returns the `Policy` that judges the
 sends, calls, monitors (a link travels as one) and exits on it, by process
 name. What a `Policy` refuses is answered as for a process that does not
 exist: `ErrNoProc`, `Down{noproc}`, or dropped. Answers (replies, `Down`s,
@@ -238,6 +240,12 @@ kept current by `TestDiagrams`; `TestMachines` asserts no dead ends.
   `FuzzServeLink`).
 - A local `Send` allocates nothing and never panics; configuration errors
   come from `NewNode`, not later.
+- Nothing is queued on a link that its peer would refuse, since a frame the
+  peer cannot take ends the link for everything on it: sends and calls are
+  checked and fail (`encode`, `fits`: `ErrTooLarge`, UTF-8), answers are
+  made to fit (`replyEnv`, `wireText`), and a name that cannot travel
+  travels as none (`wireName`), never as another name. A new string or
+  unbounded field on an envelope goes through one of them.
 - The library opens no listener, reads no environment and installs no
   global; the application owns the `*grpc.Server`, credentials, discovery
   and logging. Every goroutine it starts — a process, a link's reader and

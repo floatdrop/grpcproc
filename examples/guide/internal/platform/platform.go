@@ -104,6 +104,7 @@ func newServer(ln net.Listener) *server {
 
 func newNode(cfg Config, r grpcproc.Resolver, srv *server, log *slog.Logger) (*grpcproc.Node, error) {
 	n, err := grpcproc.NewNode(grpcproc.Config{
+		Admit:       grpcproc.AdmitAll, // with mTLS, AdmitTLS: peers' certificates name their nodes
 		Name:        cfg.Node,
 		Advertise:   cfg.Listen,
 		Resolver:    r,

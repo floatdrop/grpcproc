@@ -41,7 +41,7 @@ type settleEnv struct {
 func newSettleEnv(t *testing.T) settleEnv {
 	t.Helper()
 	h := &holdHooks{entered: make(chan struct{}), release: make(chan struct{})}
-	n, err := NewNode(Config{Name: "a", Resolver: StaticResolver{}, Incarnation: 1, Hooks: h})
+	n, err := NewNode(Config{Admit: AdmitAll, Name: "a", Resolver: StaticResolver{}, Incarnation: 1, Hooks: h})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func TestReplacedLinkDownsFirst(t *testing.T) {
 func TestFailedDialCutsOnlyTheLinksItAnswers(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		entered, release := make(chan struct{}), make(chan struct{})
-		n, err := NewNode(Config{Name: "a", Incarnation: 1, Resolver: ResolverFunc(func(context.Context, string) (string, error) {
+		n, err := NewNode(Config{Admit: AdmitAll, Name: "a", Incarnation: 1, Resolver: ResolverFunc(func(context.Context, string) (string, error) {
 			close(entered)
 			<-release
 			return "", errors.New("unreachable")
@@ -342,7 +342,7 @@ func (panicUp) OnLinkUp(NodeID) { panic("hook") }
 // links under way: later streams from b are not held up for ever.
 func TestLinkUpPanicSettles(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		n, err := NewNode(Config{Name: "a", Incarnation: 1, Resolver: StaticResolver{}, Hooks: panicUp{}})
+		n, err := NewNode(Config{Admit: AdmitAll, Name: "a", Incarnation: 1, Resolver: StaticResolver{}, Hooks: panicUp{}})
 		if err != nil {
 			t.Fatal(err)
 		}

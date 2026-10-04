@@ -57,7 +57,7 @@ func fuzzSink(p *Process[proto.Message]) error {
 // refs 1 to 3.
 func fuzzNode(t *testing.T) (*Node, []*pendingCall) {
 	t.Helper()
-	n, err := NewNode(Config{Name: "a", Resolver: StaticResolver{}, Incarnation: 1})
+	n, err := NewNode(Config{Admit: AdmitAll, Name: "a", Resolver: StaticResolver{}, Incarnation: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

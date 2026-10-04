@@ -16,7 +16,7 @@ import (
 // parked, not slow.
 func TestReservationWaitsForRestock(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		node, err := grpcproc.NewNode(grpcproc.Config{Name: "test", Resolver: grpcproc.StaticResolver{}})
+		node, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "test", Resolver: grpcproc.StaticResolver{}})
 		if err != nil {
 			t.Fatal(err)
 		}

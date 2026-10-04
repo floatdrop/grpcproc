@@ -114,8 +114,9 @@ const (
 var (
 	ErrNoProc       = errors.New("grpcproc: no such process")
 	ErrNoConnection = errors.New("grpcproc: no connection to node")
-	ErrLinkBusy     = errors.New("grpcproc: link queue full") // see Config.MaxQueued
-	ErrMailboxFull  = errors.New("grpcproc: mailbox full")    // see WithMailboxLimit
+	ErrLinkBusy     = errors.New("grpcproc: link queue full")   // see Config.MaxQueued
+	ErrMailboxFull  = errors.New("grpcproc: mailbox full")      // see WithMailboxLimit
+	ErrTooLarge     = errors.New("grpcproc: message too large") // see Config.MaxMessageSize
 	ErrNameTaken    = errors.New("grpcproc: name already registered")
 	ErrNotLocal     = errors.New("grpcproc: pid does not belong to this node")
 	ErrNodeStopped  = errors.New("grpcproc: node stopped")

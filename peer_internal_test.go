@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/floatdrop/grpcproc/internal/testpb"
 	grpcprocv1 "github.com/floatdrop/grpcproc/proto/grpcproc/v1"
@@ -275,7 +276,7 @@ func TestLostEnvelopes(t *testing.T) {
 // and counted. Once the writer has written, there is room again.
 func TestLinkBound(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		n, err := NewNode(Config{Name: "a", Resolver: StaticResolver{}, Incarnation: 1, MaxQueued: 2})
+		n, err := NewNode(Config{Admit: AdmitAll, Name: "a", Resolver: StaticResolver{}, Incarnation: 1, MaxQueued: 2})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -336,20 +337,21 @@ func TestFrameSplitting(t *testing.T) {
 			}
 			return e
 		}
+		size := func(e *grpcprocv1.Envelope) int { return proto.Size(e) + frameOverhead }
 		// Small envelopes all fit; their bodies are counted.
-		if n, body := frameOf([]*grpcprocv1.Envelope{env(10, 0), env(20, 5), {Kind: grpcprocv1.Kind_KIND_MONITOR}}); n != 3 || body != 30 {
+		if n, body := frameOf([]*grpcprocv1.Envelope{env(10, 0), env(20, 5), {Kind: grpcprocv1.Kind_KIND_MONITOR}}, maxFrame); n != 3 || body != 30 {
 			t.Fatalf("%d %d", n, body)
 		}
-		// A frame stops before it would pass maxFrame, metadata included.
-		half := maxFrame/2 - 100
-		if n, _ := frameOf([]*grpcprocv1.Envelope{env(half, 0), env(half, 0), env(10, 0)}); n != 2 {
+		// A frame stops before it would pass its budget, metadata included.
+		e := env(1000, 0)
+		if n, _ := frameOf([]*grpcprocv1.Envelope{e, e, e}, 2*size(e)); n != 2 {
 			t.Fatalf("split at %d", n)
 		}
-		if n, _ := frameOf([]*grpcprocv1.Envelope{env(half, 0), env(10, half+200)}); n != 1 {
+		if n, _ := frameOf([]*grpcprocv1.Envelope{e, env(10, 1000)}, size(e)+500); n != 1 {
 			t.Fatalf("metadata ignored: %d", n)
 		}
 		// An envelope larger than a frame still goes, alone.
-		if n, body := frameOf([]*grpcprocv1.Envelope{env(2*maxFrame, 0), env(1, 0)}); n != 1 || body != 2*maxFrame {
+		if n, body := frameOf([]*grpcprocv1.Envelope{env(2*maxFrame, 0), env(1, 0)}, maxFrame); n != 1 || body != 2*maxFrame {
 			t.Fatalf("%d %d", n, body)
 		}
 		if bodySize(&grpcprocv1.Envelope{Kind: grpcprocv1.Kind_KIND_REPLY, Body: []byte("ab")}) != 2 {
@@ -364,7 +366,7 @@ func bufconnPeer(t *testing.T, name string) (*Node, grpc.DialOption) {
 	t.Helper()
 	ln := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
-	n, err := NewNode(Config{Name: name, Resolver: StaticResolver{}, Incarnation: 1})
+	n, err := NewNode(Config{Admit: AdmitAll, Name: name, Resolver: StaticResolver{}, Incarnation: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +382,8 @@ func TestDialSharingAndStopWhileDialing(t *testing.T) {
 		entered := make(chan struct{}, 2)
 		release := make(chan struct{})
 		n, err := NewNode(Config{
-			Name: "a", Incarnation: 1,
+			Admit: AdmitAll,
+			Name:  "a", Incarnation: 1,
 			Resolver: ResolverFunc(func(context.Context, string) (string, error) {
 				entered <- struct{}{}
 				<-release
@@ -435,7 +438,7 @@ func TestDialSharingAndStopWhileDialing(t *testing.T) {
 
 func TestDialBadTarget(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		n, err := NewNode(Config{Name: "a", Incarnation: 1,
+		n, err := NewNode(Config{Admit: AdmitAll, Name: "a", Incarnation: 1,
 			Resolver:    StaticResolver{"b": "\x7f://not a target"},
 			DialOptions: []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}})
 		if err != nil {
@@ -594,7 +597,7 @@ func (r recordingRegistrar) Register(context.Context, Member) (func(context.Cont
 func TestStopWithdrawsAfterALongFlush(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := recordingRegistrar{withdrawCtxErr: make(chan error, 1)}
-		n, err := NewNode(Config{Name: "a", Resolver: StaticResolver{}, Registrar: r})
+		n, err := NewNode(Config{Admit: AdmitAll, Name: "a", Resolver: StaticResolver{}, Registrar: r})
 		if err != nil {
 			t.Fatal(err)
 		}

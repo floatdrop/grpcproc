@@ -246,7 +246,7 @@ func (h *exitOrderHooks) OnDeadLetter(_, _ grpcproc.PID, _ proto.Message, reason
 func TestExitCountsQueuedCallBeforeAnswering(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := &exitOrderHooks{answered: make(chan struct{}), counted: make(chan struct{})}
-		n, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}, Hooks: h})
+		n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Hooks: h})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -115,7 +115,7 @@ type MemberEvent struct {
 					<Code>{`node, _ := grpcproc.NewNode(grpcproc.Config{
 	Name:     "orders-3",
 	Metadata: map[string]string{"version": buildVersion, "zone": "eu-1"},
-	// Resolver, Registrar, Membership …
+	// Resolver, Registrar, Membership, Admit …
 })
 
 // Later: start the child on a node of this zone that runs the new version.

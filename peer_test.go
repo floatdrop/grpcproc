@@ -71,6 +71,7 @@ func nodeAgainst(t *testing.T, peer *fakePeer, dialTimeout time.Duration) *grpcp
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(srv.Stop)
 	n, err := grpcproc.NewNode(grpcproc.Config{
+		Admit:    grpcproc.AdmitAll,
 		Name:     "a",
 		Resolver: grpcproc.StaticResolver{"b": "passthrough:///b"},
 		DialOptions: []grpc.DialOption{
@@ -224,6 +225,7 @@ func TestDialTimeoutBoundsTheDial(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			n, err := grpcproc.NewNode(grpcproc.Config{
+				Admit:    grpcproc.AdmitAll,
 				Name:     "a",
 				Resolver: grpcproc.StaticResolver{"b": "passthrough:///b"},
 				DialOptions: append([]grpc.DialOption{
@@ -420,6 +422,7 @@ func TestAdmitRefuses(t *testing.T) {
 		t.Cleanup(func() { _ = n.Stop(context.Background()) })
 		for _, name := range []string{"a", "trusted"} {
 			a, err := grpcproc.NewNode(grpcproc.Config{
+				Admit:    grpcproc.AdmitAll,
 				Name:     name,
 				Resolver: grpcproc.StaticResolver{"b": "passthrough:///b"},
 				DialOptions: []grpc.DialOption{
@@ -549,7 +552,7 @@ func mesh(t *testing.T, cfg grpcproc.Config, opts map[string][]grpc.ServerOption
 func TestSlowPeerFillsItsOwnLink(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		resume := make(chan struct{})
-		nodes := mesh(t, grpcproc.Config{MaxQueuedBytes: 1 << 20}, map[string][]grpc.ServerOption{"b": {stall(resume)}}, "a", "b", "c")
+		nodes := mesh(t, grpcproc.Config{Admit: grpcproc.AdmitAll, MaxQueuedBytes: 1 << 20}, map[string][]grpc.ServerOption{"b": {stall(resume)}}, "a", "b", "c")
 		a := nodes["a"]
 		slow, got := collector(t, nodes["b"])
 		fast := spawnEcho(t, nodes["c"])
@@ -746,7 +749,7 @@ func TestDialReachesAPeersOtherServices(t *testing.T) {
 }
 
 func TestDialAnUnknownPeer(t *testing.T) {
-	n, err := grpcproc.NewNode(grpcproc.Config{Name: "a", Resolver: grpcproc.StaticResolver{}})
+	n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}})
 	if err != nil {
 		t.Fatal(err)
 	}

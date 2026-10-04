@@ -14,7 +14,7 @@ import (
 // newTestNode is node name of incarnation 1, stopped when the test ends.
 func newTestNode(t *testing.T, name string) *Node {
 	t.Helper()
-	n, err := NewNode(Config{Name: name, Resolver: StaticResolver{}, Incarnation: 1})
+	n, err := NewNode(Config{Admit: AdmitAll, Name: name, Resolver: StaticResolver{}, Incarnation: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
