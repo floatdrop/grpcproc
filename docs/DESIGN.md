@@ -1430,11 +1430,12 @@ OpenTelemetry are.
   it is released; then `leader` preferring new versions to lead, as Akka's
   `app-version` keeps new work on new nodes, and `Cordon` keeping old ones
   from leading during a rollout.
-- **An operations guide**: keepalive values, static `Voters` or etcd
-  `Membership` for an election, the two election timeouts in which two nodes
-  can each believe they lead and `Lease.Term` against it, and the order of a
-  shutdown (`Resign`, stop supervisors, `Stop`, withdraw). Akka does that
-  order itself on SIGTERM; grpcproc does not own signals.
+- **Message size limits told to peers**, as ergo's handshake does: a node's
+  `Hello` would carry what its server takes, and a sender would check each
+  peer's, so that one node's raised `MaxMessageSize` could not break its
+  links to peers whose servers take less. Deferred: it needs the node to be
+  told its server's limit, which it cannot read, and the default, 4 MiB on
+  both sides, agrees; the operations guide gives the order to raise them in.
 - **Delivery beyond at-most-once**, as a module beside sagas, on the same
   `Store`: idempotency keys, sending again what `Unsent` says never left, and
   an outbox fenced by an epoch, so a writer on a node that left cannot commit,

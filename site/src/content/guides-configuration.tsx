@@ -13,8 +13,9 @@ export const guidesConfiguration: Doc = {
 	lead: (
 		<p>
 			A node is configured once, in <C>NewNode</C>, which fails on a bad configuration rather than
-			later. Two fields are required, <C>Name</C> and <C>Resolver</C>; the rest have defaults that
-			suit a first program and need thought for a deployment. The{' '}
+			later. Three fields are required, <C>Name</C>, <C>Resolver</C> and <C>Admit</C>; the rest
+			have defaults that suit a first program and need thought for a deployment, which{' '}
+			<A to="guides/operations/">Running in production</A> goes through. The{' '}
 			<Ext href={`${PKG_DOC}#Config`}>API reference</Ext> has each field's full comment.
 		</p>
 	),
@@ -108,8 +109,10 @@ export const guidesConfiguration: Doc = {
 					<p>
 						<C>DialOptions</C> are used for every outbound connection: the transport credentials,
 						keepalive, and any interceptors. Keepalive is what turns a peer that went silent into a
-						broken link, and so into <C>Down</C>s and failed calls; grpcproc does not set it, because
-						the server it must match is the application's. The tutorial's platform sets both sides:
+						broken link, and it takes both halves: the dial's pings end this node's link to the
+						peer, and the server's end the peer's link to this node, whose end is what declares the
+						peer down, firing <C>Down</C>s and failing calls. grpcproc sets neither, because the
+						server is the application's. The tutorial's platform sets both:
 					</p>
 					<Code caption="examples/guide/internal/platform/platform.go">
 						{region(platform, /^\/\/ dialOptions are for every connection/, /^}/)}

@@ -17,7 +17,7 @@ export const guidesCron: Doc = {
 			on a node or under a supervisor. Every run is a process too, spawned by the cron process and
 			linked to it, so a run's exit reason is its result, a run still going when the next is due can
 			be left alone, skipped or replaced, and one that takes too long is told to exit. It is a
-			separate module, versioned on its own.
+			package of the core module, released with it.
 		</p>
 	),
 	sections: [
@@ -26,7 +26,7 @@ export const guidesCron: Doc = {
 			title: 'Install and start',
 			body: (
 				<>
-					<Code lang="sh">{'go get github.com/floatdrop/grpcproc/cron'}</Code>
+					<Code lang="sh">{'go get github.com/floatdrop/grpcproc # cron is a package of it'}</Code>
 					<Code>{`c, err := cron.Start(node, cron.Spec{Jobs: []cron.Job{{
 	Name:     "nightly-report",
 	Spec:     "10 3 * * *",

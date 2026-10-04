@@ -18,8 +18,8 @@ export const guidesLeader: Doc = {
 			<C>grpcproc/leader</C> elects one node of a cluster, and runs a singleton there: a child spec
 			of yours, started when its node wins and told to exit when it loses. Leadership is the
 			singleton's lifetime, so no handler asks whether it still leads. The singleton can checkpoint
-			its state, and whichever node leads next starts from it. It is a separate module, versioned on
-			its own.
+			its state, and whichever node leads next starts from it. It is a package of the core module,
+			released with it.
 		</p>
 	),
 	sections: [
@@ -28,7 +28,7 @@ export const guidesLeader: Doc = {
 			title: 'Install and start',
 			body: (
 				<>
-					<Code lang="sh">{'go get github.com/floatdrop/grpcproc/leader'}</Code>
+					<Code lang="sh">{'go get github.com/floatdrop/grpcproc # leader is a package of it'}</Code>
 					<Code>{`leader.Start(node, leader.Spec[*schedpb.State]{
 	Cluster: "scheduler",
 	Voters:  []string{"a", "b", "c"},
