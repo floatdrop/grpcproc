@@ -1435,7 +1435,8 @@ snap, err := orders.Wait(ctx, eng, "order-123") // its state, data and status, o
   `Stay`) takes its event without a new visit: the effect is not run
   again, and the state's timer stands.
 - **An effect runs at least once.** The record is saved after the effect,
-  so a crash between the two runs the effect again. That cannot be
+  before the next one or as the run waits, so a crash between the two runs
+  the effect again. That cannot be
   avoided, only made safe: `Run.Key` is the same for every attempt of one
   visit to a state (the saga's name, the run's id, the state and how many
   states the run has entered), and it travels, with the fence, in the
@@ -1450,13 +1451,15 @@ snap, err := orders.Wait(ctx, eng, "order-123") // its state, data and status, o
   never taken for a refusal. A refusal is an answer, and the effect fires
   an event for it. `Attempts(n)` bounds the tries, and `Permanent(err)`
   ends them at once. Then `Otherwise(ev)` fires `ev` with the error's text,
-  for a machine that has a way on from there; with none, the run is `Stuck`,
+  for a machine that has a way on from there, or that stays (fsm's `Stay`)
+  and waits for a signal or a timer; with none, the run is `Stuck`,
   kept as it is and shown as such, until `Resume` has it tried again. A
   compensation that keeps failing has no automatic answer, and a run that
   is dropped is worse than one that waits for a person.
 - **Signals wait for the state that takes them.** `Signal` saves an event
   and its payload, a protobuf message, with the run; the machine takes it
-  when it is in a state that accepts it, in the order they came. One that
+  when it is in a state that accepts it: of those a state accepts, the
+  earlier first, and those it accepts go by one it does not. One that
   comes early is kept, where luno/workflow drops it. `Accept` names the
   events a saga takes from outside. A signal makes its run due without
   touching when its effect is next tried, which the record keeps apart
@@ -1482,8 +1485,13 @@ snap, err := orders.Wait(ctx, eng, "order-123") // its state, data and status, o
   cannot save over it. Its effect's ctx ends when the store says the run is
   another's, or when a quarter of its lease is left and none of its
   renewals got through, before another engine may have it (a renewal
-  that hangs is one that failed); what it had not saved is run again
-  by the new owner, with the same key. A save leaves the lease as it is.
+  that hangs is one that failed, and one that failed is tried again a
+  sixteenth of the lease later, so a store that answers no renewal for
+  half a lease loses the run). The engine counts a lease by its own clock,
+  from before it asked for it, so a store whose clock is set apart from
+  the engine's, or whose answer comes late, cannot make it keep a run past
+  its lease. What it had not saved is run again by the new owner, with the
+  same key. A save leaves the lease as it is.
   The owner saves before each effect, so that what came before is kept,
   and when it lets the run go: a run that waits costs one write. A save
   the store fails is asked again, a `Poll` apart, while the lease holds. The epoch is the fence in the metadata, for
@@ -1507,8 +1515,9 @@ snap, err := orders.Wait(ctx, eng, "order-123") // its state, data and status, o
   waits. So a run at work is in the process list and the Inspector, its
   effect's calls come from it, and the node's stop ends it: its ctx is
   cancelled, nothing is saved, its lease is let go, and another engine
-  claims the run at once. A node that dies leaves the lease to run out
-  (`Config.Lease`, 30s). A run that waits is a record and no more.
+  claims the run at its next tick, without waiting the lease out. A node
+  that dies leaves the lease to run out (`Config.Lease`, 30s). A run that
+  waits is a record and no more.
 - **`Sequence` is the saga of the textbooks, as a machine.** Steps in
   order, each with what undoes it: a step that fails for good before the
   pivot has the steps before it undone, last first, itself included, since
