@@ -66,10 +66,13 @@ function Nav({ doc, docs }: PageProps) {
 	);
 }
 
-/** The landing page's opening: the pitch, the install line, and where to start. */
+/**
+ * The landing page's opening: the pitch, the install line, and where to
+ * start. It heads the page's own column, as a page's title does.
+ */
 function Hero() {
 	return (
-		<header className="gp-page gp-hero">
+		<header className="gp-hero">
 			<div className="gp-hero__copy">
 				<Text as="h1" variant="display-3" className="gp-hero__title">
 					{hero.title}
@@ -143,8 +146,6 @@ export function Page({ doc, docs }: PageProps) {
 		<ThemeProvider theme="light" lang="en">
 			<Topbar />
 
-			{landing && <Hero />}
-
 			<div className="gp-page gp-layout">
 				<aside className="gp-nav">
 					<div className="gp-nav__head">
@@ -177,6 +178,8 @@ export function Page({ doc, docs }: PageProps) {
 						<summary className="gp-nav-mobile__summary">{labels.nav}</summary>
 						<Nav doc={doc} docs={docs} />
 					</details>
+
+					{landing && <Hero />}
 
 					{!landing && (
 						<header className="gp-doc-head">

@@ -176,11 +176,9 @@ body {
 /* ---- hero ---------------------------------------------------------------- */
 
 /* The landing page's opening: the pitch, the install line and where to go,
-   in one column above the page's own. */
+   at the head of the page's own column, where another page has its title. */
 .gp-hero {
-	/* Gravity's spacing scale stops at 40px; the page rhythm above a section is
-	   coarser than any control's, so these few are spelled out. */
-	padding-block: 3.5rem 2.5rem;
+	margin-bottom: 3rem;
 }
 
 .gp-hero__actions {
@@ -457,11 +455,12 @@ body {
 	letter-spacing: -0.01em;
 }
 
-.gp-prose a {
+/* A link in the text; a button that is a link keeps the button's colours. */
+.gp-prose a:not(.g-button) {
 	color: var(--g-color-text-link);
 }
 
-.gp-prose a:hover {
+.gp-prose a:not(.g-button):hover {
 	color: var(--g-color-text-link-hover);
 }
 
