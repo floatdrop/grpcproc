@@ -117,9 +117,9 @@ your `*grpc.Server` next to your other services, start and stop.
   method per kind of message, restarted by a supervisor when it fails, and
   started from any node, monitored from before it runs.
   [Supervision](https://floatdrop.github.io/grpcproc/concepts/supervision/)
-- **Pub/sub** in `grpcproc/pubsub`: topics a process publishes to and any
-  node subscribes to, with the last few events kept for whoever comes late,
-  and each event sent once to each node.
+- **Pub/sub** in [`grpcproc/pubsub`](pubsub/README.md): topics a process
+  publishes to and any node subscribes to, with the last few events kept for
+  whoever comes late, and each event sent once to each node.
   [Guide](https://floatdrop.github.io/grpcproc/guides/pubsub/)
 - **An Inspector** and [`grpcprocctl`](tools/README.md): every process, its
   mailbox and what it says about itself, from a terminal or an AI agent over
