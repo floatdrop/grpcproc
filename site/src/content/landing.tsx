@@ -6,7 +6,7 @@ import type { Doc } from './types.ts';
 
 /** The landing page's opening. */
 export const hero = {
-	title: 'Erlang-style processes for Go, on the gRPC server you already run.',
+	title: 'Erlang-style processes for Go over gRPC.',
 	lead: (
 		<>
 			A Go library that gives goroutines typed mailboxes, addresses that work across nodes,

@@ -1,7 +1,8 @@
 # grpcproc — design
 
-`grpcproc` gives goroutines Erlang-style network transparency on top of the gRPC
-server a service already runs. A process is addressed by a PID or a name; the
+`grpcproc` gives goroutines Erlang-style network transparency over gRPC: a
+node is one service on a `*grpc.Server` the application owns, beside its
+other services if it has any. A process is addressed by a PID or a name; the
 same `Send`, `Call`, `Monitor`, `Link` and `Exit` work whether the target is
 in this binary or on another node.
 
@@ -1534,7 +1535,7 @@ steps side by side, and retention; see Open work.
 
 | Idea | Seen in | Why not |
 |---|---|---|
-| Own TCP protocol | ergo, GoAkt, Hollywood (dRPC) | The whole point is to reuse the gRPC server, TLS, interceptors and tooling the service already has. Akka went the same way, deprecating its ClusterClient for gRPC. Should one stream per direction show head-of-line blocking, Partisan's case for channels, gRPC answers it: more `Link` streams to a peer, split by sender, which keeps each sender's order |
+| Own TCP protocol | ergo, GoAkt, Hollywood (dRPC) | The point is a transport the application owns and its operators know: a gRPC server with its TLS, interceptors and tooling, shared with the service's other APIs when it has any. Akka went the same way, deprecating its ClusterClient for gRPC. Should one stream per direction show head-of-line blocking, Partisan's case for channels, gRPC answers it: more `Link` streams to a peer, split by sender, which keeps each sender's order |
 | One monitor = one stream | — | Loses message-before-Down ordering, costs a goroutine per monitor |
 | Priority mailbox queues | ergo (4 queues), GoAkt | Inspection runs inside `Receive` instead; `Down` must stay in order with messages; and `Exit` cancels the process's context rather than wait in its mailbox, so no signal is stuck behind a backlog |
 | Two-way links | Erlang/OTP | A one-way link is a monitor on the wire and needs no agreement between nodes; see Links. Erlang needed unlink ids and acknowledgements (OTP 23) to settle the races two-way links have |

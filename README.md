@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Awesome Go](https://raw.githubusercontent.com/floatdrop/awesome-go/main/badges/floatdrop--grpcproc.svg)](https://floatdrop.github.io/awesome-go/#floatdrop--grpcproc)
 
-Erlang-style processes for Go, on the gRPC server you already run.
+Erlang-style processes for Go over gRPC.
 
 A process is a goroutine with a typed mailbox and an address any node in the
 cluster can use. `Send`, `Call`, `Monitor` and `Exit` work the same whether
