@@ -121,7 +121,7 @@ func TestListProcessesFilters(t *testing.T) {
 		release := make(chan struct{})
 		defer close(release)
 		fn, insp := worker(release)
-		busy, _ := n.Spawn(fn, grpcproc.WithName("orders-busy"), grpcproc.WithLabel("order"), insp)
+		busy, _ := n.Spawn(fn, grpcproc.WithName("orders-busy"), grpcproc.WithLabel("order"), grpcproc.WithMailboxLimit(8), insp)
 		fn2, insp2 := worker(release)
 		_, _ = n.Spawn(fn2, grpcproc.WithName("orders-idle"), grpcproc.WithLabel("order"), insp2)
 		fn3, insp3 := worker(release)
@@ -162,7 +162,7 @@ func TestListProcessesFilters(t *testing.T) {
 		}
 		resp, _ := a.ListProcesses(t.Context(), &inspectv1.ListProcessesRequest{MinMailbox: 2})
 		p := inspect.ProcessInfo(resp.GetProcesses()[0])
-		if p.PID != busy.PID() || p.Mailbox.Depth != 2 || p.Mailbox.OldestAge <= 0 || p.State != grpcproc.StateRunning || p.Label != "order" || p.Name != "orders-busy" {
+		if p.PID != busy.PID() || p.Mailbox.Depth != 2 || p.Mailbox.Limit != 8 || p.Mailbox.OldestAge <= 0 || p.State != grpcproc.StateRunning || p.Label != "order" || p.Name != "orders-busy" {
 			t.Fatalf("%+v", p)
 		}
 	})
@@ -398,6 +398,19 @@ func TestCall(t *testing.T) {
 
 		_, err = call(t.Context(), "a", byName("nobody"), &testpb.Ping{N: 1})
 		code(t, err, codes.NotFound)
+
+		// A full mailbox is overload, not absence.
+		full, err := c.Node("a").Spawn(func(p *grpcproc.Process[*testpb.Ping]) error {
+			<-p.Context().Done()
+			return nil
+		}, grpcproc.WithName("full"), grpcproc.WithMailboxLimit(1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = full.Send(t.Context(), c.Node("a"), &testpb.Ping{N: 1})
+		_, err = call(t.Context(), "a", byName("full"), &testpb.Ping{N: 1})
+		code(t, err, codes.ResourceExhausted)
+
 		_, err = call(t.Context(), "a", byName("answers"), &testpb.Pong{N: 1})
 		code(t, err, codes.InvalidArgument)
 		_, err = call(t.Context(), "a", byName("answers"), nil)

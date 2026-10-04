@@ -105,7 +105,8 @@ const (
 	Status_STATUS_OK          Status = 1
 	// The handler returned an error; reason carries its text.
 	Status_STATUS_ERROR Status = 2
-	// No such process, or it exited before answering.
+	// No such process, or it exited before answering; or, with reason
+	// "mailbox full", its mailbox had no room, and the call was never handled.
 	Status_STATUS_NOPROC Status = 3
 	// The process exists but does not accept this message type.
 	Status_STATUS_TYPE Status = 4

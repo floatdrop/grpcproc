@@ -47,6 +47,14 @@ export const referenceErrors: Doc = {
 								</>
 							],
 							[
+								<C>ErrMailboxFull</C>,
+								<>
+									A <C>Call</C> to a process whose mailbox holds as much as <C>WithMailboxLimit</C>{' '}
+									allows. The process never saw the call, so making it again cannot run it twice. A{' '}
+									<C>Send</C> to such a process is a dead letter instead, on this node or another.
+								</>
+							],
+							[
 								<C>ErrType</C>,
 								<>
 									The process does not accept this message type, or a <C>Call</C>'s reply is not the{' '}
@@ -211,7 +219,8 @@ if errors.Is(err, grpcproc.ErrNoConnection) {
 							[<C>noproc</C>, <>Only in a <C>Down</C> or through a link: the monitored process does not exist. No process ever exits with it.</>],
 							[<C>noconnection</C>, <>Only in a <C>Down</C> or through a link: the node the process runs on cannot be reached. Its monitors and links fire with it; the process itself may still run.</>],
 							[<C>type</C>, <>A dead letter's reason: the message was not of the type the process accepts. Not an exit reason.</>],
-							[<C>denied</C>, <>A dead letter's reason: the <C>Policy</C> the peer was admitted with refused its request, which the peer sees as <C>noproc</C>. Not an exit reason.</>]
+							[<C>denied</C>, <>A dead letter's reason: the <C>Policy</C> the peer was admitted with refused its request, which the peer sees as <C>noproc</C>. Not an exit reason.</>],
+							[<C>mailbox full</C>, <>A dead letter's reason: the process's mailbox held as much as <C>WithMailboxLimit</C> allows. A call refused so fails with <C>ErrMailboxFull</C>. Not an exit reason.</>]
 						]}
 					/>
 					<p>
@@ -252,7 +261,8 @@ if errors.Is(err, grpcproc.ErrNoConnection) {
 						A dead letter is a message that was sent and could not be delivered: to a process that
 						does not exist (<C>noproc</C>), to one that does not accept its type (<C>type</C>), to
 						one the sender's node may not reach (<C>denied</C>, see{' '}
-						<A to="guides/configuration/#security">Security</A>), or queued on a link that broke before
+						<A to="guides/configuration/#security">Security</A>), to one whose mailbox is full{' '}
+						(<C>mailbox full</C>), or queued on a link that broke before
 						or while writing it (<C>noconnection</C>). A message
 						that could not be sent at all is not one: its sender got the error. A <C>Send</C> to no
 						process succeeds and becomes a dead letter, because a send has no reply to carry the

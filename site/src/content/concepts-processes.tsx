@@ -248,6 +248,15 @@ if t.Stop() {
 								</>
 							],
 							[
+								<C>WithMailboxLimit(n)</C>,
+								<>
+									Bounds the mailbox: while it holds <C>n</C> items, a message to the process is a dead
+									letter with reason <C>mailbox full</C>, and a call fails with <C>ErrMailboxFull</C>,
+									never handled. <C>Down</C>s and <C>Exited</C>s always get in. Zero, the default, is
+									no bound.
+								</>
+							],
+							[
 								<>
 									<C>LinkParent()</C>, <C>LinkChild()</C>
 								</>,
@@ -328,10 +337,12 @@ if t.Stop() {
 							messages, so they cannot overtake or be overtaken.
 						</li>
 						<li>
-							<strong>Unbounded mailboxes.</strong> A send never blocks on the receiver. All the
-							processes of a node share its link to a peer, so one full mailbox would stall every
-							other process behind it. The depth and the age of the oldest message are in every
-							process's snapshot, for the application to act on.
+							<strong>Mailboxes that never block.</strong> A send never waits for the receiver.
+							All the processes of a node share its link to a peer, so one mailbox that made it wait
+							would stall every other process behind it. Mailboxes are unbounded by default;{' '}
+							<C>WithMailboxLimit</C> bounds one, which then refuses what it has no room for. The
+							depth and the age of the oldest message are in every process's snapshot, for the
+							application to act on.
 						</li>
 						<li>
 							<strong>Local sends share the pointer.</strong> Within a node a message is not encoded,

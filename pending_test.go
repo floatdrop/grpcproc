@@ -68,8 +68,14 @@ func TestFailLocalCalls(t *testing.T) {
 		n := newTestNode(t, "a")
 		p := &proc{n: n, pid: PID{Node: "a", Incarnation: 1, ID: 5}, mbox: newQueue[item](true)}
 		local, peer := make(chan callResult, 1), openCall{from: PID{Node: "b", Incarnation: 2, ID: 7}, ref: 3}
-		if !p.queueCall(item{from: n.PID(), ref: 1}, local) || !p.queueCall(item{from: peer.from, ref: peer.ref}, nil) {
-			t.Fatal("not queued")
+		for _, c := range []struct {
+			from PID
+			ref  uint64
+			ch   chan<- callResult
+		}{{n.PID(), 1, local}, {peer.from, peer.ref, nil}} {
+			if ok, _ := p.queueCall(item{from: c.from, ref: c.ref}, c.ch); !ok {
+				t.Fatal("not queued")
+			}
 		}
 		p.failLocalCalls(ErrNodeStopped)
 		if r := <-local; !errors.Is(r.err, ErrNodeStopped) {

@@ -52,6 +52,7 @@ type proc struct {
 	typ     string
 	parent  PID
 	mbox    *queue[item]
+	limit   int64 // WithMailboxLimit; 0 is none
 	sys     chan inspectReq
 	inspect func() map[string]string
 	accept  func(proto.Message) bool
@@ -145,6 +146,7 @@ type spawnOpts struct {
 	inspect               func() map[string]string
 	linkParent, linkChild bool
 	watchedBy             *heldCall
+	mailboxLimit          int
 }
 
 // WithName registers the process under name on its node before it runs.
@@ -164,6 +166,15 @@ func WithLabel(label string) SpawnOption { return func(o *spawnOpts) { o.label =
 func WithInspect(fn func() map[string]string) SpawnOption {
 	return func(o *spawnOpts) { o.inspect = fn }
 }
+
+// WithMailboxLimit bounds the process's mailbox: while it holds n items, a
+// message sent to the process is a dead letter with reason ReasonMailboxFull,
+// and a call to it fails with ErrMailboxFull, never handled, so making it
+// again cannot run it twice. Both hold whether the sender runs on this node
+// or another: Send's error still means only that the message could not leave,
+// so a sender that must know calls. Downs and Exiteds always get in, and
+// count. Zero, the default, is no bound; a negative n makes the spawn fail.
+func WithMailboxLimit(n int) SpawnOption { return func(o *spawnOpts) { o.mailboxLimit = n } }
 
 // LinkParent links the child to the process that spawns it, before the child
 // runs: when the parent exits, the child does too, with the parent's reason,
@@ -219,6 +230,7 @@ func (h *heldCall) check(n *Node) error {
 
 var (
 	errNoParent      = errors.New("grpcproc: LinkParent and LinkChild need a parent: spawn with Process.Spawn")
+	errMailboxLimit  = errors.New("grpcproc: WithMailboxLimit needs n >= 0")
 	errHeldElsewhere = errors.New("grpcproc: the call's watch goes on a process of the node that holds it")
 	errAnswered      = errors.New("grpcproc: the call is answered already, so its watch cannot be placed")
 	errWatchPlaced   = errors.New("grpcproc: the call's watch is placed already")
@@ -391,8 +403,11 @@ func spawn[M proto.Message](n *Node, fn func(*Process[M]) error, opts []SpawnOpt
 	for _, opt := range opts {
 		opt(&o)
 	}
-	if parent == nil && (o.linkParent || o.linkChild) {
+	switch {
+	case parent == nil && (o.linkParent || o.linkChild):
 		return Addr[M]{}, Ref{}, errNoParent
+	case o.mailboxLimit < 0:
+		return Addr[M]{}, Ref{}, errMailboxLimit
 	}
 	// The process holding the call WatchedBy places a watch for is locked
 	// beside the parent, when it is another one.
@@ -419,6 +434,7 @@ func spawn[M proto.Message](n *Node, fn func(*Process[M]) error, opts []SpawnOpt
 		typ:     typ,
 		parent:  parentPID(parent),
 		mbox:    newQueue[item](true),
+		limit:   int64(o.mailboxLimit),
 		sys:     make(chan inspectReq),
 		inspect: o.inspect,
 		accept:  func(m proto.Message) bool { _, ok := m.(M); return ok },
@@ -800,23 +816,33 @@ func (p *proc) push(it item) bool {
 	return p.mbox.push(it)
 }
 
-// queueCall queues a call, which from then on is in open, the process's to
-// answer: by Reply, which takes it from there, by its exit, or by Stop, if
-// the process outlives it. reply is what a caller of this node waits on. It
-// reports false, and the caller answers, if the process has exited.
-func (p *proc) queueCall(it item, reply chan<- callResult) bool {
+// offer queues a message within the mailbox's limit: full is set when the
+// limit refused it, ok is unset when either the limit or the exit did.
+func (p *proc) offer(it item) (ok, full bool) {
+	return p.mbox.pushBelow(it, p.limit)
+}
+
+// queueCall queues a call, within the mailbox's limit, which from then on is
+// in open, the process's to answer: by Reply, which takes it from there, by
+// its exit, or by Stop, if the process outlives it. reply is what a caller
+// of this node waits on. It reports ok unset, and the caller answers, if the
+// process has exited or, with full set, its mailbox is full.
+func (p *proc) queueCall(it item, reply chan<- callResult) (ok, full bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	// The exit sets exited, under p.mu, before it closes the mailbox: a call
 	// queued here is in the open calls the exit answers.
-	if p.exited || !p.push(it) {
-		return false
+	if !p.exited {
+		ok, full = p.offer(it)
+	}
+	if !ok {
+		return false, full
 	}
 	if p.open == nil {
 		p.open = map[openCall]answerTo{}
 	}
 	p.open[openCall{it.from, it.ref}] = answerTo{ch: reply, via: it.via}
-	return true
+	return true, false
 }
 
 // failLocalCalls answers the open calls of this node's callers with err, for
@@ -1102,6 +1128,7 @@ func (p *proc) info() ProcessInfo {
 		info.LastMessage = *t
 	}
 	info.Mailbox.Depth = p.mbox.len()
+	info.Mailbox.Limit = int(p.limit)
 	if at := p.mbox.oldestStamp(); at != 0 {
 		info.Mailbox.OldestAge = time.Since(time.Unix(0, at))
 	}

@@ -65,8 +65,10 @@ func (a Addr[M]) globalName() string    { return a.global }
 // call's (Msg.Deadline).
 //
 // A reply of another type is ErrType; a handler error is a *RemoteError; a
-// callee that is gone, or exits before answering, is ErrNoProc; a peer that
-// cannot be reached is a *LinkError, whose Unsent says that req never left.
+// callee that is gone, or exits before answering, is ErrNoProc; one whose
+// mailbox is full (see WithMailboxLimit) is ErrMailboxFull, and never saw
+// req; a peer that cannot be reached is a *LinkError, whose Unsent says that
+// req never left.
 // If ctx ends first, Call returns its error, and req may have been handled;
 // a ctx already done sends nothing.
 //

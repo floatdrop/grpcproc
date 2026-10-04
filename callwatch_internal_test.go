@@ -45,7 +45,7 @@ func TestWatchForAnExitedProcess(t *testing.T) {
 		n := newTestNode(t, "a")
 		taker := &proc{n: n, pid: PID{Node: "a", Incarnation: 1, ID: 5}, mbox: newQueue[item](true)}
 		c := openCall{from: PID{Node: "b", Incarnation: 2, ID: 7}, ref: 3}
-		if !taker.queueCall(item{from: c.from, ref: c.ref, watch: true}, nil) {
+		if ok, _ := taker.queueCall(item{from: c.from, ref: c.ref, watch: true}, nil); !ok {
 			t.Fatal("not queued")
 		}
 		gone := &proc{n: n, pid: PID{Node: "a", Incarnation: 1, ID: 6}, exited: true}
