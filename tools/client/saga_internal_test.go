@@ -29,7 +29,18 @@ func (sagaFake) ListProcesses(context.Context, *inspectv1.ListProcessesRequest, 
 	}}, nil
 }
 
+// GetProcess answers that the engine is too busy to say what it runs.
 func (sagaFake) GetProcess(context.Context, *inspectv1.GetProcessRequest, ...grpc.CallOption) (*inspectv1.GetProcessResponse, error) {
+	return &inspectv1.GetProcessResponse{
+		Process:      &inspectv1.ProcessInfo{Pid: &grpcprocv1.PID{Node: "a", Incarnation: 1, Id: 7}, Label: sagaLabel},
+		InspectError: "busy for 3s",
+	}, nil
+}
+
+// goneFake is sagaFake whose engine is gone by the time it is asked.
+type goneFake struct{ sagaFake }
+
+func (goneFake) GetProcess(context.Context, *inspectv1.GetProcessRequest, ...grpc.CallOption) (*inspectv1.GetProcessResponse, error) {
 	return nil, status.Error(codes.NotFound, "gone")
 }
 
@@ -48,6 +59,12 @@ func TestASagaEngineThatCannotBeInspected(t *testing.T) {
 	}
 	if runs, _, err := c.SagaRuns(t.Context(), "", SagaQuery{Saga: "orders"}); err != nil || len(runs) != 1 {
 		t.Errorf("asked an engine that cannot be inspected: %+v %v", runs, err)
+	}
+	if _, err := (&Client{rpc: goneFake{}, now: time.Now}).SagaRun(t.Context(), "", "orders", "1"); err == nil || err.Error() != `no saga engine runs saga "orders"` {
+		t.Errorf("an engine gone since it was listed was asked: %v", err)
+	}
+	if engines, err := (&Client{rpc: goneFake{}, now: time.Now}).SagaEngines(t.Context(), ""); err != nil || len(engines) != 1 || engines[0].Error == "" {
+		t.Errorf("an engine gone since it was listed: %+v %v", engines, err)
 	}
 	gone := &Client{rpc: unreachable{}, now: time.Now}
 	if _, err := gone.SagaEngines(t.Context(), ""); err == nil {

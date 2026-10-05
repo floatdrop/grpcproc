@@ -94,8 +94,8 @@ Commands:
   cron [list] [<pid|name>]    grpcproc/cron processes and their jobs (--node; every node by default)
   cron enable|disable|remove <pid|name> <job>   change a job of a cron process (--node)
   saga [engines]              grpcproc/saga engines and the sagas they run (--node; every node by default)
-  saga runs [<saga>]          runs in the engines' store (--status, --limit, --after, --after-saga, --node)
-  saga get <saga> <id>        one run, its data and waiting signals as JSON (--node)
+  saga runs [<saga>]          runs of a saga, or of one engine's sagas (--status, --limit, --after, --after-saga, --node)
+  saga get <saga> <id>        one run, its error and waiting signals, and its data if shown (--node)
   saga resume <saga> <id>     make a stuck run active again (--node)
   dot                         Graphviz of processes and who started whom (--node, --cluster)
   mcp                         serve these as MCP tools over stdio (--allow-writes)
@@ -844,10 +844,10 @@ func (a *app) printRun(r client.SagaRunView) error {
 		return a.printJSON(r)
 	}
 	text := func(v any, omitted uint64) string {
-		if omitted > 0 {
+		switch {
+		case omitted > 0:
 			return fmt.Sprintf("(%d bytes, too large to show)", omitted)
-		}
-		if v == nil {
+		case v == nil:
 			return ""
 		}
 		b, _ := json.Marshal(v, json.Deterministic(true)) // what JSON decoded encodes
@@ -856,7 +856,7 @@ func (a *app) printRun(r client.SagaRunView) error {
 	w := tabwriter.NewWriter(a.env.Stdout, 0, 0, 2, ' ', 0)
 	for _, kv := range [][2]string{
 		{"saga", r.Saga}, {"id", r.ID}, {"version", u(r.Version)}, {"state", r.State}, {"status", r.Status},
-		{"data", text(r.Data, r.DataOmitted)}, {"visit", u(r.Visit)}, {"effect done", strconv.FormatBool(r.EffectDone)},
+		{"data", cmp.Or(text(r.Data, r.DataOmitted), "(not shown)")}, {"visit", u(r.Visit)}, {"effect done", strconv.FormatBool(r.EffectDone)},
 		{"attempts", strconv.FormatInt(r.Attempts, 10)}, {"error", r.Error}, {"cause", r.Cause},
 		{"wake", r.Wake}, {"retry at", r.RetryAt}, {"deadline", r.Deadline},
 		{"owner", r.Owner}, {"lease until", r.LeaseUntil}, {"epoch", u(r.Epoch)},
