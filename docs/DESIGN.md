@@ -799,12 +799,13 @@ What sits on top, outside the core, is `grpcproc/tools`, one binary,
 `grpcprocctl`, with three faces over the same Go client (`tools/client`):
 
 - **A CLI**: nodes and their links, `ps`, `inspect`, `watch`, `exit`,
-  `loglevel`; `leader` and `cron`, which read and operate those modules'
-  processes by calling them; and `dot`, which draws processes and who started
+  `loglevel`; `leader`, `cron` and `saga`, which read and operate those
+  modules' processes by calling and querying them; and `dot`, which draws processes and who started
   whom across nodes. The command list is in `tools/README.md`.
 - **An MCP server** (`grpcprocctl mcp`) for an AI agent, ergo's most
   convincing tool: the CLI's reads as tools, and writes (exit, log level,
-  moving and cordoning a leader, cron jobs) only with `--allow-writes`.
+  moving and cordoning a leader, cron jobs, resuming a saga run) only with
+  `--allow-writes`.
 - **A web UI** (`grpcprocctl web`), after ergo's Observer: a page embedded in
   the binary, served on the operator's machine, that shows the cluster live
   through one node's Inspector, read-only unless `--allow-writes`. It is a
@@ -1615,8 +1616,7 @@ OpenTelemetry and the PostgreSQL saga store are.
   a lower fence; steps that run side by side; retention of finished runs;
   dropping the signals no state of a run will take; a `Store.List` that
   pages and leaves the data out, since an engine's list reads every run of
-  a saga for each page; `grpcprocctl saga`, which the engine's queries are
-  for, and a view in the web UI.
+  a saga for each page; a view of the runs in the web UI.
 - **Process groups**, Erlang's `pg` and Akka's Receptionist: the live
   members of a group, found and watched. Pub/sub topics already monitor their
   subscribers through a relay per node, so it is a thin module.

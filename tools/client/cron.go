@@ -47,18 +47,9 @@ type CronJobView struct {
 // and by PID on each. A node that cannot be asked is left out; so is one
 // with no cron process.
 func (c *Client) Crons(ctx context.Context, node string) ([]CronView, error) {
-	nodes := []string{node}
-	if node == "" {
-		all, err := c.Cluster(ctx)
-		if err != nil {
-			return nil, err
-		}
-		nodes = nodes[:0]
-		for _, n := range all {
-			if n.Error == "" {
-				nodes = append(nodes, n.Name)
-			}
-		}
+	nodes, err := c.nodesOf(ctx, node)
+	if err != nil {
+		return nil, err
 	}
 	out := []CronView{}
 	for _, n := range nodes {

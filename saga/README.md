@@ -273,7 +273,9 @@ while it goes on, at work or waiting for a signal, a timer or its next
 attempt. `Store.List` returns the records of a saga, by id.
 
 From outside the program, an engine answers through the node's
-[Inspector](https://floatdrop.github.io/grpcproc/guides/inspector/):
+[Inspector](https://floatdrop.github.io/grpcproc/guides/inspector/), which
+is what `grpcprocctl saga` and its MCP tools ask
+([grpcprocctl](../tools/README.md#sagas)):
 
 - **What it runs.** It publishes, through `WithInspect`, each saga it runs
   with its version (`saga order: v2`) and how many runs it works on
@@ -332,6 +334,6 @@ another epoch than the run's return `ErrLost`.
 
 Stores in etcd and in a leader's checkpoint, a
 wrapper for participants that answers a repeated key and refuses a lower
-fence, steps that run side by side, retention of finished runs, and
-`grpcprocctl saga`. [DESIGN.md](../docs/DESIGN.md#sagas-grpcprocsaga) has
+fence, steps that run side by side, retention of finished runs, and a view
+of the runs in grpcprocctl's web UI. [DESIGN.md](../docs/DESIGN.md#sagas-grpcprocsaga) has
 the reasons behind the design, and its open work the rest.

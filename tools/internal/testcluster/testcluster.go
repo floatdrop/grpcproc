@@ -3,11 +3,15 @@ package testcluster
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/wrapperspb"
+
+	"github.com/floatdrop/fsm"
 
 	"github.com/floatdrop/grpcproc"
 	"github.com/floatdrop/grpcproc/actor"
@@ -16,6 +20,7 @@ import (
 	"github.com/floatdrop/grpcproc/inspect"
 	"github.com/floatdrop/grpcproc/internal/testpb"
 	"github.com/floatdrop/grpcproc/leader"
+	"github.com/floatdrop/grpcproc/saga"
 )
 
 // Fixture is what Start leaves running on node "a".
@@ -184,4 +189,41 @@ func (f *Fixture) Cron(t *testing.T, node, name string) grpcproc.PID {
 		t.Fatal(err)
 	}
 	return c.Addr().PID()
+}
+
+// Saga runs a grpcproc/saga engine on node, for a saga called name, from a
+// store of its own with three runs no engine works on: 1 waits; 2 is stuck, with two
+// signals it keeps, one of an event the saga does not accept; 3 is done,
+// with data too large to show.
+func (f *Fixture) Saga(t *testing.T, node, name string) *saga.Engine {
+	t.Helper()
+	paid := fsm.Define[*wrapperspb.StringValue]("paid")
+	m := fsm.MustNew(name, fsm.Initial("charging"), fsm.From("charging").On(paid).To("done"))
+	orders := saga.Define[*wrapperspb.StringValue](name, m).Accept(paid, nil).Version(2)
+	store := saga.Memory()
+	ctx := t.Context()
+	for _, r := range []saga.Record{
+		{Saga: name, ID: "1", State: "charging", Data: encode(wrapperspb.String("apples"))},
+		{Saga: name, ID: "2", State: "charging", Status: saga.Stuck, Error: "card declined", Attempts: 3},
+		{Saga: name, ID: "3", State: "done", Status: saga.Done, Data: encode(wrapperspb.String(strings.Repeat("x", 2<<20)))},
+	} {
+		if _, _, err := store.Create(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e, err := saga.Start(f.C.Node(node), saga.Config{Store: store}, orders)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []saga.Signal{{Event: "paid", Payload: encode(wrapperspb.String("42"))}, {Event: "refund"}} {
+		if err := store.Signal(ctx, name, "2", s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return e
+}
+
+func encode(m proto.Message) []byte {
+	b, _ := proto.Marshal(m)
+	return b
 }

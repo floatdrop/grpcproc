@@ -76,11 +76,11 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) []string {
 
 func TestToolsOnOffer(t *testing.T) {
 	f := testcluster.Start(t)
-	read := []string{"cluster_nodes", "cron_jobs", "election", "get_process", "global_names", "list_processes", "node_info", "watch_events"}
+	read := []string{"cluster_nodes", "cron_jobs", "election", "get_process", "global_names", "list_processes", "node_info", "saga_run", "saga_runs", "watch_events"}
 	if got := toolNames(t, connect(t, f, mcpserver.Options{})); !slices.Equal(got, read) {
 		t.Fatalf("read-only: %v", got)
 	}
-	all := append(slices.Clone(read), "cordon_node", "disable_cron_job", "enable_cron_job", "exit_process", "move_leader", "remove_cron_job", "set_log_level", "uncordon_node")
+	all := append(slices.Clone(read), "cordon_node", "disable_cron_job", "enable_cron_job", "exit_process", "move_leader", "remove_cron_job", "resume_saga_run", "set_log_level", "uncordon_node")
 	slices.Sort(all)
 	cs := connect(t, f, mcpserver.Options{AllowWrites: true, Version: "v1"})
 	if got := toolNames(t, cs); !slices.Equal(got, all) {
@@ -274,6 +274,38 @@ func TestCronTools(t *testing.T) {
 	}
 	if msg := call(t, cs, "remove_cron_job", map[string]any{"process": pid.String(), "job": "yearly"}, &done); !strings.Contains(msg, "no such job") {
 		t.Errorf("removed twice: %s", msg)
+	}
+}
+
+func TestSagaTools(t *testing.T) {
+	f := testcluster.Start(t)
+	f.Saga(t, "a", "orders")
+	cs := connect(t, f, mcpserver.Options{AllowWrites: true})
+	var page struct {
+		Runs []client.SagaRunView `json:"runs"`
+		More bool                 `json:"more"`
+	}
+	if msg := call(t, cs, "saga_runs", nil, &page); msg != "" || len(page.Runs) != 3 || page.More {
+		t.Fatalf("%+v %s", page, msg)
+	}
+	if msg := call(t, cs, "saga_runs", map[string]any{"saga": "orders", "status": []string{"stuck"}, "limit": 1}, &page); msg != "" || len(page.Runs) != 1 || page.Runs[0].ID != "2" {
+		t.Fatalf("stuck: %+v %s", page, msg)
+	}
+	var run client.SagaRunView
+	if msg := call(t, cs, "saga_run", map[string]any{"saga": "orders", "id": "1"}, &run); msg != "" || run.Data != "apples" {
+		t.Fatalf("%+v %s", run, msg)
+	}
+	if msg := call(t, cs, "saga_run", map[string]any{"saga": "orders", "id": "none"}, &run); !strings.Contains(msg, "no such run") {
+		t.Fatalf("a run nobody began: %s", msg)
+	}
+	var done struct {
+		Result string `json:"result"`
+	}
+	if msg := call(t, cs, "resume_saga_run", map[string]any{"saga": "orders", "id": "2"}, &done); msg != "" || done.Result != "resumed orders/2" {
+		t.Fatalf("%+v %s", done, msg)
+	}
+	if msg := call(t, cs, "resume_saga_run", map[string]any{"saga": "orders", "id": "none"}, &done); !strings.Contains(msg, "no such run") {
+		t.Fatalf("resumed a run nobody began: %s", msg)
 	}
 }
 

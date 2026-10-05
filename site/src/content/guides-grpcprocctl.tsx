@@ -181,6 +181,30 @@ b     billing  yearly  @yearly     UTC   disabled                    0`}</Output
 			)
 		},
 		{
+			id: 'saga',
+			title: 'Sagas',
+			body: (
+				<>
+					<p>
+						<C>saga</C> finds the <A to="guides/sagas/">grpcproc/saga</A> engines and asks one that
+						says it runs the saga, or the first found, or the one on <C>--node</C>: an engine answers
+						for the runs of the store it shares, and renders the data of the sagas it runs.{' '}
+						<C>runs</C> lists them a page at a time, by <C>--status</C>, and prints the flags for the
+						next page:
+					</p>
+					<Code lang="sh">{'grpcprocctl --plaintext saga runs --status stuck'}</Code>
+					<Output>{`SAGA    ID        STATE     STATUS  ATTEMPTS  SIGNALS  OWNER  UPDATED                      ERROR
+orders  order-17  charging  stuck   5         1               2026-10-05T11:49:21.704174Z  card declined`}</Output>
+					<p>
+						<C>get</C> shows one run with its data and the signals waiting for a state that takes
+						them, as JSON. Both go through the Inspector's <C>Query</C>, which a read-only Inspector
+						serves. <C>resume</C> makes a stuck run active again, through <C>Call</C>, which it
+						refuses, and shows the run as it then is.
+					</p>
+				</>
+			)
+		},
+		{
 			id: 'dot',
 			title: 'Graphviz',
 			body: (
@@ -213,7 +237,7 @@ b     billing  yearly  @yearly     UTC   disabled                    0`}</Output
 			body: (
 				<p>
 					<C>--json</C>, before <C>node</C>, <C>nodes</C>, <C>ps</C>, <C>inspect</C>, <C>names</C>, <C>watch</C>,{' '}
-					<C>leader</C> or <C>cron</C>, prints what the table shows as JSON: one indented value, or
+					<C>leader</C>, <C>cron</C> or <C>saga</C>, prints what the table shows as JSON: one indented value, or
 					for <C>watch</C> one compact event per line. The objects are those the{' '}
 					<A to="guides/mcp/">MCP tools</A> return, which wrap lists in an object of their own, so a
 					script and an agent read the same fields.
@@ -270,6 +294,16 @@ b     billing  yearly  @yearly     UTC   disabled                    0`}</Output
 								Change a job of a cron process: <C>--node</C>.
 							</>
 						],
+						[<C>saga [engines]</C>, <>Saga engines and the sagas they run: <C>--node</C>.</>],
+						[
+							<C>saga runs [&lt;saga&gt;]</C>,
+							<>
+								Runs in the engines' store: <C>--status</C>, <C>--limit</C>, <C>--after</C> and{' '}
+								<C>--after-saga</C> for the next page.
+							</>
+						],
+						[<C>saga get &lt;saga&gt; &lt;id&gt;</C>, 'One run, with its data and waiting signals as JSON.'],
+						[<C>saga resume &lt;saga&gt; &lt;id&gt;</C>, 'Make a stuck run active again.'],
 						[
 							<C>dot</C>,
 							<>

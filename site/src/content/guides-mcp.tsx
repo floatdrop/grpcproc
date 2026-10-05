@@ -58,6 +58,8 @@ export const guidesMcp: Doc = {
 							[<C>watch_events</C>, 'A node’s events, collected for a few seconds: spawns, exits with reasons, links, dead letters.'],
 							[<C>election</C>, 'A leader election, as each node that takes part sees it, and who leads.'],
 							[<C>cron_jobs</C>, 'Cron processes and their jobs, on a node or all of them.'],
+							[<C>saga_runs</C>, 'Saga runs by saga and status, a page at a time.'],
+							[<C>saga_run</C>, 'One saga run, with its data, the error that stopped it, and its waiting signals.'],
 							[<C>global_names</C>, 'Who holds a global name, or every name with a prefix, such as room:.']
 						]}
 					/>
@@ -81,7 +83,8 @@ export const guidesMcp: Doc = {
 									<C>enable_cron_job</C>, <C>disable_cron_job</C>, <C>remove_cron_job</C>
 								</>,
 								'Changes a job of a cron process.'
-							]
+							],
+							[<C>resume_saga_run</C>, 'Makes a stuck saga run active again.']
 						]}
 					/>
 					<p>

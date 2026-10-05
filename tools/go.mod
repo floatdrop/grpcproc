@@ -7,14 +7,14 @@ module github.com/floatdrop/grpcproc/tools
 go 1.27.1
 
 require (
-	github.com/floatdrop/grpcproc v0.9.0
+	github.com/floatdrop/fsm v0.8.0
+	github.com/floatdrop/grpcproc v0.9.1-0.20261005133924-fb56c626ed4f
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
 )
 
 require (
-	github.com/floatdrop/fsm v0.8.0 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect

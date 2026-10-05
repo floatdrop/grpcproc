@@ -19,8 +19,8 @@ import (
 // Options configures New.
 type Options struct {
 	// AllowWrites also offers exit_process, set_log_level, move_leader,
-	// cordon_node, uncordon_node, enable_cron_job, disable_cron_job and
-	// remove_cron_job.
+	// cordon_node, uncordon_node, enable_cron_job, disable_cron_job,
+	// remove_cron_job and resume_saga_run.
 	AllowWrites bool
 	// Version is reported to the client.
 	Version string
@@ -37,6 +37,7 @@ const instructions = `These tools inspect a grpcproc cluster: Go processes (goro
 - watch_events shows spawns, exits with reasons, links going up and down, and dead letters (messages that found no process or the wrong type, or that a broken link never delivered).
 - A grpcproc/leader election (a cluster name) has an elector process on each node that takes part, registered as leader/<cluster>; election shows what each believes: its role, term, the leader it follows, the nodes cordoned (kept from leading) and those it cannot reach. Nodes that name different leaders, or a node with an old term, point at a partition.
 - A grpcproc/cron process runs jobs on crontab schedules; cron_jobs lists each, when it runs next and last ran, how many runs are going, and why its last failed run failed. Each run is a process of its own, labelled cron:<job>.
+- A grpcproc/saga engine runs sagas: work across services kept as runs in a store, each a state of a machine and its data. saga_runs lists runs by saga and status; a stuck run is one whose effect failed for good with nothing to fire, and waits for a resume; saga_run shows one with its data, its error, and the signals waiting for a state that takes them. Any engine answers for every run in its store.
 - node_info and cluster_nodes list each node's links. queued on an out link is what waits to be written to that peer: a growing queue means the peer or the network cannot keep up. A down out link with retry_in means dials to that peer failed, and sends to it fail at once until then; such a peer shows incarnation 0, and cluster_nodes lists it with an error if it cannot be reached.
 
 Start with cluster_nodes, then list_processes sorted by mailbox to find backlogs, then get_process on the suspects.`
@@ -66,6 +67,8 @@ func New(c *client.Client, o Options) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "watch_events", Description: "Collect a node's events for a few seconds: spawns, exits with reasons, links up and down, dead letters.", Annotations: readOnly}, t.watchEvents)
 	mcp.AddTool(s, &mcp.Tool{Name: "global_names", Description: "The installation's global names and the processes that hold them: one name, or every name with a prefix. A process found by its global name can be inspected by its pid.", Annotations: readOnly}, t.globalNames)
 	mcp.AddTool(s, &mcp.Tool{Name: "cron_jobs", Description: "The grpcproc/cron processes of a node, or of every node, and their jobs: schedule, next and last run, runs going, last failure.", Annotations: readOnly}, t.cronJobs)
+	mcp.AddTool(s, &mcp.Tool{Name: "saga_runs", Description: "Runs of grpcproc/saga sagas, from the store a saga engine shares: by saga and status (active, done, stuck), a page at a time, with each one's state, attempts and last error.", Annotations: readOnly}, t.sagaRuns)
+	mcp.AddTool(s, &mcp.Tool{Name: "saga_run", Description: "One run of a saga: its state, status, data as JSON, the error that stopped it, its timers and lease, and the signals waiting in its inbox.", Annotations: readOnly}, t.sagaRun)
 	mcp.AddTool(s, &mcp.Tool{Name: "election", Description: "A grpcproc/leader election, as each node that takes part sees it: role, term, leader, view, cordoned nodes, unreachable nodes.", Annotations: readOnly}, t.election)
 	if o.AllowWrites {
 		mcp.AddTool(s, &mcp.Tool{Name: "move_leader", Description: "Have the leader of an election hand over, to a given node or to the follower with the latest state. Its singleton stops, and starts on the new leader.", Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true)}}, t.moveLeader)
@@ -74,6 +77,7 @@ func New(c *client.Client, o Options) *mcp.Server {
 		mcp.AddTool(s, &mcp.Tool{Name: "enable_cron_job", Description: "Run a disabled cron job on its schedule again, from the next minute; what it missed is not caught up."}, t.cronJob("enable"))
 		mcp.AddTool(s, &mcp.Tool{Name: "disable_cron_job", Description: "Keep a cron job but run it no more until enabled. Runs already going go on."}, t.cronJob("disable"))
 		mcp.AddTool(s, &mcp.Tool{Name: "remove_cron_job", Description: "Remove a job from a cron process until it restarts from its spec. Runs already going go on.", Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true)}}, t.cronJob("remove"))
+		mcp.AddTool(s, &mcp.Tool{Name: "resume_saga_run", Description: "Make a stuck saga run active again: due at once, its effect tried again from no attempts."}, t.resumeSagaRun)
 		mcp.AddTool(s, &mcp.Tool{Name: "exit_process", Description: "Ask a process to exit. Its supervisor, if any, may restart it.", Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true)}}, t.exitProcess)
 		mcp.AddTool(s, &mcp.Tool{Name: "set_log_level", Description: "Set one process's log level, to see more from it without restarting anything."}, t.setLogLevel)
 	}
@@ -352,4 +356,47 @@ func (t tools) cronJob(op string) mcp.ToolHandlerFor[cronJobIn, done] {
 		}
 		return nil, done{Result: fmt.Sprintf("%sd job %s of %s", op, in.Job, in.Process)}, nil
 	}
+}
+
+type sagaRunsIn struct {
+	Node      string   `json:"node,omitempty" jsonschema:"node whose saga engine to ask; empty for one that runs the saga, or the first found. Any engine answers for the runs of its store"`
+	Saga      string   `json:"saga,omitempty" jsonschema:"one saga; empty for every saga the engine runs"`
+	Status    []string `json:"status,omitempty" jsonschema:"only runs in these: active, done, stuck; empty for all"`
+	Limit     int      `json:"limit,omitempty" jsonschema:"at most this many, 100 by default, up to 1000"`
+	AfterSaga string   `json:"after_saga,omitempty" jsonschema:"the saga of the last run of the previous page; saga when empty"`
+	AfterID   string   `json:"after_id,omitempty" jsonschema:"the id of the last run of the previous page, for the next"`
+}
+
+type sagaRunsOut struct {
+	Runs []client.SagaRunView `json:"runs"`
+	More bool                 `json:"more" jsonschema:"there are more after the last: ask again with after_saga and after_id set to it"`
+}
+
+func (t tools) sagaRuns(ctx context.Context, _ *mcp.CallToolRequest, in sagaRunsIn) (*mcp.CallToolResult, sagaRunsOut, error) {
+	ctx, cancel := t.ctx(ctx)
+	defer cancel()
+	runs, more, err := t.c.SagaRuns(ctx, in.Node, client.SagaQuery{Saga: in.Saga, Status: in.Status, Limit: in.Limit, AfterSaga: in.AfterSaga, AfterID: in.AfterID})
+	return nil, sagaRunsOut{Runs: runs, More: more}, err
+}
+
+type sagaRunIn struct {
+	Node string `json:"node,omitempty" jsonschema:"node whose saga engine to ask; empty for one that runs the saga"`
+	Saga string `json:"saga" jsonschema:"the saga's name"`
+	ID   string `json:"id" jsonschema:"the run's id"`
+}
+
+func (t tools) sagaRun(ctx context.Context, _ *mcp.CallToolRequest, in sagaRunIn) (*mcp.CallToolResult, client.SagaRunView, error) {
+	ctx, cancel := t.ctx(ctx)
+	defer cancel()
+	r, err := t.c.SagaRun(ctx, in.Node, in.Saga, in.ID)
+	return nil, r, err
+}
+
+func (t tools) resumeSagaRun(ctx context.Context, _ *mcp.CallToolRequest, in sagaRunIn) (*mcp.CallToolResult, done, error) {
+	ctx, cancel := t.ctx(ctx)
+	defer cancel()
+	if _, err := t.c.ResumeSaga(ctx, in.Node, in.Saga, in.ID); err != nil {
+		return nil, done{}, err
+	}
+	return nil, done{Result: "resumed " + in.Saga + "/" + in.ID}, nil
 }
