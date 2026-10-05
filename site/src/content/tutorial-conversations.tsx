@@ -172,10 +172,11 @@ export const tutorialConversations: Doc = {
 					</p>
 					<Code caption="internal/web/web.go">{region(web, /^\/\/ follow is GET/, /^}/)}</Code>
 					<p>
-						The server is registered with the container with hooks: it listens when it starts and
-						drains before anything else stops, so what is said meanwhile still finds its
-						conversation. A browser that follows would keep its request open, and the drain
-						waiting; the server's shutdown ends <C>closing</C>, and every such handler returns.
+						The server is run by <C>dihttp.Serve</C>: it listens when the program starts, serves
+						once the whole start has succeeded, and drains before anything else stops, so what is
+						said meanwhile still finds its conversation. A browser that follows would keep its
+						request open, and the drain waiting; the server's shutdown ends <C>closing</C>, and
+						every such handler returns.
 					</p>
 				</>
 			)
