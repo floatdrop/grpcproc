@@ -29,6 +29,7 @@ func TestMonitorReasons(t *testing.T) {
 		{"normal", func(w watching, e grpcproc.Addr[*testpb.Ping]) { _ = e.Send(w.Context(), w, &testpb.Ping{N: 0}) }, grpcproc.ReasonNormal},
 		{"error", func(w watching, e grpcproc.Addr[*testpb.Ping]) { _ = e.Send(w.Context(), w, &testpb.Ping{N: -100}) }, "boom"},
 		{"panic", func(w watching, e grpcproc.Addr[*testpb.Ping]) { _ = e.Send(w.Context(), w, &testpb.Ping{N: -200}) }, "panic: kaboom"},
+		{"goexit", func(w watching, e grpcproc.Addr[*testpb.Ping]) { _ = e.Send(w.Context(), w, &testpb.Ping{N: -300}) }, "goexit"},
 		{"exit", func(w watching, e grpcproc.Addr[*testpb.Ping]) { _ = w.Exit(e, grpcproc.ReasonKilled) }, grpcproc.ReasonKilled},
 	}
 	for _, tc := range cases {
