@@ -3,6 +3,7 @@ package client
 import (
 	"cmp"
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -44,7 +45,7 @@ type SagaRunView struct {
 	// Data is the run's data as JSON, asked for one run of an engine that
 	// shows data (saga.Config.InspectData); left out when it shows none, or
 	// cannot read it.
-	Data        any          `json:"data,omitempty"`
+	Data        any          `json:"data,omitzero"`
 	DataOmitted uint64       `json:"data_omitted,omitzero" jsonschema:"the size of the data when it is too large to carry: data is then left out"`
 	Waiting     uint32       `json:"waiting,omitzero" jsonschema:"how many signals wait, in a list, which carries the count and not the signals"`
 	Visit       uint64       `json:"visit,omitzero" jsonschema:"how many states it has entered"`
@@ -68,7 +69,7 @@ type SagaRunView struct {
 type SagaSignal struct {
 	Seq     uint64 `json:"seq"`
 	Event   string `json:"event"`
-	Payload any    `json:"payload,omitempty" jsonschema:"its payload as JSON, asked for one run of an engine that shows data and accepts the event; left out otherwise, and for a signal with none"`
+	Payload any    `json:"payload,omitzero" jsonschema:"its payload as JSON, asked for one run of an engine that shows data and accepts the event; left out otherwise, and for a signal with none"`
 	Omitted uint64 `json:"payload_omitted,omitzero" jsonschema:"the size of the payload when it is too large to carry: payload is then left out"`
 	Version uint64 `json:"version,omitzero"`
 }
@@ -292,7 +293,8 @@ func when(t *timestamppb.Timestamp) string {
 }
 
 // decoded is the JSON an engine wrote, as a value; nil for none, and the
-// text as it is should it not be JSON.
+// text as it is should it not be JSON. JSON null is kept as such, since a
+// nil value is left out as none.
 func decoded(text string) any {
 	if text == "" {
 		return nil
@@ -300,6 +302,9 @@ func decoded(text string) any {
 	var v any
 	if json.Unmarshal([]byte(text), &v) != nil {
 		return text
+	}
+	if v == nil {
+		return jsontext.Value(text)
 	}
 	return v
 }

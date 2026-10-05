@@ -61,6 +61,14 @@ grpcprocctl --plaintext --addr 10.0.0.5:9000 web   # http://localhost:9911`}</Co
 									Every <A to="guides/cron/">cron job</A> and{' '}
 									<A to="guides/leader/">leader election</A> reachable from the node.
 								</>
+							],
+							[
+								'Sagas',
+								<>
+									The <A to="guides/sagas/">saga</A> engines reachable from the node, and a saga's
+									runs a page at a time, by status. A run opens beside them: why it is stuck, its
+									timers and owner, its data when the engine shows it, and the signals waiting.
+								</>
 							]
 						]}
 					/>
@@ -95,8 +103,8 @@ grpcprocctl --plaintext --addr 10.0.0.5:9000 web   # http://localhost:9911`}</Co
 				<>
 					<p>
 						The page is read-only unless started with <C>--allow-writes</C>. With it, the page can
-						ask a process to exit, set its log level, enable, disable and remove cron jobs, and move
-						or cordon a leader. Each change is confirmed first. An Inspector built with{' '}
+						ask a process to exit, set its log level, enable, disable and remove cron jobs, move
+						or cordon a leader, and resume a stuck saga run. Each change is confirmed first. An Inspector built with{' '}
 						<C>inspect.ReadOnly()</C> refuses them whatever the page allows.
 					</p>
 				</>
@@ -117,7 +125,8 @@ grpcprocctl --plaintext --addr 10.0.0.5:9000 web   # http://localhost:9911`}</Co
 					<p>
 						The API behind the page returns the objects <C>grpcprocctl --json</C> prints:{' '}
 						<C>/api/info</C>, <C>/api/nodes</C>, <C>/api/node</C>, <C>/api/processes</C>,{' '}
-						<C>/api/process</C>, <C>/api/names</C>, <C>/api/crons</C>, <C>/api/elections</C>, and{' '}
+						<C>/api/process</C>, <C>/api/names</C>, <C>/api/crons</C>, <C>/api/elections</C>,{' '}
+						<C>/api/sagas</C>, <C>/api/saga/runs</C>, <C>/api/saga/run</C>, and{' '}
 						<C>/api/events</C> as server-sent events.
 					</p>
 				</>

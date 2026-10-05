@@ -1000,6 +1000,24 @@ tr.fresh td {
 	width: 160px;
 }
 
+/* A run's data, error or cause, as it came. */
+pre.json {
+	max-height: 24rem;
+	margin: var(--g-spacing-2) 0;
+	padding: var(--g-spacing-3) var(--g-spacing-4);
+	overflow: auto;
+	border-radius: var(--g-border-radius-l);
+	background: var(--g-color-base-generic);
+	font-family: var(--g-font-family-monospace);
+	font-size: var(--g-text-code-1-font-size);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+pre.json.bad {
+	background: var(--g-color-base-danger-light);
+}
+
 .election {
 	margin-bottom: var(--g-spacing-8);
 }

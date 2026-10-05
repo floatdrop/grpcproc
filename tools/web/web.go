@@ -36,7 +36,7 @@ var files embed.FS
 type Options struct {
 	// AllowWrites also serves the requests that change things: exit a
 	// process, set its log level, move or cordon a leader, change a cron
-	// job. Without it they are refused, and the page does not offer them.
+	// job, resume a stuck saga run. Without it they are refused, and the page does not offer them.
 	AllowWrites bool
 	// Version and Target (the Inspector's address) are shown in the page.
 	Version, Target string
@@ -75,11 +75,21 @@ func New(c *client.Client, o Options) http.Handler {
 	}))
 	mux.HandleFunc("GET /api/crons", s.read(func(ctx context.Context, q url.Values) (any, error) { return s.c.Crons(ctx, q.Get("node")) }))
 	mux.HandleFunc("GET /api/elections", s.read(func(ctx context.Context, _ url.Values) (any, error) { return s.c.Elections(ctx) }))
+	mux.HandleFunc("GET /api/sagas", s.read(func(ctx context.Context, q url.Values) (any, error) { return s.c.SagaEngines(ctx, q.Get("node")) }))
+	mux.HandleFunc("GET /api/saga/runs", s.read(s.sagaRuns))
+	mux.HandleFunc("GET /api/saga/run", s.read(func(ctx context.Context, q url.Values) (any, error) {
+		req := SagaRequest{Node: q.Get("node"), Saga: q.Get("saga"), ID: q.Get("id")}
+		if err := req.check(); err != nil {
+			return nil, err
+		}
+		return s.c.SagaRun(ctx, req.Node, req.Saga, req.ID)
+	}))
 	mux.HandleFunc("GET /api/events", s.events)
 	mux.HandleFunc("POST /api/exit", write(s, s.exit))
 	mux.HandleFunc("POST /api/loglevel", write(s, s.logLevel))
 	mux.HandleFunc("POST /api/cron", write(s, s.cron))
 	mux.HandleFunc("POST /api/leader", write(s, s.leader))
+	mux.HandleFunc("POST /api/saga/resume", write(s, s.resume))
 	// A POST from a page on another origin is refused before it reaches a
 	// handler: the browser says where it comes from (Sec-Fetch-Site, Origin).
 	h := http.NewCrossOriginProtection().Handler(mux)
@@ -339,4 +349,56 @@ func (s *server) leader(ctx context.Context, req LeaderRequest) (any, error) {
 		return nil, err
 	}
 	return LeaderResponse{Led: led}, nil
+}
+
+// SagaRuns is a page of a saga's runs, and whether more follow its last.
+type SagaRuns struct {
+	Runs []client.SagaRunView `json:"runs"`
+	More bool                 `json:"more"`
+}
+
+// sagaRuns lists runs as grpcprocctl saga runs does: status is a
+// comma-separated list, after the ID the page starts after.
+func (s *server) sagaRuns(ctx context.Context, q url.Values) (any, error) {
+	sq := client.SagaQuery{Saga: q.Get("saga"), AfterSaga: q.Get("after_saga"), AfterID: q.Get("after")}
+	for st := range strings.SplitSeq(q.Get("status"), ",") {
+		if st = strings.TrimSpace(st); st != "" {
+			sq.Status = append(sq.Status, st)
+		}
+	}
+	if l := q.Get("limit"); l != "" {
+		var err error
+		if sq.Limit, err = strconv.Atoi(l); err != nil {
+			return nil, badRequest{fmt.Sprintf("bad limit %q: want a number", l)}
+		}
+	}
+	runs, more, err := s.c.SagaRuns(ctx, q.Get("node"), sq)
+	if err != nil {
+		return nil, err
+	}
+	return SagaRuns{Runs: runs, More: more}, nil
+}
+
+// SagaRequest names a run of a saga, on Node's engine or, when Node is
+// empty, on an engine that runs the saga.
+type SagaRequest struct {
+	Node string `json:"node"`
+	Saga string `json:"saga"`
+	ID   string `json:"id"`
+}
+
+func (r SagaRequest) check() error {
+	if r.Saga == "" || r.ID == "" {
+		return badRequest{"want a saga and a run's id"}
+	}
+	return nil
+}
+
+// resume makes a stuck run active again, and answers with the run as its
+// engine then has it.
+func (s *server) resume(ctx context.Context, req SagaRequest) (any, error) {
+	if err := req.check(); err != nil {
+		return nil, err
+	}
+	return s.c.ResumeSaga(ctx, req.Node, req.Saga, req.ID)
 }

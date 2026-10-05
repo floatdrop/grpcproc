@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -93,6 +94,7 @@ func TestRead(t *testing.T) {
 	f := testcluster.Start(t, "c")
 	f.Cron(t, "b", "billing")
 	f.Elect(t, "sched", "a", "b", "c")
+	f.Saga(t, "b", "orders")
 	s := serve(t, f, web.Options{Version: "v1.2.3", Target: "a:9000"})
 
 	var info web.Info
@@ -126,16 +128,47 @@ func TestRead(t *testing.T) {
 	if get(t, s, "/api/elections", &elections); len(elections) != 1 || elections[0].Cluster != "sched" || len(elections[0].Electors) != 3 {
 		t.Errorf("%+v", elections)
 	}
+	var engines []client.SagaEngineView
+	if get(t, s, "/api/sagas", &engines); len(engines) != 1 || engines[0].Node != "b" || !slices.Equal(engines[0].Sagas, []string{"orders v2"}) {
+		t.Errorf("%+v", engines)
+	}
+	for path, want := range map[string]string{
+		"/api/saga/runs?saga=orders":                               "1 2 3",
+		"/api/saga/runs?saga=orders&status=+stuck,,done":           "2 3",
+		"/api/saga/runs?saga=orders&limit=1":                       "1 more",
+		"/api/saga/runs?saga=orders&after=1&limit=1":               "2 more",
+		"/api/saga/runs?node=b&after_saga=orders&after=2":          "3",
+		"/api/saga/runs?saga=orders&status=active&after=1&limit=5": "",
+	} {
+		var page web.SagaRuns
+		if get(t, s, path, &page) != http.StatusOK || ids(page) != want {
+			t.Errorf("%s: %q, want %q", path, ids(page), want)
+		}
+	}
+	var run client.SagaRunView
+	if get(t, s, "/api/saga/run?saga=orders&id=3", &run); run.Status != "done" || run.DataOmitted == 0 {
+		t.Errorf("%+v", run)
+	}
+	// Data that is empty is shown as empty, not left out as hidden.
+	var raw map[string]any
+	if get(t, s, "/api/saga/run?node=b&saga=orders&id=2", &raw); raw["data"] != "" {
+		t.Errorf("run 2's data: %#v", raw["data"])
+	}
 
 	// What is wrong with a request says so, with a status that says whose
 	// fault it is.
 	for path, want := range map[string]int{
-		"/api/processes?min_mailbox=many":         http.StatusBadRequest,
-		"/api/processes?state=asleep":             http.StatusBadRequest,
-		"/api/process?target=talker&wait=forever": http.StatusBadRequest,
-		"/api/process?target=talker&wait=1h":      http.StatusBadRequest,
-		"/api/process?target=nobody":              http.StatusNotFound,
-		"/api/node?node=nowhere":                  http.StatusBadGateway,
+		"/api/processes?min_mailbox=many":          http.StatusBadRequest,
+		"/api/processes?state=asleep":              http.StatusBadRequest,
+		"/api/process?target=talker&wait=forever":  http.StatusBadRequest,
+		"/api/process?target=talker&wait=1h":       http.StatusBadRequest,
+		"/api/process?target=nobody":               http.StatusNotFound,
+		"/api/node?node=nowhere":                   http.StatusBadGateway,
+		"/api/saga/runs?saga=orders&limit=many":    http.StatusBadRequest,
+		"/api/saga/runs?saga=orders&status=asleep": http.StatusBadRequest,
+		"/api/saga/runs?saga=nothing":              http.StatusBadRequest,
+		"/api/saga/run?saga=orders&id=9":           http.StatusConflict,
+		"/api/saga/run?saga=orders":                http.StatusBadRequest,
 	} {
 		var e struct {
 			Error string `json:"error"`
@@ -150,6 +183,7 @@ func TestWrite(t *testing.T) {
 	f := testcluster.Start(t, "c")
 	pid := f.Cron(t, "b", "billing")
 	f.Elect(t, "sched", "a", "b", "c")
+	f.Saga(t, "b", "orders")
 
 	// Read-only unless asked.
 	ro := serve(t, f, web.Options{})
@@ -171,12 +205,20 @@ func TestWrite(t *testing.T) {
 		{"/api/leader", `{"cluster":"sched","op":"move"}`, http.StatusOK},
 		{"/api/leader", `{"cluster":"sched","op":"abdicate"}`, http.StatusBadRequest},
 		{"/api/leader", `{"cluster":"nothing","op":"move"}`, http.StatusBadRequest},
+		{"/api/saga/resume", `{"saga":"orders","id":"2"}`, http.StatusOK},
+		{"/api/saga/resume", `{"node":"b","saga":"orders","id":"9"}`, http.StatusConflict},
+		{"/api/saga/resume", `{"saga":"nothing","id":"2"}`, http.StatusBadRequest},
+		{"/api/saga/resume", `{"saga":"orders"}`, http.StatusBadRequest},
 		{"/api/exit", `{"target":"talker","reason":"bye"}`, http.StatusOK},
 		{"/api/exit", `{"target":`, http.StatusBadRequest},
 	} {
 		if code, msg := post(t, s, tc.path, tc.body); code != tc.want {
 			t.Errorf("%s %s: %d %q, want %d", tc.path, tc.body, code, msg, tc.want)
 		}
+	}
+	var run client.SagaRunView
+	if code := get(t, s, "/api/saga/run?saga=orders&id=2", &run); code != http.StatusOK || run.ID != "2" || run.Status == "stuck" || run.Attempts != 0 {
+		t.Errorf("resumed: %+v", run)
 	}
 	var crons []client.CronView
 	if get(t, s, "/api/crons?node=b", &crons); len(crons) != 1 || !strings.Contains(jobs(crons[0]), "yearly disabled") {
@@ -191,6 +233,18 @@ func TestWrite(t *testing.T) {
 	if get(t, s, "/api/process?target=stuck", &p) != http.StatusOK {
 		t.Error("stuck was made to exit from another site")
 	}
+}
+
+// ids are the IDs of a page of runs, and "more" if more follow.
+func ids(page web.SagaRuns) string {
+	var out []string
+	for _, r := range page.Runs {
+		out = append(out, r.ID)
+	}
+	if page.More {
+		out = append(out, "more")
+	}
+	return strings.Join(out, " ")
 }
 
 func jobs(c client.CronView) string {

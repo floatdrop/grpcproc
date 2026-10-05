@@ -1621,7 +1621,7 @@ OpenTelemetry and the PostgreSQL saga store are.
   a lower fence; steps that run side by side; retention of finished runs;
   dropping the signals no state of a run will take; a `Store.List` that
   pages and leaves the data out, since an engine's list reads every run of
-  a saga for each page; a view of the runs in the web UI.
+  a saga for each page.
 - **Process groups**, Erlang's `pg` and Akka's Receptionist: the live
   members of a group, found and watched. Pub/sub topics already monitor their
   subscribers through a relay per node, so it is a thin module.

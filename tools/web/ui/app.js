@@ -1,9 +1,9 @@
 'use strict';
 
 // grpcprocctl web: a view per page of the sidebar, each fetching what it
-// shows from the API on every tick, and a drawer for one process. The URL
-// says what is open (#/processes?node=a&proc=<a.1.4>), so a view can be
-// shared. Nothing here uses innerHTML: what nodes and processes say about
+// shows from the API on every tick, and a drawer for one process or one
+// saga run. The URL says what is open (#/processes?node=a&proc=<a.1.4>), so
+// a view can be shared. Nothing here uses innerHTML: what nodes and processes say about
 // themselves is text, and stays text.
 
 // ---- DOM ----------------------------------------------------------------
@@ -97,6 +97,17 @@ function pidText(pid) {
 	const p = pidParts(pid);
 	return p ? `<${p.node}.….${p.id}>` : pid;
 }
+// rel says how far a time is from now, as in 3m or 2h ago; its title is the
+// time itself.
+function rel(iso) {
+	if (!iso) return '';
+	const d = new Date(iso);
+	if (isNaN(d)) return iso;
+	const s = (d - Date.now()) / 1000, a = Math.abs(s);
+	const n = a < 60 ? `${Math.round(a)}s` : a < 3600 ? `${Math.round(a / 60)}m` : a < 86400 ? `${Math.round(a / 3600)}h` : `${Math.round(a / 86400)}d`;
+	return h('span', { title: d.toLocaleString() }, a < 1 ? 'now' : s > 0 ? `in ${n}` : `${n} ago`);
+}
+
 const pidSpan = (pid) => h('span', { class: 'mono', title: pid }, pidText(pid));
 
 function pidCmp(a, b) {
@@ -195,6 +206,7 @@ const LABEL_THEME = {
 	idle: 'unknown', running: 'success', 'waiting-reply': 'warning', exiting: 'danger',
 	up: 'success', connecting: 'warning', down: 'danger',
 	leader: 'success', follower: 'info', candidate: 'warning', unclustered: 'unknown',
+	active: 'info', stuck: 'danger', done: 'unknown',
 	spawn: 'success', exit: 'unknown', 'link-up': 'info', 'link-down': 'warning', 'dead-letter': 'danger',
 	info: 'info', bad: 'danger', warn: 'warning',
 };
@@ -219,6 +231,10 @@ function banner() {
 		},
 	};
 }
+
+// defs is Gravity's DefinitionList: each [key, value] pair, a missing value
+// as none.
+const defs = (pairs) => pairs.flatMap(([k, v]) => [h('span', { class: 'k' }, k), h('span', { class: 'v' }, v || h('span', { class: 'muted' }, 'none'))]);
 
 // pidLink opens the process in the drawer, over whatever page is showing.
 function pidLink(pid, text) {
@@ -655,8 +671,10 @@ function processesPage(node, params) {
 			if (refetch) run(page);
 			else render();
 		},
-		async tick() {
-			rows = await api('/api/processes', { node, name: p.name, label: p.label, state: p.state, min_mailbox: p.min });
+		async tick(stale) {
+			const got = await api('/api/processes', { node, name: p.name, label: p.label, state: p.state, min_mailbox: p.min });
+			if (stale()) return;
+			rows = got;
 			r = pr(rows, (x) => x.pid, ['received', 'sent']);
 			for (const x of rows) {
 				if (!known.has(x.label)) {
@@ -981,8 +999,9 @@ function namesPage(node, params) {
 			p = np;
 			if (refetch) run(page);
 		},
-		async tick() {
+		async tick(stale) {
 			const names = await api('/api/names', { node, prefix: p.prefix || '' });
+			if (stale()) return;
 			list.replaceChildren(
 				table(
 					[
@@ -1072,6 +1091,131 @@ function election(e, moveTo) {
 	return h('div', { class: 'election' }, h('div', { class: 'ehead' }, head), table(cols, e.electors, { rowClass: (v) => v.error && 'backlog' }));
 }
 
+const SAGA_STATUSES = ['active', 'stuck', 'done'];
+
+// sagaName is the saga of an engine's "name vN".
+const sagaName = (s) => s.slice(0, s.lastIndexOf(' '));
+
+function sagasPage(_node, params) {
+	let p = params;
+	const b = banner();
+	const engines = h('div');
+	// A saga is asked of the engine on the node "on" names, or the first that
+	// runs it; an option is a saga and that node.
+	const which = h('select', {
+		onchange: (e) => {
+			const [saga, on] = e.target.value.split('\n');
+			set({ saga, on, after: '', run: '' });
+		},
+	});
+	const status = h('select', { onchange: (e) => set({ status: e.target.value, after: '' }) }, ['', ...SAGA_STATUSES].map((s) => h('option', { value: s }, s || 'any status')));
+	const count = h('span', { class: 'muted' });
+	const list = h('div');
+	const pager = h('div', { class: 'actions' });
+	let known = [], runs = [], more = false, from = '', options = '';
+	const saga = () => p.saga || known[0]?.saga || '';
+	const on = () => p.on || known.find((k) => k.saga === saga())?.node || '';
+
+	const cols = [
+		{ t: 'ID', get: (r) => h('b', { class: 'mono' }, r.id) },
+		{ t: 'Status', get: (r) => pill(r.status) },
+		{ t: 'State', get: (r) => h('span', { class: 'mono' }, r.state) },
+		{ t: 'Version', num: true, get: (r) => (r.version ? `v${r.version}` : '') },
+		{ t: 'Visit', num: true, get: (r) => fmtInt(r.visit) },
+		{ t: 'Attempts', num: true, get: (r) => (r.attempts ? fmtInt(r.attempts) : '') },
+		{ t: 'Signals', num: true, get: (r) => (r.waiting ? fmtInt(r.waiting) : '') },
+		{ t: 'Due', get: (r) => (r.status !== 'active' ? '' : r.retry_at ? ['retry ', rel(r.retry_at)] : r.effect_done && !r.deadline ? h('span', { class: 'muted' }, 'on a signal') : rel(r.wake)) },
+		{ t: 'Deadline', get: (r) => rel(r.deadline) },
+		{ t: 'Owner', get: (r) => (r.owner ? h('a', { href: href('node', { node: r.owner }), onclick: (e) => e.stopPropagation() }, r.owner) : '') },
+		{ t: 'Error', wrap: true, get: (r) => [r.error ? (r.status === 'stuck' ? pill(r.error, 'bad') : r.error) : '', r.cause ? h('div', { class: 'muted' }, `left its way: ${r.cause}`) : null] },
+		{ t: 'Updated', get: (r) => rel(r.updated) },
+	];
+
+	function render() {
+		const opts = [...known];
+		if (saga() && !opts.some((k) => k.saga === saga() && k.node === on())) opts.unshift({ saga: saga(), node: on() });
+		const twice = (s) => opts.filter((k) => k.saga === s).length > 1;
+		// Options are made again only when they change, so an open select stays open.
+		if (JSON.stringify(opts) !== options) {
+			options = JSON.stringify(opts);
+			which.replaceChildren(...(opts.length ? opts.map((k) => h('option', { value: `${k.saga}\n${k.node}` }, twice(k.saga) ? `${k.saga} on ${k.node}` : k.saga)) : [h('option', { value: '' }, 'no saga')]));
+		}
+		which.value = saga() ? `${saga()}\n${on()}` : '';
+		if (p.status && ![...status.options].some((o) => o.value === p.status)) status.append(h('option', { value: p.status }, p.status));
+		status.value = p.status || '';
+		const what = p.status ? `${p.status} run` : 'run';
+		count.textContent = runs.length ? `${fmtInt(runs.length)} ${runs.length === 1 ? 'run' : 'runs'}${p.after ? ` after ${p.after}` : ''}${more ? ', more follow' : ''}` : '';
+		list.replaceChildren(
+			table(cols, runs, {
+				onRow: (r) => set({ saga: r.saga, on: from, run: r.id }, false),
+				rowClass: (r) => cls(r.status === 'stuck' && 'backlog', r.id === p.run && r.saga === saga() && 'sel'),
+				empty: !saga() ? 'No saga engine reachable from here runs a saga.' : p.after ? `No ${what} of ${saga()} after ${p.after}.` : `${saga()} has no ${what}.`,
+			}),
+		);
+		// Next adds to the history, so the browser's Back is the previous page.
+		pager.replaceChildren(
+			h('button', { type: 'button', disabled: !p.after, onclick: () => set({ after: '' }, false) }, 'First page'),
+			h('button', { type: 'button', disabled: !more, onclick: () => set({ after: runs.at(-1).id }, false) }, 'Next →'),
+		);
+	}
+
+	const page = {
+		every: 5000,
+		el: h(
+			'div',
+			null,
+			head('Sagas', "The grpcproc/saga engines reachable from here, and the runs in their stores, a page at a time. An engine shows only the sagas it runs, and a run's data only with saga.Config.InspectData."),
+			b.el,
+			h('h2', null, 'Engines'),
+			engines,
+			h('h2', null, 'Runs'),
+			h('div', { class: 'scope' }, h('label', null, 'saga', select(which)), select(status), h('span', { class: 'spacer' }), count, pager),
+			list,
+			readOnlyNote(),
+		),
+		banner: b.set,
+		// The page is asked for again when what it shows changes, not when a
+		// default (the first saga, the node of its engine) goes into the URL.
+		update(np) {
+			const scope = () => [saga(), on(), p.status || '', p.after || ''].join('\n');
+			const was = scope();
+			p = np;
+			if (scope() !== was) run(page);
+			else render();
+		},
+		async tick(stale) {
+			const ask = () => (saga() ? api('/api/saga/runs', { node: on(), saga: saga(), status: p.status, after: p.after }) : null);
+			// Once the saga and its node are known, the runs are asked for beside
+			// the engines.
+			const asked = saga() ? { saga: saga(), on: on() } : null;
+			const [all, first] = await Promise.all([api('/api/sagas'), ask()]);
+			if (stale()) return;
+			known = all.flatMap((e) => e.sagas.map((s) => ({ saga: sagaName(s), node: e.node })));
+			engines.replaceChildren(
+				table(
+					[
+						{ t: 'Node', get: (e) => h('a', { href: href('node', { node: e.node }), onclick: (ev) => ev.stopPropagation() }, e.node) },
+						{ t: 'Engine', get: (e) => pidLink(e.pid, e.process) },
+						{ t: 'Sagas', get: (e) => h('span', { class: 'row' }, e.sagas.map((s) => h('a', { href: href('sagas', { saga: sagaName(s), on: e.node, status: p.status }), onclick: (ev) => ev.stopPropagation() }, s))) },
+						{ t: 'Working on', num: true, get: (e) => (e.error ? '' : fmtInt(e.working)) },
+						{ t: 'Error', wrap: true, get: (e) => e.error },
+					],
+					all,
+					{ empty: 'No grpcproc/saga engine runs on the nodes reachable from here.' },
+				),
+			);
+			// What the engines say may change the defaults: ask again if so.
+			const got = asked?.saga === saga() && asked?.on === on() ? first : await ask();
+			if (stale()) return;
+			runs = got?.runs || [];
+			more = !!got?.more;
+			from = on();
+			render();
+		},
+	};
+	return page;
+}
+
 // ---- one process, in the drawer ------------------------------------------
 
 const LEVELS = ['debug', 'info', 'warn', 'error'];
@@ -1138,7 +1282,7 @@ function procDrawer(pid) {
 	const el = h(
 		'div',
 		null,
-		h('div', { class: 'dhead' }, h('div', null, h('div', { class: 'row' }, title, state), sub), h('span', { class: 'spacer' }), h('button', { type: 'button', class: 'icon-button', title: 'Close (Esc)', 'aria-label': 'Close', onclick: closeProc }, icon(XMARK))),
+		h('div', { class: 'dhead' }, h('div', null, h('div', { class: 'row' }, title, state), sub), h('span', { class: 'spacer' }), h('button', { type: 'button', class: 'icon-button', title: 'Close (Esc)', 'aria-label': 'Close', onclick: closeDrawer }, icon(XMARK))),
 		b.el,
 		cards,
 		h('div', { class: 'charts' }, cMsgs.el, cBox.el),
@@ -1154,7 +1298,7 @@ function procDrawer(pid) {
 	);
 
 	return {
-		pid,
+		key: `proc\n${pid}`,
 		el,
 		banner: (msg) => b.set(msg || gone),
 		first: ask,
@@ -1192,7 +1336,7 @@ function procDrawer(pid) {
 				['links', `${v.links || 0}${v.trap_exit ? ', trapping exits' : ''}`],
 				['watchers', `${v.watchers || 0} monitoring or linked to it`],
 			];
-			facts.replaceChildren(...kv.flatMap(([k, val]) => [h('span', { class: 'k' }, k), h('span', { class: 'v' }, val)]));
+			facts.replaceChildren(...defs(kv));
 			if (ticks++ % 5 === 0) {
 				const ps = await api('/api/processes', { node });
 				const mine = ps.filter((x) => x.parent === pid).sort((a, c) => pidCmp(a.pid, c.pid));
@@ -1203,6 +1347,92 @@ function procDrawer(pid) {
 				);
 			}
 			if (auto && Date.now() - asked >= every) await ask();
+		},
+	};
+}
+
+// ---- one saga run, in the drawer -----------------------------------------
+
+function runDrawer(saga, id, on) {
+	const b = banner();
+	const status = h('span');
+	const sub = h('div', { class: 'muted' });
+	const cards = h('div', { class: 'cards' });
+	const why = h('div');
+	const timing = h('div', { class: 'kv' });
+	const data = h('div');
+	const inbox = h('div');
+	const acts = h('div');
+	const json = (v) => h('pre', { class: 'json' }, JSON.stringify(v, null, 2));
+	const hidden = (what) => h('span', { class: 'muted' }, `Not shown: the engine shows ${what} only with saga.Config.InspectData, and only what it can read.`);
+
+	const el = h(
+		'div',
+		null,
+		h('div', { class: 'dhead' }, h('div', null, h('div', { class: 'row' }, h('span', { class: 't mono' }, id), status), sub), h('span', { class: 'spacer' }), h('button', { type: 'button', class: 'icon-button', title: 'Close (Esc)', 'aria-label': 'Close', onclick: closeDrawer }, icon(XMARK))),
+		b.el,
+		cards,
+		why,
+		h('h3', null, 'Timers and owner'),
+		timing,
+		h('h3', null, 'Data'),
+		data,
+		h('h3', null, 'Signals waiting'),
+		inbox,
+		acts,
+	);
+
+	return {
+		key: `run\n${saga}\n${id}\n${on}`,
+		every: 5000,
+		el,
+		banner: b.set,
+		async tick() {
+			const r = await api('/api/saga/run', { node: on, saga, id });
+			status.replaceChildren(pill(r.status));
+			sub.replaceChildren(r.saga, r.version ? ` · v${r.version}` : '', ` · revision ${fmtInt(r.revision)}`);
+			cards.replaceChildren(
+				card('State', h('span', { class: 'mono' }, r.state), `visit ${fmtInt(r.visit || 0)}${r.effect_done ? ', its effect done' : ''}`),
+				card('Attempts', fmtInt(r.attempts || 0), r.retry_at ? ['retry ', rel(r.retry_at)] : 'failures of this visit', r.attempts > 0 && 'warn'),
+				card('Signals', fmtInt(r.inbox?.length || 0), 'waiting for a state that takes them'),
+				card('Epoch', fmtInt(r.epoch || 0), 'times claimed'),
+			);
+			why.replaceChildren(
+				...(r.error ? [h('h3', null, r.status === 'stuck' ? 'Why it is stuck' : 'Last failure'), h('pre', { class: 'json bad' }, r.error)] : []),
+				...(r.cause ? [h('h3', null, 'Why it left its way'), h('pre', { class: 'json' }, r.cause)] : []),
+			);
+			timing.replaceChildren(
+				...defs([
+					['due', r.status === 'active' ? rel(r.wake) : null],
+					['retry at', rel(r.retry_at)],
+					['deadline', rel(r.deadline)],
+					['owner', r.owner ? h('a', { href: href('node', { node: r.owner }) }, r.owner) : null],
+					['lease until', rel(r.lease_until)],
+					['created', rel(r.created)],
+					['updated', rel(r.updated)],
+				]),
+			);
+			data.replaceChildren(r.data !== undefined ? json(r.data) : r.data_omitted ? h('span', { class: 'muted' }, `${fmtBytes(r.data_omitted)}: too large to show.`) : hidden("a run's data"));
+			inbox.replaceChildren(
+				table(
+					[
+						{ t: 'Seq', num: true, get: (s) => fmtInt(s.seq) },
+						{ t: 'Event', get: (s) => h('b', null, s.event) },
+						{ t: 'Version', num: true, get: (s) => (s.version ? `v${s.version}` : '') },
+						{ t: 'Payload', wrap: true, get: (s) => (s.payload !== undefined ? h('span', { class: 'mono' }, JSON.stringify(s.payload)) : s.payload_omitted ? h('span', { class: 'muted' }, `${fmtBytes(s.payload_omitted)}: too large to show`) : '') },
+					],
+					r.inbox || [],
+					{ empty: 'None.' },
+				),
+			);
+			acts.replaceChildren(
+				h('h3', null, 'Act'),
+				!app.info.allow_writes
+					? readOnlyNote()
+					: r.status === 'stuck'
+						? h('button', { type: 'button', class: 'danger', onclick: () => act(`resumed ${id}`, '/api/saga/resume', { node: on, saga, id }, `Resume run ${id} of ${saga}? It becomes active and due at once, its attempts counted from none, and its effect is tried again.`) }, 'Resume')
+						: h('span', { class: 'muted' }, 'Only a stuck run can be resumed.'),
+			);
 		},
 	};
 }
@@ -1218,6 +1448,7 @@ const pages = {
 	events: { make: eventsPage, node: true, title: 'Events' },
 	cron: { make: cronPage, title: 'Cron' },
 	elections: { make: electionsPage, title: 'Elections' },
+	sagas: { make: sagasPage, title: 'Sagas' },
 };
 
 const app = { info: { allow_writes: false }, nodes: [], params: {}, page: null, key: '', drawer: null, interval: 1000, timer: 0, busy: false };
@@ -1247,7 +1478,9 @@ function set(changes, replace = true) {
 }
 
 const openProc = (pid) => set({ proc: pid }, false);
-const closeProc = () => set({ proc: '' }, false);
+// The drawer shows a process, or on the Sagas page a run; a process opened
+// over a run closes back to it.
+const closeDrawer = () => set(app.params.proc ? { proc: '' } : { run: '' }, false);
 
 function onRoute() {
 	const { page, params } = route();
@@ -1266,29 +1499,37 @@ function onRoute() {
 		for (const a of document.querySelectorAll('.side a')) a.classList.toggle('on', a.dataset.page === page);
 		run(app.page);
 	} else app.page.update?.(params);
-	if ((params.proc || '') !== (app.drawer?.pid || '')) openDrawer(params.proc || '');
+	const open = params.proc ? `proc\n${params.proc}` : page === 'sagas' && params.run ? `run\n${params.saga || ''}\n${params.run}\n${params.on || ''}` : '';
+	if (open !== (app.drawer?.key || '')) openDrawer(open && (() => (params.proc ? procDrawer(params.proc) : runDrawer(params.saga || '', params.run, params.on || ''))));
 }
 
-function openDrawer(pid) {
+// openDrawer shows what make makes in the drawer, or closes it.
+function openDrawer(make) {
 	const d = $('#drawer');
 	app.drawer = null;
-	d.hidden = !pid;
+	d.hidden = !make;
 	d.replaceChildren();
-	if (!pid) return;
-	app.drawer = procDrawer(pid);
+	if (!make) return;
+	app.drawer = make();
 	d.append(app.drawer.el);
 	run(app.drawer);
-	app.drawer.first();
+	app.drawer.first?.();
 }
 
-// run ticks a view once, showing what went wrong in its banner.
+// run ticks a view once, showing what went wrong in its banner. A tick that
+// a later one of the view overtook is stale: once stale() says so it draws
+// nothing, and how it went is not shown.
 async function run(v) {
 	v.last = Date.now();
+	const seq = (v.seq = (v.seq || 0) + 1);
+	const stale = () => v.seq !== seq;
 	try {
-		await v.tick();
+		await v.tick(stale);
+		if (stale()) return;
 		v.banner(null);
 		live(true);
 	} catch (e) {
+		if (stale()) return;
 		v.banner(e.message);
 		live(false, e.message);
 	}
@@ -1394,7 +1635,7 @@ async function boot() {
 	$('#theme').addEventListener('click', toggleTheme);
 	addEventListener('hashchange', onRoute);
 	addEventListener('resize', debounce(redrawCharts, 100));
-	addEventListener('keydown', (e) => e.key === 'Escape' && app.drawer && closeProc());
+	addEventListener('keydown', (e) => e.key === 'Escape' && app.drawer && closeDrawer());
 	matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => chosenTheme() || setTheme(e.matches ? 'dark' : 'light'));
 	// The node list follows the cluster while pages other than Cluster show.
 	setInterval(async () => {
