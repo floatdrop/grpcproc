@@ -912,7 +912,7 @@ body {
 
 /* ---- drawings that move -------------------------------------------------- */
 
-/* The overview's drawings animate parts of themselves with keyframes each
+/* The drawings that move, the overview's and the tutorial's, animate parts of themselves with keyframes each
    drawing writes (components/diagrams-overview.tsx). What is set here is
    what a part looks like, and how it stands when nothing moves: a message
    in transit is not drawn, a note that belongs to one moment is not shown. */

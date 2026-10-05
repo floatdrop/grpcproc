@@ -29,8 +29,8 @@ npm run preview   # serves build/ under its base path
   embedmd does. `src/components/` has the prose helpers (`C`, `A`, `Ext`,
   `Aside`, `Table`, `Cards`), the figure card, and the drawings, which are
   inline SVG built from a few primitives.
-- `src/components/diagrams-overview.tsx` holds the overview's drawings,
-  which move: each writes its own CSS keyframes, so the page runs no script
+- `src/components/diagrams-overview.tsx` holds the drawings that move, the
+  overview's and the tutorial's: each writes its own CSS keyframes, so the page runs no script
   for them, and they stand still under `prefers-reduced-motion`.
 - `src/Page.tsx` is the chrome: topbar, navigation, the page, its outline,
   previous and next. `src/entry-server.tsx` renders every page and the 404.
