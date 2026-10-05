@@ -1,6 +1,7 @@
 import inventoryTest from '../../../examples/actors/inventory_test.go?raw';
 import actors from '../../../examples/actors/main.go?raw';
 import actorsOutput from '../../../examples/actors/output.txt?raw';
+import tools from '../../../examples/guide/internal/tools/tools.go?raw';
 
 import { Code, Output, region } from '../code.tsx';
 import { A, Aside, C, Ext, Table } from '../components/prose.tsx';
@@ -104,8 +105,8 @@ addr, err := node.Spawn(actor.Run(NewOrders(repo)), grpcproc.WithName("orders"))
 								<>
 									Once, when the actor ends, however it ends. The exit reason is already decided:{' '}
 									<C>err</C> is nil after <C>ErrStop</C>, the handler's error, an{' '}
-									<C>*ExitError</C> after <C>Exit</C>, or <C>context.Canceled</C> when the node
-									stops.
+									<C>*ExitError</C> after <C>Exit</C>, <C>context.Canceled</C> when the node
+									stops, or <C>goexit</C> when a handler called <C>runtime.Goexit</C>.
 								</>
 							]
 						]}
@@ -239,6 +240,67 @@ addr, err := node.Spawn(actor.Run(&Pricer{table: table}))`}</Code>
 						supervisor, a new actor would be running by then, under the same name, with a fresh
 						state; <A to="guides/supervisors/">Supervisors</A> shows that.
 					</p>
+				</>
+			)
+		},
+		{
+			id: 'workers',
+			title: 'Slow answers on workers',
+			body: (
+				<>
+					<p>
+						An actor handles one message at a time, so a call that takes long to answer, a report
+						rendered or a query run, holds up every message behind it, the writes included.{' '}
+						<C>actor.Workers</C> answers such a call from a worker, a process started for it, and
+						the actor goes on with its mailbox at once. The tutorial's tool runner runs each tool
+						that way, <C>running</C> of them at most, on the <C>actor.NewWorkers(running)</C> its
+						constructor makes:
+					</p>
+					<Code caption="examples/guide/internal/tools/tools.go">{region(tools, /^\/\/ runner is the actor/, /^\/\/ tree is/).split('\n').slice(0, -1).join('\n').trimEnd()}</Code>
+					<p>
+						What <C>fn</C> returns is the reply, as <C>HandleCall</C>'s would be. Its context
+						carries the caller's deadline and metadata, and ends when the actor does, since the
+						worker is linked to it. Its second argument is the worker, to send and call from; the
+						actor's own <C>p</C> belongs to the actor's goroutine.
+					</p>
+					<p>
+						<C>fn</C> runs beside the actor, so it must not touch the actor's state: nothing stops
+						it, and the race is yours. Hand it a copy made in <C>HandleCall</C>, as the inventory
+						above would with <C>left := maps.Clone(i.left)</C>, or a value the actor replaces and
+						never changes.
+						Then neither needs a lock: each read sees the state as its call found it, while the
+						actor goes on with the writes.
+					</p>
+					<p>
+						At most <C>n</C> calls are being answered at once; a worker gives its place back as it
+						answers, a moment before its process ends. With all <C>n</C> busy,{' '}
+						<C>ReplyLater</C> returns <C>actor.ErrWorkersBusy</C> without running <C>fn</C>, and{' '}
+						<C>HandleCall</C> returning it answers the caller at once; making the call again cannot
+						run it twice. Waiting for a worker would hold up the actor instead, and deadlock it when
+						a worker calls the actor back. The error spawning a worker, on a stopping node, is
+						answered the same way. A panic in <C>fn</C> answers the call with <C>panic: …</C>, and
+						a <C>runtime.Goexit</C> with <C>actor: the worker ended without answering</C>; either
+						way the worker ends and the actor carries on.
+					</p>
+					<p>
+						The call still belongs to the actor. If the actor ends while <C>fn</C> runs, the caller
+						gets <C>ErrNoProc</C> at once, as for any call it left unanswered, and what <C>fn</C>{' '}
+						returns afterwards is dropped.
+					</p>
+					<p>
+						<C>Label</C> returns a copy whose workers carry another label, which the Inspector and
+						metrics tell them apart by; the copies share the original's <C>n</C> places. A label is a
+						metrics key, so it comes from a small set, as the runner's tool names do, never from what
+						a caller sends.
+					</p>
+					<Aside title="What a worker cannot do">
+						<p>
+							A goroutine cannot be killed: a <C>fn</C> that does not watch its context runs on after
+							the actor, holding its place. A caller that cancels without a deadline is not seen, so
+							its worker runs to the end. Each answer is a process, with the hooks and events of
+							one.
+						</p>
+					</Aside>
 				</>
 			)
 		},
