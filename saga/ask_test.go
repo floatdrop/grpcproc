@@ -181,11 +181,17 @@ func TestAnEngineAnswersQueries(t *testing.T) {
 			_, err := n.CallTo[*emptypb.Empty](ctx, e.PID(), &sagav1.Control{Op: &sagav1.Control_Resume{Resume: &sagav1.RunRef{Saga: "orders", Id: id}}})
 			return err
 		}
-		if err := resume("2"); err != nil {
+		// A run whose data decodes: the engine claims it at once, and one it
+		// cannot read it would make stuck again.
+		if _, _, err := store.Create(ctx, saga.Record{Saga: "orders", ID: "5", State: "first", Status: saga.Stuck, Data: data(wrapperspb.String("e"))}); err != nil {
 			t.Fatal(err)
 		}
-		if r, _, _ := store.Get(ctx, "orders", "2"); r.Status != saga.Active {
-			t.Fatalf("resumed: %+v", r)
+		if err := resume("5"); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		if r, _, _ := store.Get(ctx, "orders", "5"); r.Status != saga.Active {
+			t.Fatalf("resumed: %v, %q", r.Status, r.Error)
 		}
 		if err := resume("none"); !errors.Is(err, saga.ErrNoRun) {
 			t.Errorf("resume of no run: %v", err)
