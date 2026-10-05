@@ -3,6 +3,7 @@ package actor_test
 import (
 	"errors"
 	"log/slog"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -48,7 +49,7 @@ func (c *counter) Init(*P) error {
 	return nil
 }
 
-func (c *counter) HandleMessage(_ *P, m M) error {
+func (c *counter) HandleMessage(p *P, m M) error {
 	switch m.Body.GetN() {
 	case -1:
 		return errors.New("bad message")
@@ -56,6 +57,11 @@ func (c *counter) HandleMessage(_ *P, m M) error {
 		return actor.ErrStop
 	case -3:
 		panic("kaboom")
+	case -5:
+		runtime.Goexit()
+	case -6: // waits to be told to exit, then calls Goexit
+		<-p.Context().Done()
+		runtime.Goexit()
 	}
 	c.count++
 	return nil

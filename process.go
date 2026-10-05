@@ -1249,7 +1249,7 @@ func (p *proc) run(fn func() error) {
 }
 
 // errGoexit is the exit of a process whose function called runtime.Goexit.
-var errGoexit = errors.New("goexit")
+var errGoexit = errors.New(ReasonGoexit)
 
 func (p *proc) exitReason(err error) string {
 	if reason, ok := exitReasonOf(p.ctx); ok {

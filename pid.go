@@ -104,6 +104,7 @@ const (
 	ReasonNoConnection = "noconnection"
 	ReasonShutdown     = "shutdown"
 	ReasonKilled       = "killed"
+	ReasonGoexit       = "goexit" // the process's function called runtime.Goexit
 	ReasonType         = "type"
 	ReasonDenied       = "denied"        // a dead letter a peer's Policy refused
 	ReasonMailboxFull  = "mailbox full"  // a dead letter a full mailbox refused (see WithMailboxLimit)

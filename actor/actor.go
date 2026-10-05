@@ -14,6 +14,7 @@
 package actor
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -88,8 +89,9 @@ type Initializer[M proto.Message] interface {
 
 // Terminator runs when the actor ends, however it ends: err is nil after
 // ErrStop, the handler's error, an *grpcproc.ExitError after Exit or the exit
-// of a process it is linked to, context.Canceled when the node stops, or
-// "panic: …" (after which the panic continues, and grpcproc reports it).
+// of a process it is linked to, context.Canceled when the node stops,
+// "panic: …" (after which the panic continues, and grpcproc reports it), or
+// "goexit" when a handler called runtime.Goexit.
 type Terminator[M proto.Message] interface {
 	Terminate(p *grpcproc.Process[M], err error)
 }
@@ -101,6 +103,8 @@ var (
 	// ErrNoReply, returned from HandleCall, means the actor will answer
 	// later with m.Reply(…).
 	ErrNoReply = errors.New("actor: reply later")
+
+	errGoexit = errors.New(grpcproc.ReasonGoexit)
 )
 
 // Run turns a Handler into a process function, for Node.Spawn,
@@ -121,10 +125,17 @@ func Run[M proto.Message](h Handler[M]) func(*grpcproc.Process[M]) error {
 			}
 		}
 		if term != nil {
+			err = errGoexit // what a handler that calls runtime.Goexit leaves
 			defer func() {
 				if r := recover(); r != nil {
 					term.Terminate(p, fmt.Errorf("panic: %v", r))
 					panic(r)
+				}
+				if errors.Is(err, errGoexit) {
+					// An exit asked for first is the reason, as it is the process's.
+					if ee, ok := errors.AsType[*grpcproc.ExitError](context.Cause(p.Context())); ok {
+						err = ee
+					}
 				}
 				term.Terminate(p, err)
 			}()

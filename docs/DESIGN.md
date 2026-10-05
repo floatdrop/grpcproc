@@ -832,7 +832,8 @@ them. Two primitives went into the core because they need process internals:
   reply and the actor carries on; from `HandleMessage` it is the exit
   reason. `ErrStop` ends normally (replying first, from a call);
   `ErrNoReply` defers the answer. `Terminate` also runs on a panic, which then
-  continues so grpcproc reports it.
+  continues so grpcproc reports it, and on a `runtime.Goexit`, told `goexit`
+  unless an exit was asked for first, whose reason the process takes.
 - `Workers.ReplyLater(p, m, fn)`, from `HandleCall`: a worker process
   linked to the actor answers the call, at most n at once
   (`NewWorkers(n)`), while the actor goes on with its mailbox, so a slow

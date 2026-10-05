@@ -396,7 +396,7 @@ func TestClassification(t *testing.T) {
 	reasons := map[string]string{
 		grpcproc.ReasonNormal: "normal", grpcproc.ReasonKilled: "killed", grpcproc.ReasonShutdown: "shutdown",
 		grpcproc.ReasonNoProc: "noproc", grpcproc.ReasonNoConnection: "noconnection", grpcproc.ReasonType: "type",
-		actor.ReasonMaxRestarts: "max restarts", "timeout": "timeout", "replaced": "replaced", "demoted": "demoted",
+		actor.ReasonMaxRestarts: "max restarts", "timeout": "timeout", "replaced": "replaced", "demoted": "demoted", "goexit": "goexit",
 		grpcproc.ReasonNameLost: grpcproc.ReasonNameLost, grpcproc.ReasonNameConflict: grpcproc.ReasonNameConflict,
 		"panic: x": "panic", "db timeout for user 42": "error",
 	}
