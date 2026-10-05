@@ -1,7 +1,8 @@
 # Releasing
 
 The repository holds the core module, `github.com/floatdrop/grpcproc`, and
-three nested modules that are released: `otel`, `etcd` and `tools`. Each
+four nested modules that are released: `otel`, `etcd`, `tools` and
+`saga/postgres`. Each
 has its own tags (`v0.6.0`, `otel/v0.6.0`, …). `cron` and `leader` are
 packages of the core, released with it. `examples` and `benchmarks` are
 modules too, but never released: they build against the working tree.

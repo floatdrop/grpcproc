@@ -25,6 +25,8 @@ jobs:
             cover: .
           - module: etcd
             cover: .
+          - module: saga/postgres
+            cover: .
           - module: tools
             cover: ./client ./dot ./cli ./mcpserver ./web
           - module: examples

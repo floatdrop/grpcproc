@@ -133,7 +133,8 @@ your `*grpc.Server` next to your other services, start and stop.
   store, with retries, durable timers and signals; `Sequence` for steps with
   what undoes each. [Guide](https://floatdrop.github.io/grpcproc/guides/sagas/)
 - **OpenTelemetry** in [`grpcproc/otel`](otel/README.md), **etcd** membership
-  in [`grpcproc/etcd`](etcd/README.md), and `grpcproctest`, which runs a
+  in [`grpcproc/etcd`](etcd/README.md), sagas kept in **PostgreSQL** in
+  [`grpcproc/saga/postgres`](saga/postgres/README.md), and `grpcproctest`, which runs a
   cluster inside one `go test`, partitions and crashes included.
   [Testing](https://floatdrop.github.io/grpcproc/guides/testing/)
 - **A tutorial**: an AI agent runtime, with a process per conversation, the
