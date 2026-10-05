@@ -264,7 +264,10 @@ func (c *conversation) call(p *grpcproc.Process[*conversationsv1.Request], tool 
 	ctx, cancel := context.WithTimeout(p.Context(), c.limits.Tool)
 	defer cancel()
 	ran, err := c.tools.Run(ctx, p, tool)
-	if err != nil {
+	switch re, ok := errors.AsType[*grpcproc.RemoteError](err); {
+	case ok && !errors.Is(err, actor.ErrWorkersBusy):
+		ran = &toolsv1.Ran{Failed: re.Msg} // the sandbox's answer: a tool that panicked
+	case err != nil:
 		ran = &toolsv1.Ran{Failed: "no answer from the sandbox: " + err.Error()}
 	}
 	_ = c.publish(p, &conversationsv1.Event{Kind: &conversationsv1.Event_Ran{Ran: ran}})

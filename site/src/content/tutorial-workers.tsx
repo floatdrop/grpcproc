@@ -136,23 +136,25 @@ export const tutorialWorkers: Doc = {
 				<>
 					<p>
 						What a tool does is decided by what a model wrote, so tools run on a node of their
-						own. The runner is the scheduler's pattern again: a process per call, the call handed
-						to it, the runner free at once. Here the isolation is the point. A tool that panics
-						ends its own process; the runner hears of it in a <C>Down</C> and answers the call with
-						the reason, and nothing else on the node notices. The calculator divides by zero when
-						asked to.
+						own. The runner is the scheduler's pattern again, a process per call, the call handed
+						to it, the runner free at once, from <C>actor.Workers</C>, which also bounds how many
+						run, sixteen across every tool. Each worker is labelled with its tool, so the Inspector
+						shows which tool is running or stuck. Here the isolation is the point. A tool that
+						panics ends its own process, which answers the call with the panic first, and nothing
+						else on the node notices. The calculator divides by zero when asked to.
 					</p>
 					<Code caption="internal/tools/tools.go">
-						{region(tools, /^\/\/ runner is the actor/, /^\/\/ HandleDown answers the call/).split('\n').slice(0, -1).join('\n').trimEnd() + '\n\n' + region(tools, /^\/\/ HandleDown answers the call/, /^}/)}
+						{region(tools, /^\/\/ runner is the actor/, /^\/\/ tree is/).split('\n').slice(0, -1).join('\n').trimEnd()}
 					</Code>
 					<p>
 						The conversation calls with a deadline, <C>Limits.Tool</C>, and the tool's context ends
 						with it. A tool that runs out of time is an answer too: the tool says its deadline
 						passed, or the conversation's call ends first, and either way the model is told the
 						tool failed and says so. A goroutine cannot be
-						killed, so a tool that ignores its context runs on after its caller has gone; a real
-						sandbox runs tools in something that can be, a subprocess or a container, started from
-						this process.
+						killed, so a tool that ignores its context runs on after its caller has gone, in one of
+						the runner's sixteen places; with all of them held, every call is answered busy. A real
+						sandbox runs tools in something that can be killed, a subprocess or a container, started
+						from this process.
 					</p>
 					<p>
 						The sandbox answers the gateway and may ask nothing of it, or of the GPU nodes.{' '}

@@ -1,8 +1,9 @@
 // Package tools is the service that runs the tools a model asks for, on a
 // node kept apart from the others: what a tool does is decided by what a
 // model wrote. Its runner starts a process for every call, so a tool that
-// crashes, or does not return, costs that call and nothing else. The package
-// exports its Module and the Tools it runs.
+// crashes costs that call and nothing else; one that does not return holds
+// one of the runner's places until the node stops. The package exports its
+// Module and the Tools it runs.
 package tools
 
 import (
@@ -49,7 +50,7 @@ func calc(_ context.Context, args string) (string, error) {
 	case "*":
 		a *= b
 	case "/":
-		a /= b // by zero, it panics: the process of this call ends, with that as its reason
+		a /= b // by zero, it panics: the worker of this call answers with that, and ends
 	default:
 		return "", fmt.Errorf("calc does not know %q", f[1])
 	}
@@ -69,13 +70,14 @@ func sleep(ctx context.Context, args string) (string, error) {
 	}
 }
 
-// runner is the actor. Like the models' scheduler, it hands each call to a
-// process started for it, and answers for one that ended without answering:
-// a tool that failed is part of the answer, since the model is told of it.
+// runner is the actor. It hands each call to a worker, a process started
+// for it, and is free again at once; the worker's answer is the call's. A
+// tool that failed is part of the answer, since the model is told of it,
+// and so is one that panicked: the worker answers with the panic.
 type runner struct {
 	actor.CallsOnly[*toolsv1.Run]
 	tools   Tools
-	running map[grpcproc.Ref]grpcproc.Msg[*toolsv1.Run]
+	workers *actor.Workers
 }
 
 func (r *runner) HandleCall(p *grpcproc.Process[*toolsv1.Run], m grpcproc.Msg[*toolsv1.Run]) (proto.Message, error) {
@@ -83,40 +85,28 @@ func (r *runner) HandleCall(p *grpcproc.Process[*toolsv1.Run], m grpcproc.Msg[*t
 	if !ok {
 		return &toolsv1.Ran{Failed: "no tool named " + m.Body.Name}, nil
 	}
-	_, ref, err := p.SpawnMonitor(func(c *grpcproc.Process[proto.Message]) error {
+	return nil, r.workers.Label("tool:"+m.Body.Name).ReplyLater(p, m, func(ctx context.Context, _ *grpcproc.Process[proto.Message]) (*toolsv1.Ran, error) {
 		// The caller's deadline is the tool's. A goroutine cannot be
-		// killed: a tool that does not watch ctx runs on after it.
-		ctx, cancel := m.Context(c.Context())
-		defer cancel()
+		// killed: a tool that does not watch ctx runs on after it, in its
+		// worker's place.
 		out, err := tool(ctx, m.Body.Args)
 		if err != nil {
-			return m.Reply(&toolsv1.Ran{Failed: err.Error()}, nil)
+			return &toolsv1.Ran{Failed: err.Error()}, nil
 		}
-		return m.Reply(&toolsv1.Ran{Output: out}, nil)
-	}, grpcproc.WithLabel("tool:"+m.Body.Name), grpcproc.LinkParent())
-	if err != nil {
-		return nil, err
-	}
-	r.running[ref] = m
-	return nil, actor.ErrNoReply // the call's process answers
+		return &toolsv1.Ran{Output: out}, nil
+	})
 }
 
-// HandleDown answers the call of a process that ended without answering: a
-// tool that panicked. Its reason is the answer.
-func (r *runner) HandleDown(_ *grpcproc.Process[*toolsv1.Run], d grpcproc.Down) error {
-	m := r.running[d.Ref]
-	delete(r.running, d.Ref)
-	if d.Reason != grpcproc.ReasonNormal {
-		_ = m.Reply(&toolsv1.Ran{Failed: d.Reason}, nil)
-	}
-	return nil
-}
+// running is how many tools the runner runs at once; a call beyond them is
+// answered actor.ErrWorkersBusy.
+const running = 16
 
+// tree is the service's supervision tree.
 func tree(tools Tools) actor.ChildSpec {
 	return actor.ChildSupervisor(toolsv1.Service+"-sup", actor.Spec{
 		Children: []actor.ChildSpec{
 			actor.Child(toolsv1.RunnerName, func() *runner {
-				return &runner{tools: tools, running: map[grpcproc.Ref]grpcproc.Msg[*toolsv1.Run]{}}
+				return &runner{tools: tools, workers: actor.NewWorkers(running)}
 			}),
 		},
 	})
@@ -127,5 +117,3 @@ func Module(s *di.Scope) {
 	s.Wire[Tools](builtin)
 	s.Wire[actor.ChildSpec](tree).Group()
 }
-
-var _ actor.DownHandler[*toolsv1.Run] = (*runner)(nil)
