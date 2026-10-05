@@ -1,5 +1,5 @@
 // The site's drawings, as inline SVG: the primitives, and the tutorial's
-// figures. Other pages draw with the same primitives in their own files. Every colour is a Gravity UI token, set
+// still figures; the ones that move are in diagrams-overview.tsx. Other pages draw with the same primitives in their own files. Every colour is a Gravity UI token, set
 // in main.css, so a drawing follows the theme the way the text does; the
 // shapes are the only thing here. Coordinates are in the viewBox, which is
 // drawn at the width of the column.

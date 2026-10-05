@@ -1,5 +1,6 @@
-// The overview's three drawings, which move: a call within a node and across
-// a link, a crash and its restart, and a node that is lost. Drawn with the
+// The drawings that move: the overview's three, a call within a node and
+// across a link, a crash and its restart, and a node that is lost; and the
+// tutorial's, one turn of the agent runtime across its nodes. Drawn with the
 // primitives of diagrams.tsx. The motion is CSS keyframes written here, next
 // to the shapes they move, and emitted in a <style> of the drawing: the page
 // runs no script for it. With prefers-reduced-motion nothing moves, and what
@@ -16,6 +17,10 @@ type Pt = readonly [number, number];
 
 const pct = (t: number, cycle: number) => `${((t / cycle) * 100).toFixed(2)}%`;
 const at = ([x, y]: Pt) => `translate(${x}px, ${y}px)`;
+/** The way back along a path. */
+const back = (pts: readonly Pt[]) => [...pts].reverse();
+/** A path's d attribute. */
+const d = (pts: readonly Pt[]) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x},${y}`).join(' ');
 
 /** Keyframes that show an element from `from` to `to` seconds of a cycle, moving it along pts at a steady speed. */
 function travel(name: string, pts: readonly Pt[], from: number, to: number, cycle: number): string {
@@ -46,6 +51,16 @@ function during(name: string, from: number, to: number, cycle: number, inside: n
 		`${pct(from + 0.25, cycle)}, ${pct(to, cycle)} { opacity: ${inside}; } ` +
 		`${pct(to + 0.25, cycle)}, 100% { opacity: ${outside}; } }`
 	);
+}
+
+/** Keyframes that show an element, fading in and out, in each of the windows of a cycle, and hide it the rest of it. */
+function shown(name: string, windows: readonly (readonly [number, number])[], cycle: number): string {
+	const frames = ['0% { opacity: 0; }'];
+	for (const [from, to] of windows) {
+		frames.push(`${pct(from, cycle)} { opacity: 0; }`, `${pct(from + 0.25, cycle)}, ${pct(to, cycle)} { opacity: 1; }`, `${pct(to + 0.25, cycle)} { opacity: 0; }`);
+	}
+	frames.push('100% { opacity: 0; }');
+	return `@keyframes ${name} { ${frames.join(' ')} }`;
 }
 
 /** An element of a drawing that a keyframes rule animates, once per cycle, for ever. */
@@ -120,8 +135,6 @@ export function CallAnywhere({ compact = false }: LayoutProps) {
 				grpc: { x: 424, y: 62 },
 				remoteLabel: { dx: 0, dy: 26, anchor: 'start' as const }
 			};
-	const back = (pts: Pt[]) => [...pts].reverse();
-	const d = (pts: Pt[]) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x},${y}`).join(' ');
 	const css = [
 		travel(`${id}-q1`, l.local, 0.5, 1.9, cycle),
 		during(`${id}-r1`, 1.9, 2.3, cycle, 1, 0),
@@ -264,6 +277,132 @@ export function NodeLost({ compact = false }: LayoutProps) {
 			</Moving>
 			<Ring name={`${id}-ring`} cycle={cycle} {...l.desk} w={120} h={36} />
 			<Msg name={`${id}-down`} cycle={cycle} kind="down" label="Down{noconnection}" {...l.downLabel} />
+		</Diagram>
+	);
+}
+
+/** One turn of the tutorial's agent runtime: what the user says goes to a conversation on the gateway, a GPU node generates, the sandbox runs a tool, and the tokens stream back to the browser. */
+export function AgentRuntime({ compact = false }: LayoutProps) {
+	const id = compact ? 'tut-runtime-c' : 'tut-runtime';
+	const cycle = 15;
+	const l = compact
+		? {
+				width: 360,
+				height: 478,
+				browser: { x: 24, y: 8, w: 100 },
+				gateway: { x: 8, y: 60, w: 344, h: 150 },
+				web: { x: 24, y: 96, w: 100 },
+				topic: { x: 24, y: 160, w: 100 },
+				conversation: { x: 212, y: 96, w: 124 },
+				gpu1: { x: 8, y: 226, w: 344, h: 80 },
+				models1: { x: 24, y: 258, w: 100 },
+				generation: { x: 212, y: 258, w: 124 },
+				gpu2: { x: 8, y: 316, w: 344, h: 64 },
+				models2: { x: 24, y: 342, w: 100, h: 30 },
+				sandbox: { x: 8, y: 390, w: 344, h: 80 },
+				tools: { x: 24, y: 422, w: 100 },
+				call: { x: 212, y: 422, w: 124 },
+				say: [[100, 44], [100, 104], [210, 104]] as Pt[],
+				generate: [[212, 116], [180, 116], [180, 272], [126, 272]] as Pt[],
+				// The answers come back from the processes the calls were handed to.
+				generated: [[212, 272], [180, 272], [180, 116], [212, 116]] as Pt[],
+				published: [[256, 258], [256, 218], [74, 218], [74, 198]] as Pt[],
+				followed: [[74, 160], [74, 46]] as Pt[],
+				run: [[212, 128], [196, 128], [196, 436], [126, 436]] as Pt[],
+				ran: [[212, 436], [196, 436], [196, 128], [212, 128]] as Pt[],
+				sayLabel: { dx: 10, dy: -8 },
+				tokenLabel: { dx: 10, dy: -8 },
+				generateLabel: { dx: -10, dy: 4, anchor: 'end' as const },
+				runLabel: { dx: 10, dy: 4 }
+			}
+		: {
+				width: 720,
+				height: 300,
+				browser: { x: 8, y: 40, w: 84 },
+				gateway: { x: 108, y: 8, w: 290, h: 284 },
+				web: { x: 124, y: 40, w: 110 },
+				topic: { x: 124, y: 224, w: 110 },
+				conversation: { x: 264, y: 132, w: 118 },
+				gpu1: { x: 448, y: 8, w: 264, h: 96 },
+				models1: { x: 464, y: 44, w: 104 },
+				generation: { x: 592, y: 44, w: 104 },
+				gpu2: { x: 448, y: 114, w: 264, h: 72 },
+				models2: { x: 464, y: 144, w: 104, h: 30 },
+				sandbox: { x: 448, y: 196, w: 264, h: 96 },
+				tools: { x: 464, y: 232, w: 104 },
+				call: { x: 592, y: 232, w: 104 },
+				say: [[92, 52], [250, 52], [250, 144], [262, 144]] as Pt[],
+				generate: [[382, 142], [414, 142], [414, 62], [462, 62]] as Pt[],
+				generated: [[592, 62], [414, 62], [414, 142], [382, 142]] as Pt[],
+				published: [[644, 80], [644, 109], [426, 109], [426, 236], [236, 236]] as Pt[],
+				followed: [[179, 224], [179, 66], [94, 66]] as Pt[],
+				run: [[382, 158], [438, 158], [438, 256], [462, 256]] as Pt[],
+				ran: [[592, 256], [438, 256], [438, 158], [382, 158]] as Pt[],
+				sayLabel: { dx: 0, dy: -10 },
+				tokenLabel: { dx: 10, dy: -8 },
+				generateLabel: { dx: 0, dy: -10 },
+				runLabel: { dx: 10, dy: 16 }
+			};
+	// A token goes from the generation into the topic, and out of it on to the browser.
+	const into = l.published[l.published.length - 1]!;
+	const tokens = [...l.published, [l.followed[0]![0], into[1]] as Pt, ...l.followed];
+	// The two generations of the turn: the one that asks for the tool, and the one that answers.
+	const generations = [[3.1, 6.4], [11.3, 14.2]] as const;
+	const css = [
+		travel(`${id}-say`, l.say, 0.3, 1.6, cycle),
+		travel(`${id}-gen1`, l.generate, 1.9, 2.9, cycle),
+		during(`${id}-ring1`, 2.9, 3.3, cycle, 1, 0),
+		shown(`${id}-g`, generations, cycle),
+		travel(`${id}-tok1`, tokens, 3.4, 5.0, cycle),
+		travel(`${id}-got1`, l.generated, 5.2, 6.2, cycle),
+		travel(`${id}-run`, l.run, 6.5, 7.5, cycle),
+		during(`${id}-ring2`, 7.5, 7.9, cycle, 1, 0),
+		during(`${id}-c`, 7.7, 9.0, cycle, 1, 0),
+		travel(`${id}-ran`, l.ran, 9.0, 10.0, cycle),
+		travel(`${id}-gen2`, l.generate, 10.2, 11.2, cycle),
+		during(`${id}-ring3`, 11.2, 11.6, cycle, 1, 0),
+		travel(`${id}-tok2`, tokens, 11.5, 13.1, cycle),
+		travel(`${id}-got2`, l.generated, 13.2, 14.2, cycle)
+	].join('\n');
+	return (
+		<Diagram id={id} moving compact={compact} width={l.width} height={l.height} label="One turn of the agent runtime: the browser's message reaches a conversation on the gateway, which calls a scheduler on a GPU node and the tool runner on the sandbox; the tokens a generation publishes reach the browser through the conversation's topic">
+			<style dangerouslySetInnerHTML={{ __html: css }} />
+			<Line id={id} d={d(l.say)} />
+			<Line id={id} start d={d(l.generate)} />
+			<Line id={id} kind="dashed" d={d(l.followed)} />
+			<Line id={id} start d={d(l.run)} />
+			{/* After the lines: a frame's title keeps a halo, and a line that crosses it passes behind. */}
+			<Frame {...l.gateway} title="node gateway" />
+			<Frame {...l.gpu1} title="node gpu-1" />
+			<Frame {...l.gpu2} title="node gpu-2" />
+			<Frame {...l.sandbox} title="node sandbox" />
+			<Box {...l.browser} title="browser" kind="outside" />
+			<Box {...l.web} title="web front" sub="POST · SSE" kind="plain" />
+			<Box {...l.topic} title="topic" sub="pub/sub" kind="actor" />
+			<Box {...l.conversation} title="conversation/1" kind="actor" />
+			<Box {...l.models1} title="models" sub="scheduler" kind="actor" />
+			<Box {...l.models2} title="models" kind="actor" />
+			<Box {...l.tools} title="tools" sub="runner" kind="actor" />
+			{/* The generation, and its way to the topic, last as long as its process. Held still, it is drawn: the tokens have no other source. */}
+			<Moving name={`${id}-g`} cycle={cycle}>
+				<Line id={id} kind="dashed" d={d(l.published)} />
+				<Box {...l.generation} title="generation" sub="a process" kind="actor" />
+			</Moving>
+			<Moving name={`${id}-c`} cycle={cycle} className="gp-a-off">
+				<Box {...l.call} title="calc 6 * 7" sub="a process" kind="actor" />
+			</Moving>
+			<Ring name={`${id}-ring1`} cycle={cycle} {...l.models1} h={36} />
+			<Ring name={`${id}-ring2`} cycle={cycle} {...l.tools} h={36} />
+			<Ring name={`${id}-ring3`} cycle={cycle} {...l.models1} h={36} />
+			<Msg name={`${id}-say`} cycle={cycle} kind="request" label="what is 6 * 7?" {...l.sayLabel} />
+			<Msg name={`${id}-gen1`} cycle={cycle} kind="request" label="Generate" {...l.generateLabel} />
+			<Msg name={`${id}-tok1`} cycle={cycle} kind="reply" label="tokens" {...l.tokenLabel} />
+			<Msg name={`${id}-got1`} cycle={cycle} kind="reply" label="run calc" {...l.generateLabel} />
+			<Msg name={`${id}-run`} cycle={cycle} kind="request" label="Run calc" {...l.runLabel} />
+			<Msg name={`${id}-ran`} cycle={cycle} kind="reply" label="42" {...l.runLabel} />
+			<Msg name={`${id}-gen2`} cycle={cycle} kind="request" label="Generate" {...l.generateLabel} />
+			<Msg name={`${id}-tok2`} cycle={cycle} kind="reply" label="tokens" {...l.tokenLabel} />
+			<Msg name={`${id}-got2`} cycle={cycle} kind="reply" label="done" {...l.generateLabel} />
 		</Diagram>
 	);
 }

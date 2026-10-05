@@ -4,8 +4,9 @@ import modelsProto from '../../../examples/guide/proto/models/v1/models.proto?ra
 import chat from '../../../examples/guide/testdata/chat.txt?raw';
 
 import { Code, region } from '../code.tsx';
-import { Drawing } from '../components/Figure.tsx';
+import { Adaptive, Drawing } from '../components/Figure.tsx';
 import { Layout } from '../components/diagrams.tsx';
+import { AgentRuntime } from '../components/diagrams-overview.tsx';
 import { A, C, Ext } from '../components/prose.tsx';
 import { REPO } from '../config.ts';
 import type { Doc } from './types.ts';
@@ -44,6 +45,7 @@ export const tutorial: Doc = {
 						model answers a token at a time, and the browser shows each as it comes; when the model
 						asks for a tool, the tool is run and the model goes on with what it returned.
 					</p>
+					<Adaptive caption="one turn, across the four nodes" wide={<AgentRuntime />} narrow={<AgentRuntime compact />} />
 					<ul>
 						<li>
 							Every conversation is a process, started when it is first spoken to and ended when
@@ -107,7 +109,7 @@ export const tutorial: Doc = {
 						four differ in two things only: which services each entry point composes, and what each
 						program is told.
 					</p>
-					<Drawing caption="the four layers, and what imports the contracts">
+					<Drawing caption="the code, not the nodes: four kinds of package, and what imports the contracts">
 						<Layout />
 					</Drawing>
 				</>
