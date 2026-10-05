@@ -275,9 +275,9 @@ attempt. `Store.List` returns the records of a saga, by id.
 From outside the program, an engine answers through the node's
 [Inspector](https://floatdrop.github.io/grpcproc/guides/inspector/):
 
-- **What it runs.** It publishes, through `WithInspect`, the sagas it runs
-  with their versions (`sagas: order v2, refund v0`) and how many runs it
-  works on (`working`).
+- **What it runs.** It publishes, through `WithInspect`, each saga it runs
+  with its version (`saga order: v2`) and how many runs it works on
+  (`working`).
 - **Queries.** It is spawned with `grpcproc.WithQuery`, so an Inspector
   `Query` of a [`grpcproc.saga.v1.Query`](proto/grpcproc/saga/v1/saga.proto)
   lists the runs in the store, by saga and status, a page at a time, or
