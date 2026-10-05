@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/floatdrop/grpcproc"
@@ -425,6 +426,97 @@ func TestCall(t *testing.T) {
 	})
 }
 
+// asked answers queries: a Ping, with a Pong of its number; with an error
+// for 2, and an answer that cannot be encoded for 4.
+func asked(_ context.Context, q proto.Message) (proto.Message, error) {
+	switch n := q.(*testpb.Ping).GetN(); n {
+	case 2:
+		return nil, errors.New("refused")
+	case 3:
+		return nil, fmt.Errorf("asked on: %w", grpcproc.ErrNoProc)
+	case 4:
+		return &testpb.Reserved{Id: "\xff"}, nil
+	case 5:
+		return nil, nil
+	default:
+		return &testpb.Pong{N: n}, nil
+	}
+}
+
+// Query reaches a process spawned with WithQuery, here and on another node,
+// though the Inspector is read-only; a process spawned without answers none.
+func TestQuery(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := cluster(t, []inspect.Option{inspect.ReadOnly()}, "a", "b")
+		a := client(c, "a")
+		for _, n := range []string{"a", "b"} {
+			if _, err := c.Node(n).Spawn(answering, grpcproc.WithName("asked"), grpcproc.WithQuery(asked)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := c.Node(n).Spawn(answering, grpcproc.WithName("answers")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		query := func(node string, target *inspectv1.Target, body proto.Message) (*inspectv1.QueryResponse, error) {
+			t.Helper()
+			var b *anypb.Any
+			if body != nil {
+				b, _ = anypb.New(body)
+			}
+			return a.Query(t.Context(), &inspectv1.QueryRequest{Node: node, Target: target, Body: b})
+		}
+		for _, node := range []string{"a", "b"} {
+			resp, err := query(node, byName("asked"), &testpb.Ping{N: 7})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pong := &testpb.Pong{}
+			if err := resp.GetBody().UnmarshalTo(pong); err != nil || pong.GetN() != 7 {
+				t.Fatalf("%s: %v, %v", node, pong, err)
+			}
+		}
+		_, err := query("a", byName("asked"), &testpb.Ping{N: 2})
+		code(t, err, codes.Unknown)
+		_, err = query("a", byName("asked"), &testpb.Ping{N: 4})
+		code(t, err, codes.Internal)
+		// An error of its own that wraps grpcproc's is still its answer.
+		_, err = query("a", byName("asked"), &testpb.Ping{N: 3})
+		code(t, err, codes.Unknown)
+		// An answer of nothing is Empty.
+		if resp, err := query("a", byName("asked"), &testpb.Ping{N: 5}); err != nil || !resp.GetBody().MessageIs(&emptypb.Empty{}) {
+			t.Errorf("an answer of nothing: %v %v", resp, err)
+		}
+		_, err = query("a", byName("answers"), &testpb.Ping{N: 1})
+		code(t, err, codes.Unimplemented)
+		_, err = query("a", byName("nobody"), &testpb.Ping{N: 1})
+		code(t, err, codes.NotFound)
+		_, err = query("a", byName("asked"), nil)
+		code(t, err, codes.InvalidArgument)
+		_, err = a.Query(t.Context(), &inspectv1.QueryRequest{Target: byName("asked"), Body: &anypb.Any{TypeUrl: "type.googleapis.com/no.Such"}})
+		code(t, err, codes.InvalidArgument)
+		_, err = query("a", nil, &testpb.Ping{N: 1})
+		code(t, err, codes.InvalidArgument)
+		_, err = query("nowhere", byName("asked"), &testpb.Ping{N: 1})
+		code(t, err, codes.Unavailable)
+		// A process named here that is gone by the time it is asked.
+		gone, _ := c.Node("a").Spawn(answering, grpcproc.WithQuery(asked))
+		_ = c.Node("a").Exit(t.Context(), gone.PID(), grpcproc.ReasonKilled)
+		synctest.Wait()
+		_, err = query("a", byPID(gone.PID()), &testpb.Ping{N: 1})
+		code(t, err, codes.NotFound)
+		// An asker that gave up.
+		slow, _ := c.Node("a").Spawn(answering, grpcproc.WithQuery(func(ctx context.Context, _ proto.Message) (proto.Message, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}))
+		short, stop := context.WithTimeout(t.Context(), time.Second)
+		defer stop()
+		b, _ := anypb.New(&testpb.Ping{})
+		_, err = a.Query(short, &inspectv1.QueryRequest{Target: byPID(slow.PID()), Body: b})
+		code(t, err, codes.DeadlineExceeded)
+	})
+}
+
 // A body too large for a link to another node can never be sent: no retry
 // helps, so it is no Unavailable.
 func TestCallTooLarge(t *testing.T) {
@@ -491,6 +583,7 @@ func TestRoutingErrors(t *testing.T) {
 			func() error { _, err := a.SetLogLevel(ctx, &inspectv1.SetLogLevelRequest{Node: "b"}); return err }(),
 			func() error { _, err := a.Send(ctx, &inspectv1.SendRequest{Node: "b"}); return err }(),
 			func() error { _, err := a.Call(ctx, &inspectv1.CallRequest{Node: "b"}); return err }(),
+			func() error { _, err := a.Query(ctx, &inspectv1.QueryRequest{Node: "b"}); return err }(),
 			func() error { _, err := a.Exit(ctx, &inspectv1.ExitRequest{Node: "b"}); return err }(),
 			func() error {
 				s, err := a.Watch(ctx, &inspectv1.WatchRequest{Node: "b"})

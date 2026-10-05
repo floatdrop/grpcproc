@@ -186,7 +186,8 @@ type Store interface {
 	Resume(ctx context.Context, saga, id string) error
 	// Get returns a run, and whether there is one.
 	Get(ctx context.Context, saga, id string) (Record, bool, error)
-	// List returns the runs of a saga, by ID.
+	// List returns the runs of a saga, by ID, as Go orders strings: byte by
+	// byte, whatever a database's collation.
 	List(ctx context.Context, saga string) ([]Record, error)
 }
 

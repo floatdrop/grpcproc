@@ -245,6 +245,14 @@ if t.Stop() {
 								</>
 							],
 							[
+								<C>WithQuery(fn)</C>,
+								<>
+									What the process answers when asked a question, through <C>Node.Query</C> and the
+									Inspector, without its mailbox: <C>fn</C> runs on the asker's goroutine, with the
+									asker's ctx, and must change nothing, since a read-only Inspector serves it.
+								</>
+							],
+							[
 								<C>WithMailboxLimit(n)</C>,
 								<>
 									Bounds the mailbox: while it holds <C>n</C> items, a message to the process is a dead

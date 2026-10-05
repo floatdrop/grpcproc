@@ -272,6 +272,31 @@ effect in this visit, the last error and the `Cause`. A run is `Active`
 while it goes on, at work or waiting for a signal, a timer or its next
 attempt. `Store.List` returns the records of a saga, by id.
 
+From outside the program, an engine answers through the node's
+[Inspector](https://floatdrop.github.io/grpcproc/guides/inspector/):
+
+- **What it runs.** It publishes, through `WithInspect`, the sagas it runs
+  with their versions (`sagas: order v2, refund v0`) and how many runs it
+  works on (`working`).
+- **Queries.** It is spawned with `grpcproc.WithQuery`, so an Inspector
+  `Query` of a [`grpcproc.saga.v1.Query`](proto/grpcproc/saga/v1/saga.proto)
+  lists the runs in the store, by saga and status, a page at a time, or
+  gets one, with its data and its signals' payloads as JSON when the engine
+  runs its saga. A query only reads, so a read-only Inspector allows it.
+  With no saga named, a list covers the sagas the engine runs; name another
+  to list its runs.
+- **Controls.** An Inspector `Call` with a `grpcproc.saga.v1.Control`
+  resumes a stuck run, as `Definition.Resume` does. A read-only Inspector
+  refuses it.
+
+A query is answered on the asker's goroutine, with the asker's ctx, and a
+control in a process of its own, labelled `saga control`, so the store is
+never asked from the loop that claims runs. An engine answers four of each
+at once, and refuses the next with `ErrBusy`. A list reads each saga's runs
+whole. An answer carries a run's data up to a megabyte of JSON and a
+payload up to sixteen kilobytes, and says how long one it leaves out is; a
+page carries a kilobyte of each run's error and how many signals wait.
+
 ## Stores
 
 `Store` is one interface: `Create` if absent, `Claim`, `Save` (fenced by

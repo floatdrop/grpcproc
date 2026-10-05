@@ -30,6 +30,7 @@ const (
 	Inspector_SetLogLevel_FullMethodName   = "/grpcproc.inspect.v1.Inspector/SetLogLevel"
 	Inspector_Send_FullMethodName          = "/grpcproc.inspect.v1.Inspector/Send"
 	Inspector_Call_FullMethodName          = "/grpcproc.inspect.v1.Inspector/Call"
+	Inspector_Query_FullMethodName         = "/grpcproc.inspect.v1.Inspector/Query"
 	Inspector_Exit_FullMethodName          = "/grpcproc.inspect.v1.Inspector/Exit"
 	Inspector_Watch_FullMethodName         = "/grpcproc.inspect.v1.Inspector/Watch"
 	Inspector_LookupName_FullMethodName    = "/grpcproc.inspect.v1.Inspector/LookupName"
@@ -58,6 +59,12 @@ type InspectorClient interface {
 	// the node: the request's deadline is the call's. An answer that is an
 	// error is Unknown, with the error's text.
 	Call(ctx context.Context, in *CallRequest, opts ...grpc.CallOption) (*CallResponse, error)
+	// Query asks a process a question through the function it was spawned
+	// with (grpcproc.WithQuery), as Node.Query does, and returns the answer;
+	// an answer that is an error is Unknown, with its text. It changes
+	// nothing, so a read-only Inspector allows it. A process spawned with no
+	// such function is Unimplemented.
+	Query(ctx context.Context, in *QueryRequest, opts ...grpc.CallOption) (*QueryResponse, error)
 	Exit(ctx context.Context, in *ExitRequest, opts ...grpc.CallOption) (*ExitResponse, error)
 	// Watch streams events until the client cancels.
 	Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResponse], error)
@@ -137,6 +144,16 @@ func (c *inspectorClient) Call(ctx context.Context, in *CallRequest, opts ...grp
 	return out, nil
 }
 
+func (c *inspectorClient) Query(ctx context.Context, in *QueryRequest, opts ...grpc.CallOption) (*QueryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(QueryResponse)
+	err := c.cc.Invoke(ctx, Inspector_Query_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *inspectorClient) Exit(ctx context.Context, in *ExitRequest, opts ...grpc.CallOption) (*ExitResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ExitResponse)
@@ -208,6 +225,12 @@ type InspectorServer interface {
 	// the node: the request's deadline is the call's. An answer that is an
 	// error is Unknown, with the error's text.
 	Call(context.Context, *CallRequest) (*CallResponse, error)
+	// Query asks a process a question through the function it was spawned
+	// with (grpcproc.WithQuery), as Node.Query does, and returns the answer;
+	// an answer that is an error is Unknown, with its text. It changes
+	// nothing, so a read-only Inspector allows it. A process spawned with no
+	// such function is Unimplemented.
+	Query(context.Context, *QueryRequest) (*QueryResponse, error)
 	Exit(context.Context, *ExitRequest) (*ExitResponse, error)
 	// Watch streams events until the client cancels.
 	Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error
@@ -244,6 +267,9 @@ func (UnimplementedInspectorServer) Send(context.Context, *SendRequest) (*SendRe
 }
 func (UnimplementedInspectorServer) Call(context.Context, *CallRequest) (*CallResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Call not implemented")
+}
+func (UnimplementedInspectorServer) Query(context.Context, *QueryRequest) (*QueryResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Query not implemented")
 }
 func (UnimplementedInspectorServer) Exit(context.Context, *ExitRequest) (*ExitResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Exit not implemented")
@@ -386,6 +412,24 @@ func _Inspector_Call_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Inspector_Query_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InspectorServer).Query(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Inspector_Query_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InspectorServer).Query(ctx, req.(*QueryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Inspector_Exit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ExitRequest)
 	if err := dec(in); err != nil {
@@ -481,6 +525,10 @@ var Inspector_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Call",
 			Handler:    _Inspector_Call_Handler,
+		},
+		{
+			MethodName: "Query",
+			Handler:    _Inspector_Query_Handler,
 		},
 		{
 			MethodName: "Exit",

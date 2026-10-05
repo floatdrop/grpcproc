@@ -46,6 +46,10 @@ type Saga interface {
 	sagaVersion() uint64
 	validate() error
 	work(ctx context.Context, e *Engine, p *grpcproc.Process[proto.Message], r Record)
+	// dataJSON and payloadJSON render a run's data, and the payload of a
+	// signal for event, as JSON; "" for what does not decode.
+	dataJSON(data []byte) string
+	payloadJSON(event string, payload []byte) string
 }
 
 // Engine runs sagas on a node: it claims runs that are due from the store
@@ -59,6 +63,13 @@ type Engine struct {
 	versions map[string]uint64
 	// pid is the engine's process, set by its loop before it claims a run.
 	pid atomic.Pointer[grpcproc.PID]
+	// active is the runs at work, and asking the controls being answered,
+	// by the monitors of their processes. The loop alone, and its
+	// inspect, which runs on the loop's goroutine, touch them.
+	active int
+	asking map[grpcproc.Ref]bool
+	// querying holds a place for each query being answered.
+	querying chan struct{}
 }
 
 // Start runs sagas on n, from cfg.Store, until n stops. The engine is a
@@ -75,7 +86,8 @@ func Start(n *grpcproc.Node, cfg Config, sagas ...Saga) (*Engine, error) {
 	if cfg.Poll < 0 || cfg.Lease < time.Millisecond || cfg.Concurrency < 0 {
 		return nil, errors.New("saga: Config.Poll and Concurrency must not be negative, and Lease is at least a millisecond")
 	}
-	e := &Engine{n: n, cfg: cfg, sagas: map[string]Saga{}, versions: map[string]uint64{}}
+	e := &Engine{n: n, cfg: cfg, sagas: map[string]Saga{}, versions: map[string]uint64{},
+		asking: map[grpcproc.Ref]bool{}, querying: make(chan struct{}, maxAsking)}
 	var errs []error
 	for _, s := range sagas {
 		if _, dup := e.sagas[s.sagaName()]; dup {
@@ -87,7 +99,8 @@ func Start(n *grpcproc.Node, cfg Config, sagas ...Saga) (*Engine, error) {
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	addr, err := n.Spawn(e.loop, grpcproc.WithName(cfg.Name), grpcproc.WithLabel("saga engine"))
+	addr, err := n.Spawn(e.loop, grpcproc.WithName(cfg.Name), grpcproc.WithLabel("saga engine"),
+		grpcproc.WithInspect(e.inspect), grpcproc.WithQuery(e.query))
 	if err != nil {
 		return nil, err
 	}
@@ -98,6 +111,15 @@ func Start(n *grpcproc.Node, cfg Config, sagas ...Saga) (*Engine, error) {
 
 // PID is the engine's process.
 func (e *Engine) PID() grpcproc.PID { return *e.pid.Load() }
+
+// resume makes a stuck run active, and has the engine claim it at once.
+func (e *Engine) resume(ctx context.Context, saga, id string) error {
+	if err := e.cfg.Store.Resume(ctx, saga, id); err != nil {
+		return err
+	}
+	e.nudge()
+	return nil
+}
 
 // nudge has the engine ask the store now rather than at its next tick.
 func (e *Engine) nudge() {
@@ -112,18 +134,19 @@ func (e *Engine) wakeAt(t time.Time) {
 
 // loop is the engine's process: it claims what is due, on a tick, when
 // nudged, and when a run it let go says it will be within the tick, and
-// counts the runs at work by the Downs of their processes.
+// counts the runs at work by the Downs of their processes. It hands a call,
+// a control from the Inspector, to a process of its own, so the store is
+// never asked from here; a query does not come here at all (see query).
 func (e *Engine) loop(p *grpcproc.Process[proto.Message]) error {
 	pid := p.PID()
 	e.pid.Store(&pid)
-	active := 0
 	var wakes []time.Time // when the runs let go are due, soonest first
 	for {
 		// Read before the claim: a wake the store's clock has not reached
 		// by then is kept.
 		now := time.Now()
 		wakes = slices.DeleteFunc(wakes, func(t time.Time) bool { return !t.After(now) })
-		active += e.claim(p, e.cfg.Concurrency-active)
+		e.active += e.claim(p, e.cfg.Concurrency-e.active)
 		wait := e.cfg.Poll
 		if len(wakes) > 0 {
 			wait = min(wait, time.Until(wakes[0]))
@@ -137,9 +160,14 @@ func (e *Engine) loop(p *grpcproc.Process[proto.Message]) error {
 			if err != nil {
 				return err
 			}
-			if m.Down != nil {
-				active--
-			} else if at, ok := m.Body.(*timestamppb.Timestamp); ok && time.Until(at.AsTime()) < e.cfg.Poll {
+			switch at, ok := m.Body.(*timestamppb.Timestamp); {
+			case m.Down != nil && e.asking[m.Down.Ref]:
+				delete(e.asking, m.Down.Ref)
+			case m.Down != nil:
+				e.active--
+			case m.IsCall():
+				e.ask(p, m)
+			case ok && time.Until(at.AsTime()) < e.cfg.Poll:
 				// Later than that, the tick is in time.
 				i, _ := slices.BinarySearchFunc(wakes, at.AsTime(), time.Time.Compare)
 				wakes = slices.Insert(wakes, i, at.AsTime())

@@ -243,3 +243,61 @@ func TestOrderingOfSnapshots(t *testing.T) {
 		}
 	})
 }
+
+// A process spawned with WithQuery is asked on the asker's goroutine, with
+// its ctx, whatever the process is doing; one spawned without answers none.
+func TestQuery(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a := grpcproctest.New(t, "a").Node("a")
+		busy := make(chan struct{})
+		defer close(busy)
+		ask, err := a.Spawn[*testpb.Ping](func(p *grpcproc.Process[*testpb.Ping]) error {
+			<-busy // never in Receive: a query does not need it to be
+			return nil
+		}, grpcproc.WithQuery(func(ctx context.Context, q proto.Message) (proto.Message, error) {
+			switch q.(*testpb.Ping).GetN() {
+			case 1:
+				return nil, errors.New("refused")
+			case 2:
+				panic("boom")
+			}
+			if _, ok := ctx.Deadline(); !ok {
+				return nil, errors.New("not the asker's ctx")
+			}
+			return &testpb.Pong{N: 7}, nil
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+		defer cancel()
+		if pong, err := a.Query(ctx, ask.PID(), &testpb.Ping{}); err != nil || pong.(*testpb.Pong).GetN() != 7 {
+			t.Fatalf("%v %v", pong, err)
+		}
+		if _, err := a.Query(ctx, ask.PID(), &testpb.Ping{N: 1}); err == nil || err.Error() != "refused" {
+			t.Errorf("an answer that is an error: %v", err)
+		}
+		if _, err := a.Query(ctx, ask.PID(), &testpb.Ping{N: 2}); err == nil || !strings.Contains(err.Error(), "panicked: boom") {
+			t.Errorf("a query that panics: %v", err)
+		}
+		mute, _ := a.Spawn[*testpb.Ping](func(p *grpcproc.Process[*testpb.Ping]) error { <-busy; return nil })
+		if _, err := a.Query(ctx, mute.PID(), &testpb.Ping{}); !errors.Is(err, grpcproc.ErrNoQuery) {
+			t.Errorf("a process with no queries: %v", err)
+		}
+		if _, err := a.Query(ctx, grpcproc.PID{Node: "a", Incarnation: a.ID().Incarnation, ID: 999}, &testpb.Ping{}); !errors.Is(err, grpcproc.ErrNoProc) {
+			t.Errorf("no process: %v", err)
+		}
+	})
+}
+
+// A query answered with nothing is answered with Empty.
+func TestQueryOfNothing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a := grpcproctest.New(t, "a").Node("a")
+		e, _ := a.Spawn[*testpb.Ping](func(p *grpcproc.Process[*testpb.Ping]) error { <-p.Context().Done(); return nil },
+			grpcproc.WithQuery(func(context.Context, proto.Message) (proto.Message, error) { return nil, nil }))
+		if answer, err := a.Query(t.Context(), e.PID(), &testpb.Ping{}); err != nil || answer == nil {
+			t.Fatalf("%v %v", answer, err)
+		}
+	})
+}

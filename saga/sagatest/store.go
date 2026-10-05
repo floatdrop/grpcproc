@@ -41,6 +41,16 @@ func Store(t *testing.T, open func(t *testing.T) saga.Store) {
 		if err != nil || len(list) != 2 || list[0].ID != "0" || list[1].ID != "1" {
 			t.Fatalf("list: %+v %v", list, err)
 		}
+		// By ID as Go orders strings, byte by byte: a collation would have
+		// these the other way round.
+		for _, id := range []string{"b", "B"} {
+			if _, _, err := s.Create(ctx, saga.Record{Saga: "c", ID: id}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if list, err := s.List(ctx, "c"); err != nil || len(list) != 2 || list[0].ID != "B" || list[1].ID != "b" {
+			t.Fatalf("list in byte order: %+v %v", list, err)
+		}
 	})
 
 	t.Run("claim takes what is due, once", func(t *testing.T) {

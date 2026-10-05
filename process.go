@@ -55,6 +55,7 @@ type proc struct {
 	limit   int64 // WithMailboxLimit; 0 is none
 	sys     chan inspectReq
 	inspect func() map[string]string
+	query   func(context.Context, proto.Message) (proto.Message, error)
 	accept  func(proto.Message) bool
 
 	// current is the metadata of the message being handled, after
@@ -144,6 +145,7 @@ type spawnOpts struct {
 	name                  string
 	label                 string
 	inspect               func() map[string]string
+	query                 func(context.Context, proto.Message) (proto.Message, error)
 	linkParent, linkChild bool
 	watchedBy             *heldCall
 	mailboxLimit          int
@@ -166,6 +168,17 @@ func WithLabel(label string) SpawnOption { return func(o *spawnOpts) { o.label =
 // Node.Inspect.
 func WithInspect(fn func() map[string]string) SpawnOption {
 	return func(o *spawnOpts) { o.inspect = fn }
+}
+
+// WithQuery lets the process be asked questions that WithInspect cannot
+// answer, because they take an argument or read what the process does not
+// hold, such as a store: fn answers q, a question its author defined. See
+// Node.Query, which a read-only Inspector serves. fn runs on the asker's
+// goroutine, not the process's, for as long as the process runs, and must
+// change nothing; its ctx is the asker's. A panic in it is the asker's
+// error, not the process's.
+func WithQuery(fn func(ctx context.Context, q proto.Message) (proto.Message, error)) SpawnOption {
+	return func(o *spawnOpts) { o.query = fn }
 }
 
 // WithMailboxLimit bounds the process's mailbox: while it holds n items, a
@@ -447,6 +460,7 @@ func spawn[M proto.Message](n *Node, fn func(*Process[M]) error, opts []SpawnOpt
 		limit:   int64(o.mailboxLimit),
 		sys:     make(chan inspectReq),
 		inspect: o.inspect,
+		query:   o.query,
 		accept:  func(m proto.Message) bool { _, ok := m.(M); return ok },
 		ctx:     ctx,
 		cancel:  cancel,

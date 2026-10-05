@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	grpcprocv1 "github.com/floatdrop/grpcproc/proto/grpcproc/v1"
 )
@@ -739,6 +740,30 @@ func (n *Node) Inspect(ctx context.Context, pid PID) (map[string]string, error) 
 		return nil, ErrNoProc
 	}
 	return p.inspectNow(ctx)
+}
+
+// Query asks a local process q, through the function it was spawned with
+// WithQuery, and returns its answer, google.protobuf.Empty for none: ErrNoProc
+// itself if it does not run here, ErrNoQuery itself if it answers no queries,
+// or the function's error as it returned it.
+func (n *Node) Query(ctx context.Context, pid PID, q proto.Message) (answer proto.Message, err error) {
+	p := n.local(pid)
+	switch {
+	case p == nil:
+		return nil, ErrNoProc
+	case p.query == nil:
+		return nil, ErrNoQuery
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			answer, err = nil, fmt.Errorf("grpcproc: query %s panicked: %v", pid, r)
+		}
+	}()
+	answer, err = p.query(ctx, q)
+	if answer == nil && err == nil {
+		answer = &emptypb.Empty{}
+	}
+	return answer, err
 }
 
 // SetLogLevel sets the threshold of a local process's Log() at runtime.
