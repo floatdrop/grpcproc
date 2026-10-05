@@ -21,7 +21,7 @@ export const guidesSagas: Doc = {
 		<p>
 			<C>grpcproc/saga</C> keeps each run of a saga in a store, so that, with a store that outlasts
 			the program, a crash, a restart or a lost node is followed by the run going on from where it
-			was. The one store so far is in memory (see <A to="guides/sagas/#limits">Limits</A>). It is
+			was: <A to="guides/sagas/#stores">a store</A> in PostgreSQL is one. It is
 			a package of the core module,
 			built on its public API and <Ext href="https://github.com/floatdrop/fsm">fsm</Ext>.
 		</p>
@@ -328,7 +328,19 @@ err = orders.Notify(ctx, eng, "order-123", cancelled)`}</Code>
 					</p>
 					<p>
 						<C>saga.Memory()</C> keeps the runs in memory, for tests and for sagas that need not
-						outlast their program. A store of your own must pass{' '}
+						outlast their program.{' '}
+						<Ext href={file('saga/postgres/README.md')}>
+							<C>grpcproc/saga/postgres</C>
+						</Ext>{' '}
+						keeps them in PostgreSQL, in a <C>*sql.DB</C> the application opens, with the driver
+						it chooses: a row per run with its inbox on it, each change one statement on the row.
+					</p>
+					<Code>{`store, err := postgres.NewStore(db, "grpcproc_sagas")
+err = store.Migrate(ctx) // or apply store.Schema() with your migrations
+eng, err := saga.Start(node, saga.Config{Store: store}, orders)`}</Code>
+					<p>
+						Leases and due times are read on the database's clock, which every engine shares. A
+						store of your own must pass{' '}
 						<Ext href={file('saga/sagatest/store.go')}>
 							<C>sagatest.Store</C>
 						</Ext>
@@ -346,8 +358,8 @@ err = orders.Notify(ctx, eng, "order-123", cancelled)`}</Code>
 			body: (
 				<ul>
 					<li>
-						The only store is in memory. Stores that outlast a process (Postgres, etcd, a leader's
-						checkpoint) are open work; until then, a durable saga needs a <C>Store</C> of your own.
+						Stores in etcd and in a leader's checkpoint, for an installation with no database, are
+						open work.
 					</li>
 					<li>
 						A participant keeps keys and fences itself: a wrapper that answers a repeated key and

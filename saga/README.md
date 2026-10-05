@@ -4,9 +4,10 @@ Sagas for [grpcproc](https://floatdrop.github.io/grpcproc/): work that spans
 services and outlasts a process. Reserve, charge, ship, and undo what was
 done when a later step cannot be. Each run is kept in a store, so with a
 store that outlasts the program, a crash, a restart or a lost node is
-followed by the run going on from where it was. The one store so far is in
-memory: the nodes of one program can share it, so a run outlasts a node of
-that program, but not the program's restart (see [Stores](#stores)). A
+followed by the run going on from where it was. The stores are in memory,
+which the nodes of one program can share, so a run outlasts a node of that
+program but not the program's restart, and in PostgreSQL, in
+[`grpcproc/saga/postgres`](postgres/README.md) (see [Stores](#stores)). A
 package of grpcproc's, built on its public API and
 [fsm](https://github.com/floatdrop/fsm).
 
@@ -280,7 +281,16 @@ the record, and nothing is published, so the store is the only part that
 must outlast a process.
 
 `saga.Memory()` keeps the runs in memory: for tests, and for sagas that
-need not outlast their program. A store of your own must pass
+need not outlast their program.
+[`grpcproc/saga/postgres`](postgres/README.md) keeps them in PostgreSQL:
+
+```go
+store, err := postgres.NewStore(db, "grpcproc_sagas") // db is a *sql.DB
+err = store.Migrate(ctx)                               // or apply store.Schema() yourself
+eng, err := saga.Start(node, saga.Config{Store: store}, orders)
+```
+
+A store of your own must pass
 [`sagatest.Store`](sagatest/store.go), which checks what an engine relies
 on:
 
@@ -295,7 +305,7 @@ another epoch than the run's return `ErrLost`.
 
 ## Not built yet
 
-Stores that outlast a process (Postgres, etcd, a leader's checkpoint), a
+Stores in etcd and in a leader's checkpoint, a
 wrapper for participants that answers a repeated key and refuses a lower
 fence, steps that run side by side, retention of finished runs, and
 `grpcprocctl saga`. [DESIGN.md](../docs/DESIGN.md#sagas-grpcprocsaga) has

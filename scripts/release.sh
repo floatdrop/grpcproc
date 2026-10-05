@@ -17,7 +17,7 @@ core=github.com/floatdrop/grpcproc
 # The nested modules that are released, in the order they are pinned. One
 # may require another only of an earlier release: the pin commit cannot
 # require a tag it comes before.
-modules=(otel etcd tools)
+modules=(otel etcd tools saga/postgres)
 # Nested modules that are not released, whose requirement on the core is
 # bumped with the pin all the same: they build against the working tree.
 unreleased=(examples benchmarks)

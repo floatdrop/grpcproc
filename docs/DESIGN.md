@@ -75,6 +75,7 @@ grpcproc/cron                optional: jobs on crontab schedules, every run a pr
 grpcproc/leader              optional: leader election, and a singleton that runs on the leader with its state
 grpcproc/saga                optional: durable sagas, an fsm machine and its data per run, behind a Store
 grpcproc/etcd     (nested module)   Resolver + Registrar + Membership on etcd leases
+grpcproc/saga/postgres (nested module)   saga.Store in PostgreSQL
 grpcproc/otel     (nested module)   Hooks implementation: OTel metrics + trace propagation
 grpcproc/tools    (nested module)   grpcprocctl over the Inspector: CLI, Graphviz, MCP server, web UI
 grpcproc/examples (nested module)   runnable examples and the agent runtime the site's tutorial builds
@@ -1522,8 +1523,12 @@ snap, err := orders.Wait(ctx, eng, "order-123") // its state, data and status, o
   published, so `Store` is one interface: `Create` if absent, `Claim`,
   `Save` (fenced), `Renew`, `Signal`, `Resume`, `Get` and `List`.
   `saga.Memory` is the one in the core, for tests and for sagas that need
-  not outlast their program, and `sagatest.Store` is what every store must
-  pass.
+  not outlast their program; `grpcproc/saga/postgres` keeps the runs in
+  PostgreSQL, a row per run with its inbox on it, so that every change to a
+  run is one statement on its row, which waits for one that holds the row
+  and works on what it wrote, and `Claim` skips a row another statement
+  holds, to take it at its next poll; and
+  `sagatest.Store` is what every store must pass.
 - **A run at work is a process.** The engine is a process on each node
   that runs sagas, named `saga`; it claims on a tick (`Config.Poll`, a
   second), when told a run has something to do, and when a run it let go
@@ -1566,8 +1571,8 @@ steps side by side, and retention; see Open work.
 ## Open work
 
 What production use asks for next, roughly in order. The core gets hooks and
-interfaces only; whatever needs a dependency is a nested module, as etcd and
-OpenTelemetry are.
+interfaces only; whatever needs a dependency is a nested module, as etcd,
+OpenTelemetry and the PostgreSQL saga store are.
 
 - **Federation between installations.** Two installations can talk: a
   resolver that answers the other's node names, `DialOptionsFor` with its
@@ -1580,9 +1585,9 @@ OpenTelemetry are.
   if one side can dial out and not in (a customer's VPC, a factory floor)
   does the link need turning around: a bridge with a gRPC service of its own,
   so the core keeps one link per direction.
-- **Sagas, the rest** (see Sagas): stores that outlast a process, Postgres
-  as a nested module, etcd in `grpcproc/etcd`, and one kept in a leader's
-  checkpoint for an installation with no database; a wrapper for
+- **Sagas, the rest** (see Sagas): more stores that outlast a process,
+  etcd in `grpcproc/etcd` and one kept in a leader's checkpoint for an
+  installation with no database; a wrapper for
   participants that answers a repeated key with the stored reply and refuses
   a lower fence; steps that run side by side; retention of finished runs;
   dropping the signals no state of a run will take;

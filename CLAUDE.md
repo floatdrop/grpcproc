@@ -25,7 +25,8 @@ error types), `queue.go` (the mailbox and link queue), `admit.go` (`Policy`,
 (clusters over bufconn), `inspect` (the Inspector service), `actor`
 (handler loop, supervisor, `Workers`), `pubsub`, `cron`, `leader`, `saga`
 (durable sagas behind a `Store`; `saga/sagatest` checks a store). Nested modules:
-`otel`, `etcd`, `tools` (released), `examples`, `benchmarks` (not). `site/`
+`otel`, `etcd`, `tools`, `saga/postgres` (released), `examples`, `benchmarks`
+(not). `site/`
 is the documentation site. Protos are under `proto/` and beside the packages
 that own them.
 
@@ -88,15 +89,15 @@ test -z "$(gofmt -l .)" && go vet ./... && golangci-lint run ./... \
   && go run github.com/campoy/embedmd@v1.0.0 -d README.md
 ```
 
-In `examples`, and in `otel`, `etcd` and `tools` when touched,
+In `examples`, and in `otel`, `etcd`, `tools` and `saga/postgres` when touched,
 `go vet ./... && golangci-lint run ./... && go test -race -count=1 ./...`.
 In `benchmarks`, which builds against the working tree, so any change to
 the core's API can break it, `go vet ./... && golangci-lint run ./... &&
 go test -run '^$' -bench . -benchtime=50ms ./...`.
 
 Then coverage, which must stay at 100% for each package CI lists — in the
-root `. ./inspect ./actor ./pubsub ./cron ./leader ./saga`, in `otel` and `etcd`
-`.`, in `tools` `./client ./dot ./cli ./mcpserver ./web`:
+root `. ./inspect ./actor ./pubsub ./cron ./leader ./saga`, in `otel`, `etcd` and
+`saga/postgres` `.`, in `tools` `./client ./dot ./cli ./mcpserver ./web`:
 
 ```sh
 for pkg in . ./inspect ./actor ./pubsub ./cron ./leader ./saga; do
@@ -303,8 +304,8 @@ works on a newer one's runs. A store must pass `sagatest.Store`.
 
 - **The core depends on gRPC, protobuf and fsm only.** Anything that would
   pull in another dependency is a nested module that plugs into an interface
-  the core defines, as `otel` (`Hooks`) and `etcd` (`Resolver`, `Registrar`,
-  `Membership`, `Names`) do.
+  the core defines, as `otel` (`Hooks`), `saga/postgres` (`saga.Store`)
+  and `etcd` (`Resolver`, `Registrar`, `Membership`, `Names`) do.
 - **Released nested modules require a published core, never a `replace`**,
   since a `replace` is ignored by whoever imports them. `examples` and
   `benchmarks` use `replace ../` and are never released. For work across
