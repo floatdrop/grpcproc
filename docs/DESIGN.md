@@ -833,6 +833,20 @@ them. Two primitives went into the core because they need process internals:
   reason. `ErrStop` ends normally (replying first, from a call);
   `ErrNoReply` defers the answer. `Terminate` also runs on a panic, which then
   continues so grpcproc reports it.
+- `Workers.ReplyLater(p, m, fn)`, from `HandleCall`: a worker process
+  linked to the actor answers the call, at most n at once
+  (`NewWorkers(n)`), while the actor goes on with its mailbox, so a slow
+  read does not hold up the writes behind it. `Label` labels the workers
+  (`tool:calc`, say), so the Inspector and metrics tell them apart; the
+  copies it returns share the original's n places, so the bound counts
+  every label. fn reads only what the actor no longer changes, a copy it
+  hands over, so neither needs a lock, as a read/write lock over state they
+  share would. With n busy, the call is answered `ErrWorkersBusy` at once:
+  waiting for a worker would hold up the actor, and deadlock it when a
+  worker calls it back. A panic in fn answers the call before the worker
+  ends, since nothing else would: the call belongs to the actor, which is
+  still running. A worker's place is free before its answer goes, or a
+  caller that has its answer could find the workers busy.
 - `actor.Supervise(n, Spec)`: one-for-one, one-for-all, rest-for-one;
   children monitored from before they run, and linked to the supervisor
   (`LinkParent`), a safeguard beside the orderly stop it makes when it ends;
