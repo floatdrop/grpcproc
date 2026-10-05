@@ -287,7 +287,9 @@ err = orders.Notify(ctx, eng, "order-123", cancelled)`}</Code>
 						due before the next tick. For each run it claims it spawns a process, labelled{' '}
 						<C>{'saga:<name>'}</C>, which lives while the run has work and exits when it waits. A
 						run at work is in the process list and the <A to="guides/inspector/">Inspector</A>; a
-						run that waits is a record and no more.
+						run that waits is a record and no more. The engine answers for the runs of its sagas,
+						which <A to="guides/grpcprocctl/">grpcprocctl saga</A> and the Sagas page of the{' '}
+						<A to="guides/web/">Web UI</A> list, show and resume.
 					</p>
 					<p>
 						Each claim is for a lease, and raises the run's epoch. While the run is worked on, the

@@ -201,6 +201,11 @@ through the same Inspector and refreshes every second:
 - **Cron** and **Elections**: every grpcproc/cron job and grpcproc/leader
   election reachable from here, found by what they run and how their
   electors are named.
+- **Sagas**: the grpcproc/saga engines reachable from here and the sagas
+  each runs, and a saga's runs a page at a time, by status, as
+  `grpcprocctl saga runs` lists them. A run opens beside them, as `saga
+  get` shows it: why it is stuck, its timers and owner, its data when the
+  engine shows it, and the signals waiting.
 
 A process opens beside any of these: its mailbox and messages per second
 charted, what it says about itself (asked for, or asked again on an
@@ -214,13 +219,15 @@ says what is open, so a view can be shared.
 
 The page is read-only unless started with `--allow-writes`, which adds
 exiting a process, setting its log level, enabling, disabling and removing
-cron jobs, and moving or cordoning a leader, each confirmed first. It
+cron jobs, moving or cordoning a leader, and resuming a stuck saga run,
+each confirmed first. It
 listens on localhost by default and then answers only to a localhost Host,
 so a page elsewhere cannot reach it through the browser; a change must come
 from the page itself. On any other address, put it behind something that
 authenticates. The API behind the page returns the objects `--json`
 prints: `/api/nodes`, `/api/node`, `/api/processes`, `/api/process`,
-`/api/crons`, `/api/elections`, and `/api/events` as server-sent events.
+`/api/crons`, `/api/elections`, `/api/sagas`, `/api/saga/runs`,
+`/api/saga/run`, and `/api/events` as server-sent events.
 
 ## For an AI agent
 

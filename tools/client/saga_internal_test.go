@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"encoding/json/v2"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,5 +80,8 @@ func TestASagaEngineThatCannotBeInspected(t *testing.T) {
 func TestDecoded(t *testing.T) {
 	if decoded("") != nil || decoded(`{"a":1}`).(map[string]any)["a"] != 1.0 || decoded("{bad") != "{bad" {
 		t.Error("decoded")
+	}
+	if b, err := json.Marshal(SagaRunView{Data: decoded("null")}); err != nil || !strings.Contains(string(b), `"data":null`) {
+		t.Errorf("null data: %s %v", b, err)
 	}
 }
