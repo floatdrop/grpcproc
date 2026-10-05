@@ -9,15 +9,14 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json/v2"
-	"errors"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"time"
 	"unicode/utf8"
 
 	"golang.yandex/di"
+	"golang.yandex/di/dihttp"
 
 	"github.com/floatdrop/grpcproc"
 	"github.com/floatdrop/grpcproc/examples/guide/internal/platform"
@@ -207,24 +206,10 @@ func newServer(cfg platform.Config, f *front) *http.Server {
 	return srv
 }
 
-// Module registers the front and its server. The server drains before
-// anything stops, so what is said meanwhile still finds its conversation.
+// Module registers the front and its server, which listens as the program
+// starts and serves once it has, and drains before anything stops, so what
+// is said meanwhile still finds its conversation.
 func Module(s *di.Scope) {
 	s.Wire[*front](newFront)
-	s.Wire[*http.Server](newServer).
-		Eager().
-		OnStart(func(_ context.Context, srv *http.Server) error {
-			ln, err := net.Listen("tcp", srv.Addr)
-			if err != nil {
-				return err
-			}
-			go func() {
-				if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
-					s.Shutdown(err)
-				}
-			}()
-			return nil
-		}).
-		OnDrain(func(ctx context.Context, srv *http.Server) error { return srv.Shutdown(ctx) }).
-		OnStop(func(_ context.Context, srv *http.Server) error { return srv.Close() })
+	dihttp.Serve(s.Wire[*http.Server](newServer))
 }

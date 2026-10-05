@@ -41,6 +41,13 @@ export const tutorialPlatform: Doc = {
 						and the root supervisor. <C>grpcprocctl</C> talks to the Inspector. The node is a
 						dependency like any other: a constructor that needs it takes it as a parameter.
 					</p>
+					<p>
+						The server serves from its own start hook, before the node and the services start,
+						and not once the whole start has succeeded, as <C>digrpc.Serve</C> would have it: an
+						answer to a call that a starting service makes to another node comes back over that
+						peer's link into this server. The web front's server has no such need, and is run by{' '}
+						<C>dihttp.Serve</C>.
+					</p>
 					<Code caption="internal/platform/platform.go">{platform}</Code>
 				</>
 			)
