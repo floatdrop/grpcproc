@@ -200,7 +200,7 @@ func TestAnEngineAnswersQueries(t *testing.T) {
 		}
 
 		info, err := n.Inspect(ctx, e.PID())
-		if err != nil || info["sagas"] != "orders v0, refunds v2" || info["working"] != "0" {
+		if err != nil || info["saga orders"] != "v0" || info["saga refunds"] != "v2" || info["working"] != "0" {
 			t.Errorf("%v %v", info, err)
 		}
 	})

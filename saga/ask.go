@@ -223,15 +223,14 @@ func text(s string, n int) string {
 	return strings.ToValidUTF8(s, "\uFFFD")
 }
 
-// inspect is what the engine publishes about itself: the sagas it runs, as
-// "name vN" by name, and how many runs it works on.
+// inspect is what the engine publishes about itself: each saga it runs, as
+// "saga <name>", with its version, and how many runs it works on.
 func (e *Engine) inspect() map[string]string {
-	sagas := make([]string, 0, len(e.versions))
+	out := map[string]string{"working": strconv.Itoa(e.active)}
 	for name, v := range e.versions {
-		sagas = append(sagas, name+" v"+strconv.FormatUint(v, 10))
+		out["saga "+name] = "v" + strconv.FormatUint(v, 10)
 	}
-	slices.Sort(sagas)
-	return map[string]string{"sagas": strings.Join(sagas, ", "), "working": strconv.Itoa(e.active)}
+	return out
 }
 
 func status(s Status) sagav1.Status {
