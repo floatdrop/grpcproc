@@ -430,7 +430,8 @@ link's queue is its peer's alone, so it can be bounded as well
 (`Config.MaxQueued`, under Wire protocol).
 
 Exit reasons: `normal`, `noproc`, `noconnection`, `shutdown`, `killed`, a
-panic (`panic: …` with the stack logged), or the error string the function
+panic (`panic: …` with the stack logged), `goexit` for a function that
+called `runtime.Goexit` (`t.FailNow`, say), or the error string the function
 returned.
 
 ### Links

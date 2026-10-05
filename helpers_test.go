@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
 	"sync/atomic"
@@ -38,6 +39,8 @@ func echo(p *grpcproc.Process[*testpb.Ping]) error {
 			return errors.New("boom")
 		case m.Body.N == -200:
 			panic("kaboom")
+		case m.Body.N == -300:
+			runtime.Goexit()
 		case m.IsCall() && m.Body.N == -2:
 			_ = m.Reply(nil, errNegativeTwo)
 		case m.IsCall() && m.Body.N < 0:

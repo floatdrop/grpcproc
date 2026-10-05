@@ -1237,18 +1237,19 @@ func (p *proc) peerDown(peer string) (downs []Down, exits []Exited) {
 func (p *proc) run(fn func() error) {
 	defer p.n.wg.Done()
 	p.setState(StateRunning)
-	var err error
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("panic: %v", r)
-				p.log.Error("process panicked", "panic", r, "stack", string(debug.Stack()))
-			}
-		}()
-		err = fn()
+	err := errGoexit // what fn leaves when it neither returns nor panics
+	defer func() { p.terminate(p.exitReason(err)) }()
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+			p.log.Error("process panicked", "panic", r, "stack", string(debug.Stack()))
+		}
 	}()
-	p.terminate(p.exitReason(err))
+	err = fn()
 }
+
+// errGoexit is the exit of a process whose function called runtime.Goexit.
+var errGoexit = errors.New("goexit")
 
 func (p *proc) exitReason(err error) string {
 	if reason, ok := exitReasonOf(p.ctx); ok {
