@@ -22,7 +22,9 @@ func Runner(node string) RunnerAddr {
 }
 
 // Run calls a tool, and waits for it no longer than ctx allows. A tool that
-// fails is part of the answer; an error means no answer.
+// fails is part of the answer, in Failed, and one that panics is answered
+// with an error of the panic's text; actor.ErrWorkersBusy, with every
+// place taken, and any other error mean no answer.
 func (r RunnerAddr) Run(ctx context.Context, from grpcproc.Caller, run *Run) (*Ran, error) {
 	return r.Call[*Ran](ctx, from, run)
 }
