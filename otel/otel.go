@@ -259,7 +259,8 @@ func ReasonClass(reason string) string {
 		grpcproc.ReasonNameLost, grpcproc.ReasonNameConflict,
 		actor.ReasonMaxRestarts,
 		"timeout", "replaced", // cron.ReasonTimeout, cron.ReasonReplaced: modules otel does not require
-		"demoted": // leader.ReasonDemoted, likewise
+		"demoted", // leader.ReasonDemoted, likewise
+		"goexit":  // grpcproc.ReasonGoexit, newer than the grpcproc otel requires
 		return reason
 	}
 	if strings.HasPrefix(reason, "panic:") {

@@ -78,6 +78,14 @@ func TestRunExits(t *testing.T) {
 			_ = a.Send(context.Background(), n, &testpb.Ping{N: -3})
 		}, "panic: kaboom", "init; terminate: panic: kaboom"},
 		{"exit", func(n *grpcproc.Node, a grpcproc.Addr[*testpb.Ping]) { _ = n.Exit(context.Background(), a, "bye") }, "bye", "init; terminate: grpcproc: exit: bye"},
+		{"goexit", func(n *grpcproc.Node, a grpcproc.Addr[*testpb.Ping]) {
+			_ = a.Send(context.Background(), n, &testpb.Ping{N: -5})
+		}, grpcproc.ReasonGoexit, "init; terminate: goexit"},
+		{"exit, then goexit", func(n *grpcproc.Node, a grpcproc.Addr[*testpb.Ping]) {
+			_ = a.Send(context.Background(), n, &testpb.Ping{N: -6})
+			synctest.Wait()
+			_ = n.Exit(context.Background(), a, "bye")
+		}, "bye", "init; terminate: grpcproc: exit: bye"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
