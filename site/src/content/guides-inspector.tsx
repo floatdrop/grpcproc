@@ -42,10 +42,20 @@ defer insp.Close()`}</Code>
 					<p>
 						<C>inspect.ReadOnly()</C> refuses the four writes: <C>Send</C>, <C>Call</C>,{' '}
 						<C>Exit</C> and <C>SetLogLevel</C>. It allows <C>Query</C>, which only a process
-						spawned with <C>grpcproc.WithQuery</C> answers, and which changes nothing. Anything
-						finer is the job of the interceptors and
-						transport credentials that guard your other services. The tutorial's platform serves the
-						Inspector read-only because it shares the node's port and nothing there authenticates.
+						spawned with <C>grpcproc.WithQuery</C> answers, and which changes nothing.{' '}
+						<C>inspect.NoQueries()</C> refuses it too. Anything finer is the job of the interceptors
+						and transport credentials that guard your other services. The tutorial's platform serves
+						the Inspector read-only because it shares the node's port and nothing there
+						authenticates.
+					</p>
+					<p>
+						Read-only is not private. Whoever reaches the Inspector sees every node's processes,
+						their names and what they publish, and through <C>Query</C> what a saga engine reads from
+						its store: its runs, their state and errors, and with the engine's{' '}
+						<C>Config.InspectData</C> their data. A node's <C>Admit</C> does not cover it, since it
+						is another service on the port, and one Inspector forwards to the others. Put it behind
+						authentication wherever the network is not trusted, and limit its requests with an
+						interceptor: a query reads from the store.
 					</p>
 				</>
 			)

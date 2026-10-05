@@ -53,6 +53,11 @@ func WithResolver(r grpcproc.Resolver, opts ...grpc.DialOption) Option {
 // another node is then FailedPrecondition.
 func WithPeers(f PeerFunc) Option { return func(s *Server) { s.peers, s.dialer = f, nil } }
 
+// NoQueries refuses Query with PermissionDenied: for an Inspector reachable
+// by whoever should see no more than snapshots, since a process that
+// answers queries, a saga engine, may tell what it reads from a store.
+func NoQueries() Option { return func(s *Server) { s.noQueries = true } }
+
 // ReadOnly refuses SetLogLevel, Send, Call and Exit with PermissionDenied.
 // It allows Query, which only a process spawned with grpcproc.WithQuery
 // answers, and which changes nothing.
@@ -61,10 +66,11 @@ func ReadOnly() Option { return func(s *Server) { s.readOnly = true } }
 // Server implements grpcproc.inspect.v1.Inspector for one node.
 type Server struct {
 	inspectv1.UnimplementedInspectorServer
-	node     *grpcproc.Node
-	peers    PeerFunc
-	dialer   *dialer // unless WithPeers; Close closes its connections
-	readOnly bool
+	node      *grpcproc.Node
+	peers     PeerFunc
+	dialer    *dialer // unless WithPeers; Close closes its connections
+	readOnly  bool
+	noQueries bool
 }
 
 // New returns an Inspector for node. It forwards a request for another node
@@ -327,6 +333,9 @@ func (s *Server) Call(ctx context.Context, req *inspectv1.CallRequest) (*inspect
 // grpcproc.WithQuery, which changes nothing; a read-only server allows it. A
 // process spawned with none is Unimplemented.
 func (s *Server) Query(ctx context.Context, req *inspectv1.QueryRequest) (*inspectv1.QueryResponse, error) {
+	if s.noQueries {
+		return nil, status.Error(codes.PermissionDenied, "inspect: server answers no queries")
+	}
 	if c, node, err := s.remote(ctx, req.GetNode(), req.GetTarget()); c != nil || err != nil {
 		return forward(node, err, func() (*inspectv1.QueryResponse, error) { return c.Query(ctx, req) })
 	}

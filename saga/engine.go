@@ -38,6 +38,13 @@ type Config struct {
 	Lease time.Duration
 	// Concurrency is how many runs the engine works on at once. Default 64.
 	Concurrency int
+	// InspectData lets the engine show, to a query through the Inspector,
+	// a run's data and its signals' payloads. Off, a query sees a run's
+	// state, status, timers, and its error and cause, which say why it is
+	// stuck, and not what the run carries, which is often a customer's: a
+	// read-only Inspector is not a private one. An effect whose error would
+	// tell a customer's data should not put it there.
+	InspectData bool
 }
 
 // Saga is a Definition, of any state and data type, as Start takes it.

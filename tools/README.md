@@ -81,7 +81,7 @@ monitors:              2
 | `cron enable\|disable\|remove <pid\|name> <job>` | change a job of a cron process: `--node` |
 | `saga [engines]` | [grpcproc/saga](../saga/README.md) engines and the sagas they run: `--node`, every node by default |
 | `saga runs [<saga>]` | runs in the engines' store: `--status active,done,stuck`, `--limit`, `--after <id>` (and `--after-saga` when no saga is named) for the next page, `--node` |
-| `saga get <saga> <id>` | one run: its state, error, timers, data and waiting signals as JSON: `--node` |
+| `saga get <saga> <id>` | one run: its state, error, timers and waiting signals, with its data and payloads as JSON when the engine shows them: `--node` |
 | `saga resume <saga> <id>` | make a stuck run active again, then show it: `--node` |
 | `dot` | Graphviz of processes and who started whom: `--node`, `--cluster` |
 | `mcp` | serve these as MCP tools over stdio: `--allow-writes` |
@@ -165,11 +165,11 @@ grpcprocctl --plaintext saga resume orders order-17
 
 `saga` finds the saga engines by their label and asks one that says it
 runs the saga, or the first found, or the one on `--node`: an engine
-answers for the runs of the store it shares, and renders the data of the
-sagas it runs. `runs` lists them a page at a time, at most 100 unless
+answers for the runs of the sagas it runs, and shows their data only with
+its `Config.InspectData`. `runs` lists them a page at a time, at most 100 unless
 `--limit` says otherwise, and prints the flags for the next page; `get`
-shows one with its data and the signals waiting for a state that takes
-them, as JSON.
+shows one, its error and the signals waiting for a state that takes them,
+with its data and their payloads as JSON when the engine shows them.
 Both go through the Inspector's `Query`, which a read-only Inspector serves.
 `resume` makes a stuck run active again, through `Call`, which it refuses.
 
@@ -240,7 +240,7 @@ or a busy process means) and offers:
 | `election` | a leader election, as each node sees it |
 | `cron_jobs` | cron processes and their jobs, on a node or all of them |
 | `saga_runs` | saga runs by saga and status, a page at a time |
-| `saga_run` | one saga run, with its data, error and waiting signals |
+| `saga_run` | one saga run: its state, error and waiting signals, and its data when the engine shows it |
 | `global_names` | who holds a global name, or every name with a prefix |
 | `exit_process`, `set_log_level`, `move_leader`, `cordon_node`, `uncordon_node`, `enable_cron_job`, `disable_cron_job`, `remove_cron_job`, `resume_saga_run` | only with `--allow-writes` |
 

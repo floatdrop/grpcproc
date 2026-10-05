@@ -155,7 +155,8 @@ type Query_List struct {
 }
 
 type Query_Get struct {
-	// Answered with Run, its data and its signals' payloads as JSON.
+	// Answered with Run, with its data and its signals' payloads as JSON
+	// when the engine shows them.
 	Get *RunRef `protobuf:"bytes,2,opt,name=get,proto3,oneof"`
 }
 
@@ -233,8 +234,8 @@ type Control_Resume struct {
 
 func (*Control_Resume) isControl_Op() {}
 
-// ListRuns asks for the runs of saga, or, with none named, of every saga
-// the engine runs, by saga and then ID, after the run after names. A page
+// ListRuns asks for the runs of saga, which the engine must run, or, with
+// none named, of every saga it runs, by saga and then ID, after the run after names. A page
 // ends at its limit or at two megabytes, and more says so.
 type ListRuns struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -422,7 +423,8 @@ type Run struct {
 	SagaVersion uint64                 `protobuf:"varint,3,opt,name=saga_version,json=sagaVersion,proto3" json:"saga_version,omitempty"`
 	State       string                 `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
 	Status      Status                 `protobuf:"varint,5,opt,name=status,proto3,enum=grpcproc.saga.v1.Status" json:"status,omitempty"`
-	// The run's data, as JSON, when the engine runs the saga.
+	// The run's data, as JSON, when the engine shows data
+	// (saga.Config.InspectData): empty, with data_omitted 0, when it does not.
 	Data string `protobuf:"bytes,6,opt,name=data,proto3" json:"data,omitempty"`
 	// The size of the data, encoded or as JSON, when it is over a megabyte,
 	// too much to carry: data is then empty.
@@ -651,7 +653,7 @@ type Signal struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Seq   uint64                 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
 	Event string                 `protobuf:"bytes,2,opt,name=event,proto3" json:"event,omitempty"`
-	// Its payload, as JSON, when the engine runs the saga and it accepts
+	// Its payload, as JSON, when the engine shows data and the saga accepts
 	// the event.
 	Payload string `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`
 	Version uint64 `protobuf:"varint,4,opt,name=version,proto3" json:"version,omitempty"`

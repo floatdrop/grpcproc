@@ -536,6 +536,19 @@ func TestCallTooLarge(t *testing.T) {
 	})
 }
 
+// NoQueries refuses every query, read-only or not.
+func TestNoQueries(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := cluster(t, []inspect.Option{inspect.NoQueries()}, "a")
+		if _, err := c.Node("a").Spawn(answering, grpcproc.WithName("asked"), grpcproc.WithQuery(asked)); err != nil {
+			t.Fatal(err)
+		}
+		b, _ := anypb.New(&testpb.Ping{N: 1})
+		_, err := client(c, "a").Query(t.Context(), &inspectv1.QueryRequest{Target: byName("asked"), Body: b})
+		code(t, err, codes.PermissionDenied)
+	})
+}
+
 func TestReadOnly(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := cluster(t, []inspect.Option{inspect.ReadOnly()}, "a")

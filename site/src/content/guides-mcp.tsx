@@ -59,7 +59,7 @@ export const guidesMcp: Doc = {
 							[<C>election</C>, 'A leader election, as each node that takes part sees it, and who leads.'],
 							[<C>cron_jobs</C>, 'Cron processes and their jobs, on a node or all of them.'],
 							[<C>saga_runs</C>, 'Saga runs by saga and status, a page at a time.'],
-							[<C>saga_run</C>, 'One saga run, with its data, the error that stopped it, and its waiting signals.'],
+							[<C>saga_run</C>, 'One saga run: the error that stopped it, its waiting signals, and its data when the engine shows it.'],
 							[<C>global_names</C>, 'Who holds a global name, or every name with a prefix, such as room:.']
 						]}
 					/>
