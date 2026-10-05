@@ -10,7 +10,7 @@ go 1.27.1
 
 require (
 	github.com/fergusstrange/embedded-postgres v1.34.0
-	github.com/floatdrop/grpcproc v0.9.0
+	github.com/floatdrop/grpcproc v0.10.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/lib/pq v1.10.9
 	google.golang.org/protobuf v1.36.12
