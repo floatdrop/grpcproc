@@ -230,6 +230,7 @@ on several nodes that share a store share the runs.
 | `Poll` | how often the engine asks the store for runs that are due, and `Wait` about a run; 1s |
 | `Lease` | how long a claim holds a run without being renewed; 30s |
 | `Concurrency` | how many runs the engine works on at once; 64 |
+| `InspectData` | show a run's data and its signals' payloads to a query through the Inspector; off |
 
 The engine is a process. It claims the runs that have something to do on
 each tick, at once when a run is begun, signalled or resumed through it,
@@ -282,11 +283,15 @@ is what `grpcprocctl saga` and its MCP tools ask
   (`working`).
 - **Queries.** It is spawned with `grpcproc.WithQuery`, so an Inspector
   `Query` of a [`grpcproc.saga.v1.Query`](proto/grpcproc/saga/v1/saga.proto)
-  lists the runs in the store, by saga and status, a page at a time, or
-  gets one, with its data and its signals' payloads as JSON when the engine
-  runs its saga. A query only reads, so a read-only Inspector allows it.
-  With no saga named, a list covers the sagas the engine runs; name another
-  to list its runs.
+  lists the runs of the sagas it runs, by saga and status, a page at a
+  time, or gets one. A run's data and its signals' payloads are shown, as
+  JSON, only with `Config.InspectData`: a read-only Inspector is not a
+  private one, and what a run carries is often a customer's. Its error and
+  cause are shown all the same, since they say why it is stuck, so an
+  effect should not put a customer's data in its error. A saga the
+  engine does not run is `ErrNoSaga`, though its runs are in the store. A
+  query only reads, so a read-only Inspector allows it, and
+  `inspect.NoQueries()` refuses it.
 - **Controls.** An Inspector `Call` with a `grpcproc.saga.v1.Control`
   resumes a stuck run, as `Definition.Resume` does. A read-only Inspector
   refuses it.

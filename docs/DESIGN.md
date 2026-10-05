@@ -793,7 +793,11 @@ when it is spawned, with `grpcproc.WithQuery(fn)`, and `Node.Query` calls
 spawned without one is `ErrNoQuery`, Unimplemented over the wire, and its
 mailbox is never touched. A query must change nothing: that is the
 contract `WithQuery` states, and the one guarantee a read-only Inspector
-relies on.
+relies on. It is not a guarantee of privacy: a saga engine answers with
+what its store holds, so it shows only its own sagas, and their data only
+with `Config.InspectData`; `inspect.NoQueries()` refuses queries for an
+Inspector reachable by whoever should see snapshots and no more. A node's
+`Admit` does not cover the Inspector, which is another service on its port.
 
 What sits on top, outside the core, is `grpcproc/tools`, one binary,
 `grpcprocctl`, with three faces over the same Go client (`tools/client`):
@@ -1557,8 +1561,9 @@ snap, err := orders.Wait(ctx, eng, "order-123") // its state, data and status, o
   waits is a record and no more.
 - **An engine answers for the store.** Through the Inspector, an engine is
   asked a `grpcproc.saga.v1.Query`, which lists runs or gets one with its
-  data as JSON, and called with a `Control`, which resumes one; any engine
-  that shares the store answers for the runs of its sagas, or of one named.
+  data as JSON when `Config.InspectData` says so, and called with a
+  `Control`, which resumes one; an engine answers for the runs of the sagas
+  it runs and no others, though its store may keep another service's.
   A query reads, so it is the engine's `WithQuery`, which a read-only
   Inspector serves, run on the asker's goroutine; a resume is a `Call`,
   which it refuses, answered in a process of its own. Neither asks the

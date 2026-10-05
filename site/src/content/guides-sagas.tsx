@@ -270,7 +270,15 @@ err = orders.Notify(ctx, eng, "order-123", cancelled)`}</Code>
 							[<C>Name</C>, <>The engine process's registered name; <C>saga</C> by default.</>],
 							[<C>Poll</C>, <>How often the engine asks the store for runs that are due, and <C>Wait</C> about a run. 1s.</>],
 							[<C>Lease</C>, 'How long a claim holds a run without being renewed. 30s.'],
-							[<C>Concurrency</C>, 'How many runs the engine works on at once. 64.']
+							[<C>Concurrency</C>, 'How many runs the engine works on at once. 64.'],
+							[
+								<C>InspectData</C>,
+								<>
+									Show a run's data and its signals' payloads to a query through the{' '}
+									<A to="guides/inspector/">Inspector</A>. Off: what a run carries is often a
+									customer's, and a read-only Inspector is not a private one.
+								</>
+							]
 						]}
 					/>
 					<p>

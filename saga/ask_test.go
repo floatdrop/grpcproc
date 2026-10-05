@@ -49,7 +49,11 @@ func TestAnEngineAnswersQueries(t *testing.T) {
 		refunds := saga.Define[*anypb.Any]("refunds", twoSteps()).Version(2)
 		n := grpcproctest.New(t, "a").Node("a")
 		store := saga.Memory()
-		e := engine(t, n, store, orders, refunds)
+		longIDs := saga.Define[text]("long ids", twoSteps())
+		e, err := saga.Start(n, saga.Config{Store: store, InspectData: true}, orders, refunds, longIDs)
+		if err != nil {
+			t.Fatal(err)
+		}
 		ctx := t.Context()
 
 		data := func(m proto.Message) []byte { b, _ := proto.Marshal(m); return b }
@@ -105,24 +109,23 @@ func TestAnEngineAnswersQueries(t *testing.T) {
 			want string
 			more bool
 		}{
-			{&sagav1.ListRuns{}, "orders/1 orders/2 orders/3 orders/4 refunds/1", false},
-			{&sagav1.ListRuns{Status: []sagav1.Status{sagav1.Status_STATUS_STUCK, sagav1.Status_STATUS_DONE}}, "orders/2 orders/3 orders/4", false},
-			{&sagav1.ListRuns{Limit: 2}, "orders/1 orders/2", true},
+			{&sagav1.ListRuns{Status: []sagav1.Status{sagav1.Status_STATUS_ACTIVE}, After: &sagav1.RunRef{Saga: "long ids"}}, "orders/1 refunds/1", false},
+			{&sagav1.ListRuns{Saga: "orders"}, "orders/1 orders/2 orders/3 orders/4", false},
+			{&sagav1.ListRuns{Status: []sagav1.Status{sagav1.Status_STATUS_STUCK, sagav1.Status_STATUS_DONE}, After: &sagav1.RunRef{Saga: "long ids"}}, "orders/2 orders/3 orders/4", false},
+			{&sagav1.ListRuns{Saga: "orders", Limit: 2}, "orders/1 orders/2", true},
 			{&sagav1.ListRuns{Limit: 2, After: &sagav1.RunRef{Saga: "orders", Id: "2"}}, "orders/3 orders/4", true},
 			{&sagav1.ListRuns{After: &sagav1.RunRef{Saga: "refunds"}}, "refunds/1", false},
-			// A saga the engine does not run, from the store all the same.
-			{&sagav1.ListRuns{Saga: "other"}, "other/x", false},
 		} {
 			got := list(c.q)
 			if ids(got.GetRuns()) != c.want || got.GetMore() != c.more {
 				t.Errorf("%v: %s, more %v", c.q, ids(got.GetRuns()), got.GetMore())
 			}
 		}
-		if r := list(&sagav1.ListRuns{Limit: 1}).GetRuns()[0]; r.GetData() != "" || len(r.GetInbox()) != 0 || r.GetWaiting() == 0 {
+		if r := list(&sagav1.ListRuns{Saga: "orders", Limit: 1}).GetRuns()[0]; r.GetData() != "" || len(r.GetInbox()) != 0 || r.GetWaiting() == 0 {
 			t.Errorf("a listed run carries its data: %v", r)
 		}
 		// Text that is not UTF-8 is made so: a proto string must be.
-		if r := list(&sagav1.ListRuns{Status: []sagav1.Status{sagav1.Status_STATUS_STUCK}, Limit: 1}).GetRuns()[0]; r.GetError() != "boom\uFFFD" {
+		if r := list(&sagav1.ListRuns{Saga: "orders", Status: []sagav1.Status{sagav1.Status_STATUS_STUCK}, Limit: 1}).GetRuns()[0]; r.GetError() != "boom\uFFFD" {
 			t.Errorf("error %q", r.GetError())
 		}
 
@@ -139,7 +142,7 @@ func TestAnEngineAnswersQueries(t *testing.T) {
 		}
 		// Data that does not decode, or holds what JSON cannot name, is none,
 		// and so is the payload of an event the saga does not accept.
-		for _, ref := range [][2]string{{"orders", "2"}, {"refunds", "1"}, {"other", "x"}} {
+		for _, ref := range [][2]string{{"orders", "2"}, {"refunds", "1"}} {
 			if r, err := get(ref[0], ref[1]); err != nil || r.GetData() != "" {
 				t.Errorf("%v: %v %v", ref, r, err)
 			}
@@ -160,6 +163,17 @@ func TestAnEngineAnswersQueries(t *testing.T) {
 		}
 		if _, err := get("orders", "none"); !errors.Is(err, saga.ErrNoRun) {
 			t.Errorf("get of no run: %v", err)
+		}
+		// A saga the engine does not run is not its to show, though its
+		// runs are in the store it shares.
+		if _, err := get("other", "x"); !errors.Is(err, saga.ErrNoSaga) {
+			t.Errorf("get of another's run: %v", err)
+		}
+		if _, err := query[*sagav1.Runs](t, n, e, &sagav1.Query{Op: &sagav1.Query_List{List: &sagav1.ListRuns{Saga: "other"}}}); !errors.Is(err, saga.ErrNoSaga) {
+			t.Errorf("list of another's runs: %v", err)
+		}
+		if _, err := n.CallTo[*emptypb.Empty](ctx, e.PID(), &sagav1.Control{Op: &sagav1.Control_Resume{Resume: &sagav1.RunRef{Saga: "other", Id: "x"}}}); err == nil || !strings.Contains(err.Error(), "runs no such saga") {
+			t.Errorf("resume of another's run: %v", err)
 		}
 
 		// Resumed, the stuck run is active again.
@@ -305,6 +319,29 @@ func TestAnEngineWhoseStoreFails(t *testing.T) {
 			if _, err := query[proto.Message](t, n, e, q); err == nil || !strings.Contains(err.Error(), "store down") {
 				t.Errorf("%v: %v", q, err)
 			}
+		}
+	})
+}
+
+// An engine shows a run's data, and its signals' payloads, only when told
+// to: by default a query sees the rest of the run.
+func TestAnEngineKeepsDataToItself(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n := grpcproctest.New(t, "a").Node("a")
+		store := saga.Memory()
+		ctx := t.Context()
+		evPaid := fsm.Define[*wrapperspb.StringValue]("paid")
+		e := engine(t, n, store, saga.Define[text]("orders", twoSteps()).Accept(evPaid, nil))
+		b, _ := proto.Marshal(wrapperspb.String("card 4242"))
+		if _, _, err := store.Create(ctx, saga.Record{Saga: "orders", ID: "1", State: "first", Status: saga.Stuck, Error: "declined", Data: b}); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Signal(ctx, "orders", "1", saga.Signal{Event: "paid", Payload: b}); err != nil {
+			t.Fatal(err)
+		}
+		r, err := query[*sagav1.Run](t, n, e, &sagav1.Query{Op: &sagav1.Query_Get{Get: &sagav1.RunRef{Saga: "orders", Id: "1"}}})
+		if err != nil || r.GetData() != "" || r.GetDataOmitted() != 0 || len(r.GetInbox()) != 1 || r.GetInbox()[0].GetPayload() != "" || r.GetError() != "declined" {
+			t.Fatalf("%v %v", r, err)
 		}
 	})
 }

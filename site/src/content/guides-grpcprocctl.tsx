@@ -188,7 +188,8 @@ b     billing  yearly  @yearly     UTC   disabled                    0`}</Output
 					<p>
 						<C>saga</C> finds the <A to="guides/sagas/">grpcproc/saga</A> engines and asks one that
 						says it runs the saga, or the first found, or the one on <C>--node</C>: an engine answers
-						for the runs of the store it shares, and renders the data of the sagas it runs.{' '}
+						for the runs of the sagas it runs, and shows their data only with its{' '}
+						<C>Config.InspectData</C>.{' '}
 						<C>runs</C> lists them a page at a time, by <C>--status</C>, and prints the flags for the
 						next page:
 					</p>
@@ -196,8 +197,8 @@ b     billing  yearly  @yearly     UTC   disabled                    0`}</Output
 					<Output>{`SAGA    ID        STATE     STATUS  ATTEMPTS  SIGNALS  OWNER  UPDATED                      ERROR
 orders  order-17  charging  stuck   5         1               2026-10-05T11:49:21.704174Z  card declined`}</Output>
 					<p>
-						<C>get</C> shows one run with its data and the signals waiting for a state that takes
-						them, as JSON. Both go through the Inspector's <C>Query</C>, which a read-only Inspector
+						<C>get</C> shows one run, its error and the signals waiting for a state that takes them,
+						with its data and their payloads as JSON when the engine shows them. Both go through the Inspector's <C>Query</C>, which a read-only Inspector
 						serves. <C>resume</C> makes a stuck run active again, through <C>Call</C>, which it
 						refuses, and shows the run as it then is.
 					</p>
@@ -302,7 +303,7 @@ orders  order-17  charging  stuck   5         1               2026-10-05T11:49:2
 								<C>--after-saga</C> for the next page.
 							</>
 						],
-						[<C>saga get &lt;saga&gt; &lt;id&gt;</C>, 'One run, with its data and waiting signals as JSON.'],
+						[<C>saga get &lt;saga&gt; &lt;id&gt;</C>, 'One run, its error and waiting signals, and its data when the engine shows it.'],
 						[<C>saga resume &lt;saga&gt; &lt;id&gt;</C>, 'Make a stuck run active again.'],
 						[
 							<C>dot</C>,

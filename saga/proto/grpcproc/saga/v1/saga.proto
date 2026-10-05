@@ -14,7 +14,8 @@ message Query {
   oneof op {
     // Answered with Runs.
     ListRuns list = 1;
-    // Answered with Run, its data and its signals' payloads as JSON.
+    // Answered with Run, with its data and its signals' payloads as JSON
+    // when the engine shows them.
     RunRef get = 2;
   }
 }
@@ -29,8 +30,8 @@ message Control {
   }
 }
 
-// ListRuns asks for the runs of saga, or, with none named, of every saga
-// the engine runs, by saga and then ID, after the run after names. A page
+// ListRuns asks for the runs of saga, which the engine must run, or, with
+// none named, of every saga it runs, by saga and then ID, after the run after names. A page
 // ends at its limit or at two megabytes, and more says so.
 message ListRuns {
   string saga = 1;
@@ -69,7 +70,8 @@ message Run {
   uint64 saga_version = 3;
   string state = 4;
   Status status = 5;
-  // The run's data, as JSON, when the engine runs the saga.
+  // The run's data, as JSON, when the engine shows data
+  // (saga.Config.InspectData): empty, with data_omitted 0, when it does not.
   string data = 6;
   // The size of the data, encoded or as JSON, when it is over a megabyte,
   // too much to carry: data is then empty.
@@ -97,7 +99,7 @@ message Run {
 message Signal {
   uint64 seq = 1;
   string event = 2;
-  // Its payload, as JSON, when the engine runs the saga and it accepts
+  // Its payload, as JSON, when the engine shows data and the saga accepts
   // the event.
   string payload = 3;
   uint64 version = 4;

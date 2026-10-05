@@ -94,10 +94,26 @@ func (e *Engine) control(ctx context.Context, ctl *sagav1.Control) (proto.Messag
 	if r == nil {
 		return nil, errors.New("saga: a Control without an op")
 	}
+	if err := e.runs(r.GetSaga()); err != nil {
+		return nil, err
+	}
 	if err := e.resume(ctx, r.GetSaga(), r.GetId()); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
+}
+
+// ErrNoSaga answers a query or a control about a saga the engine does not
+// run: the store it shares may keep another service's runs, which are not
+// this engine's to show.
+var ErrNoSaga = errors.New("saga: the engine runs no such saga")
+
+// runs reports whether the engine runs saga, or says it does not.
+func (e *Engine) runs(saga string) error {
+	if _, ok := e.sagas[saga]; !ok {
+		return fmt.Errorf("%w: %q", ErrNoSaga, saga)
+	}
+	return nil
 }
 
 // list answers a ListRuns from Store.List, saga by saga: the one it names,
@@ -107,6 +123,8 @@ func (e *Engine) list(ctx context.Context, q *sagav1.ListRuns) (*sagav1.Runs, er
 	sagas := []string{q.GetSaga()}
 	if q.GetSaga() == "" {
 		sagas = slices.Sorted(maps.Keys(e.sagas))
+	} else if err := e.runs(q.GetSaga()); err != nil {
+		return nil, err
 	}
 	limit := int(min(cmp.Or(q.GetLimit(), 100), 1000))
 	after := q.GetAfter()
@@ -139,8 +157,11 @@ func (e *Engine) list(ctx context.Context, q *sagav1.ListRuns) (*sagav1.Runs, er
 	return out, nil
 }
 
-// get answers a run, its data and its signals' payloads as JSON.
+// get answers a run of a saga the engine runs, in full.
 func (e *Engine) get(ctx context.Context, ref *sagav1.RunRef) (*sagav1.Run, error) {
+	if err := e.runs(ref.GetSaga()); err != nil {
+		return nil, err
+	}
 	r, ok, err := e.cfg.Store.Get(ctx, ref.GetSaga(), ref.GetId())
 	switch {
 	case err != nil:
@@ -161,7 +182,7 @@ const (
 )
 
 // run is r as a query answers it: in full, with its data and payloads as
-// JSON if the engine runs its saga, or as a page lists it. Its saga and ID
+// JSON if the engine shows them (Config.InspectData), or as a page lists it. Its saga and ID
 // are as stored, made valid UTF-8, which a proto string must be; its other
 // text is clipped too, and what an answer cannot carry is left out, with its
 // size.
@@ -183,13 +204,14 @@ func (e *Engine) run(r Record, full bool) *sagav1.Run {
 		out.Waiting = uint32(len(r.Inbox))
 		return out
 	}
-	s, known := e.sagas[r.Saga]
-	if known {
+	// A run in full is of a saga the engine runs: get checked.
+	s, show := e.sagas[r.Saga], e.cfg.InspectData
+	if show {
 		out.Data, out.DataOmitted = fit(r.Data, dataBytes, s.dataJSON)
 	}
 	for _, sig := range r.Inbox {
 		v := &sagav1.Signal{Seq: sig.Seq, Event: text(sig.Event, 1<<10), Version: sig.Version}
-		if known {
+		if show {
 			v.Payload, v.PayloadOmitted = fit(sig.Payload, payloadBytes, func(b []byte) string { return s.payloadJSON(sig.Event, b) })
 		}
 		out.Inbox = append(out.Inbox, v)
