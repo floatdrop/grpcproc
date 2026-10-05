@@ -93,6 +93,10 @@ Commands:
   leader uncordon <cluster> <node>  let it lead again
   cron [list] [<pid|name>]    grpcproc/cron processes and their jobs (--node; every node by default)
   cron enable|disable|remove <pid|name> <job>   change a job of a cron process (--node)
+  saga [engines]              grpcproc/saga engines and the sagas they run (--node; every node by default)
+  saga runs [<saga>]          runs in the engines' store (--status, --limit, --after, --after-saga, --node)
+  saga get <saga> <id>        one run, its data and waiting signals as JSON (--node)
+  saga resume <saga> <id>     make a stuck run active again (--node)
   dot                         Graphviz of processes and who started whom (--node, --cluster)
   mcp                         serve these as MCP tools over stdio (--allow-writes)
   web                         serve a web UI that shows the cluster live (--listen, --allow-writes)
@@ -149,7 +153,7 @@ func Main(ctx context.Context, args []string, env Env) int {
 	fs.StringVar(&a.conn.Key, "key", "", "client key file, for mutual TLS")
 	fs.StringVar(&a.conn.ServerName, "servername", "", "server name to verify, when it differs from the address")
 	fs.DurationVar(&a.timeout, "timeout", 5*time.Second, "time limit for each request")
-	fs.BoolVar(&a.json, "json", false, "print JSON: node, nodes, ps, inspect, watch, leader, cron")
+	fs.BoolVar(&a.json, "json", false, "print JSON: node, nodes, ps, inspect, watch, leader, cron, saga")
 	fs.BoolVar(&showVersion, "version", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -247,7 +251,7 @@ var commands map[string]command
 func init() {
 	commands = map[string]command{
 		"node": cmdNode, "nodes": cmdNodes, "ps": cmdPS, "inspect": cmdInspect, "watch": cmdWatch,
-		"exit": cmdExit, "loglevel": cmdLogLevel, "dot": cmdDot, "mcp": cmdMCP, "leader": cmdLeader, "cron": cmdCron,
+		"exit": cmdExit, "loglevel": cmdLogLevel, "dot": cmdDot, "mcp": cmdMCP, "leader": cmdLeader, "cron": cmdCron, "saga": cmdSaga,
 		"web": cmdWeb, "names": cmdNames,
 	}
 }
@@ -739,6 +743,131 @@ func cmdCron(ctx context.Context, a *app, args []string) error {
 		}
 	}
 	return a.table("NODE\tCRON\tJOB\tSPEC\tZONE\tNEXT\tLAST\tRUNNING\tLAST FAILURE\tERROR", rows)
+}
+
+// sagaArgs is how many arguments each saga verb takes, at most.
+var sagaArgs = map[string]int{"engines": 0, "runs": 1, "get": 2, "resume": 2}
+
+func cmdSaga(ctx context.Context, a *app, args []string) error {
+	verb := "engines"
+	if len(args) > 0 {
+		if _, ok := sagaArgs[args[0]]; ok {
+			verb, args = args[0], args[1:]
+		}
+	}
+	var node, status, after, afterSaga string
+	var limit int
+	fs, err := a.flags("saga "+verb, args, func(fs *flag.FlagSet) {
+		fs.StringVar(&node, "node", "", "the node whose engine to ask; by default one that runs the saga")
+		if verb == "runs" {
+			fs.StringVar(&status, "status", "", "only runs in these: active, done, stuck, comma-separated")
+			fs.IntVar(&limit, "limit", 100, "at most this many, up to 1000")
+			fs.StringVar(&after, "after", "", "the id of the last run of the previous page: the next page")
+			fs.StringVar(&afterSaga, "after-saga", "", "the saga of that run, when no saga is named")
+		}
+	})
+	if err != nil {
+		return err
+	}
+	if n := fs.NArg(); n > sagaArgs[verb] || (verb == "get" || verb == "resume") && n != 2 {
+		return usageError{"want: saga [engines] | saga runs [<saga>] | saga get|resume <saga> <id>"}
+	}
+	ctx, cancel := a.request(ctx)
+	defer cancel()
+	var r client.SagaRunView
+	switch verb {
+	case "engines":
+		return a.printEngines(ctx, node)
+	case "runs":
+		q := client.SagaQuery{Saga: fs.Arg(0), Limit: limit, AfterSaga: afterSaga, AfterID: after}
+		for s := range strings.SplitSeq(status, ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				q.Status = append(q.Status, s)
+			}
+		}
+		runs, more, err := a.client.SagaRuns(ctx, node, q)
+		if err != nil {
+			return err
+		}
+		return a.printRuns(runs, more, q.Saga)
+	case "resume":
+		r, err = a.client.ResumeSaga(ctx, node, fs.Arg(0), fs.Arg(1))
+	default:
+		r, err = a.client.SagaRun(ctx, node, fs.Arg(0), fs.Arg(1))
+	}
+	if err != nil {
+		return err
+	}
+	return a.printRun(r)
+}
+
+func (a *app) printEngines(ctx context.Context, node string) error {
+	engines, err := a.client.SagaEngines(ctx, node)
+	if err != nil {
+		return err
+	}
+	if a.json {
+		return a.printJSON(engines)
+	}
+	var rows [][]string
+	for _, e := range engines {
+		rows = append(rows, []string{e.Node, e.Process, strings.Join(e.Sagas, ", "), strconv.Itoa(e.Working), e.Error})
+	}
+	return a.table("NODE\tENGINE\tSAGAS\tWORKING\tERROR", rows)
+}
+
+func (a *app) printRuns(runs []client.SagaRunView, more bool, saga string) error {
+	if a.json {
+		return a.printJSON(struct {
+			Runs []client.SagaRunView `json:"runs"`
+			More bool                 `json:"more"`
+		}{runs, more})
+	}
+	var rows [][]string
+	for _, r := range runs {
+		rows = append(rows, []string{r.Saga, r.ID, r.State, r.Status, strconv.FormatInt(r.Attempts, 10), u(uint64(r.Waiting)), r.Owner, r.Updated, r.Error})
+	}
+	err := a.table("SAGA\tID\tSTATE\tSTATUS\tATTEMPTS\tSIGNALS\tOWNER\tUPDATED\tERROR", rows)
+	if more && err == nil {
+		last := runs[len(runs)-1]
+		hint := "--after " + strconv.Quote(last.ID)
+		if saga == "" {
+			hint = "--after-saga " + strconv.Quote(last.Saga) + " " + hint
+		}
+		_, err = fmt.Fprintf(a.env.Stdout, "more: %s\n", hint)
+	}
+	return err
+}
+
+func (a *app) printRun(r client.SagaRunView) error {
+	if a.json {
+		return a.printJSON(r)
+	}
+	text := func(v any, omitted uint64) string {
+		if omitted > 0 {
+			return fmt.Sprintf("(%d bytes, too large to show)", omitted)
+		}
+		if v == nil {
+			return ""
+		}
+		b, _ := json.Marshal(v, json.Deterministic(true)) // what JSON decoded encodes
+		return string(b)
+	}
+	w := tabwriter.NewWriter(a.env.Stdout, 0, 0, 2, ' ', 0)
+	for _, kv := range [][2]string{
+		{"saga", r.Saga}, {"id", r.ID}, {"version", u(r.Version)}, {"state", r.State}, {"status", r.Status},
+		{"data", text(r.Data, r.DataOmitted)}, {"visit", u(r.Visit)}, {"effect done", strconv.FormatBool(r.EffectDone)},
+		{"attempts", strconv.FormatInt(r.Attempts, 10)}, {"error", r.Error}, {"cause", r.Cause},
+		{"wake", r.Wake}, {"retry at", r.RetryAt}, {"deadline", r.Deadline},
+		{"owner", r.Owner}, {"lease until", r.LeaseUntil}, {"epoch", u(r.Epoch)},
+		{"revision", u(r.Revision)}, {"created", r.Created}, {"updated", r.Updated},
+	} {
+		fmt.Fprintf(w, "%s:\t%s\n", kv[0], kv[1])
+	}
+	for _, sig := range r.Inbox {
+		fmt.Fprintf(w, "  signal %d:\t%s %s\n", sig.Seq, sig.Event, text(sig.Payload, sig.Omitted))
+	}
+	return w.Flush()
 }
 
 func cmdDot(ctx context.Context, a *app, args []string) error {

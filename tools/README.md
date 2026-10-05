@@ -79,6 +79,10 @@ monitors:              2
 | `leader uncordon <cluster> <node>` | let it lead again |
 | `cron [list] [<pid\|name>]` | [grpcproc/cron](../cron/README.md) processes and their jobs: `--node`, every node by default |
 | `cron enable\|disable\|remove <pid\|name> <job>` | change a job of a cron process: `--node` |
+| `saga [engines]` | [grpcproc/saga](../saga/README.md) engines and the sagas they run: `--node`, every node by default |
+| `saga runs [<saga>]` | runs in the engines' store: `--status active,done,stuck`, `--limit`, `--after <id>` (and `--after-saga` when no saga is named) for the next page, `--node` |
+| `saga get <saga> <id>` | one run: its state, error, timers, data and waiting signals as JSON: `--node` |
+| `saga resume <saga> <id>` | make a stuck run active again, then show it: `--node` |
 | `dot` | Graphviz of processes and who started whom: `--node`, `--cluster` |
 | `mcp` | serve these as MCP tools over stdio: `--allow-writes` |
 | `web` | serve a web UI that shows the cluster live: `--listen`, `--allow-writes` |
@@ -88,7 +92,7 @@ what its MCP server reports.
 
 A pid is written as grpcproc prints it, `<node.incarnation.id>`; a name is
 looked up on `--node`, by default the node serving the Inspector.
-`--json` before `node`, `nodes`, `ps`, `inspect`, `names`, `watch`, `leader` or `cron` prints the same
+`--json` before `node`, `nodes`, `ps`, `inspect`, `names`, `watch`, `leader`, `cron` or `saga` prints the same
 data as JSON: one indented value, or for `watch` one compact event per line,
 so `grpcprocctl --json watch | jq` sees events as they happen. The objects
 are those the MCP tools return, which wrap lists in an object of their own.
@@ -142,6 +146,32 @@ why the last one that failed did. `enable`, `disable` and `remove` go to the
 cron process through the Inspector's `Call`, then list it again. Its runs are
 processes of their own: `grpcprocctl ps --label cron:yearly` shows those
 going.
+
+### Sagas
+
+```sh
+grpcprocctl --plaintext saga runs --status stuck
+```
+
+```txt
+SAGA    ID        STATE     STATUS  ATTEMPTS  SIGNALS  OWNER  UPDATED                      ERROR
+orders  order-17  charging  stuck   5         1               2026-10-05T11:49:21.704174Z  card declined
+```
+
+```sh
+grpcprocctl --plaintext saga get orders order-17
+grpcprocctl --plaintext saga resume orders order-17
+```
+
+`saga` finds the saga engines by their label and asks one that says it
+runs the saga, or the first found, or the one on `--node`: an engine
+answers for the runs of the store it shares, and renders the data of the
+sagas it runs. `runs` lists them a page at a time, at most 100 unless
+`--limit` says otherwise, and prints the flags for the next page; `get`
+shows one with its data and the signals waiting for a state that takes
+them, as JSON.
+Both go through the Inspector's `Query`, which a read-only Inspector serves.
+`resume` makes a stuck run active again, through `Call`, which it refuses.
 
 ## In a browser
 
@@ -209,8 +239,10 @@ or a busy process means) and offers:
 | `watch_events` | collect events for a few seconds |
 | `election` | a leader election, as each node sees it |
 | `cron_jobs` | cron processes and their jobs, on a node or all of them |
+| `saga_runs` | saga runs by saga and status, a page at a time |
+| `saga_run` | one saga run, with its data, error and waiting signals |
 | `global_names` | who holds a global name, or every name with a prefix |
-| `exit_process`, `set_log_level`, `move_leader`, `cordon_node`, `uncordon_node`, `enable_cron_job`, `disable_cron_job`, `remove_cron_job` | only with `--allow-writes` |
+| `exit_process`, `set_log_level`, `move_leader`, `cordon_node`, `uncordon_node`, `enable_cron_job`, `disable_cron_job`, `remove_cron_job`, `resume_saga_run` | only with `--allow-writes` |
 
 So "orders are slow since the deploy" becomes: list processes by mailbox,
 find `ledger-writer` with 41 waiting, inspect it, see it busy on one message

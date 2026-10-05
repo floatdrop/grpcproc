@@ -301,7 +301,7 @@ func TestMCPCommand(t *testing.T) {
 		t.Fatalf("mcp reports version %q", v)
 	}
 	tools, err := session.ListTools(t.Context(), nil)
-	if err != nil || len(tools.Tools) != 16 {
+	if err != nil || len(tools.Tools) != 19 {
 		t.Fatalf("%v %v", tools, err)
 	}
 	_ = session.Close()
