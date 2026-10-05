@@ -23,8 +23,8 @@ error types), `queue.go` (the mailbox and link queue), `admit.go` (`Policy`,
 `Export`), `names.go` (global names), `hooks.go`, `events.go`, `info.go`
 (the inspection types). Packages of the core module: `grpcproctest`
 (clusters over bufconn), `inspect` (the Inspector service), `actor`
-(handler loop, supervisor), `pubsub`, `cron`, `leader`, `saga` (durable
-sagas behind a `Store`; `saga/sagatest` checks a store). Nested modules:
+(handler loop, supervisor, `Workers`), `pubsub`, `cron`, `leader`, `saga`
+(durable sagas behind a `Store`; `saga/sagatest` checks a store). Nested modules:
 `otel`, `etcd`, `tools` (released), `examples`, `benchmarks` (not). `site/`
 is the documentation site. Protos are under `proto/` and beside the packages
 that own them.
