@@ -100,7 +100,7 @@ func TestCluster(t *testing.T) {
 		t.Fatal(err)
 	}
 	chat := "> what is 6 * 7?\nLet me think\n" + transcript(t, events, 1)
-	// From then on gpu-1 is asked first and found gone, at once.
+	// From then on gpu-2 is asked first: gpu-1 did not finish.
 	if code, body := say(t, front, "1", "thanks"); code != http.StatusAccepted {
 		t.Fatalf("%d %s", code, body)
 	}

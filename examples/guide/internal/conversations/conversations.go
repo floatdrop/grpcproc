@@ -202,15 +202,17 @@ func (c *conversation) answer(p *grpcproc.Process[*conversationsv1.Request], tex
 // node that is busy says so, and one that cannot be reached never had the
 // request: the next is asked. One that is lost with the request, or fails
 // it, may have published tokens: if another node is asked, the subscribers
-// are first told the answer starts over. With every node busy, it waits for
-// a slot, for as long as a model is given to answer.
+// are first told the answer starts over. A node that failed goes to the back
+// of the conversation's list, so the next answer is asked of one that did
+// not. With every node busy, it waits for a slot, for as long as a model is
+// given to answer.
 func (c *conversation) generate(p *grpcproc.Process[*conversationsv1.Request]) (*modelsv1.Generated, error) {
 	waited := time.Now().Add(c.limits.Generate)
 	lost := "" // the node that took the request and did not finish
 	for {
 		var errs []error
 		busy := false
-		for _, node := range c.models {
+		for _, node := range slices.Clone(c.models) {
 			if p.Context().Err() != nil { // the conversation is told to exit
 				return nil, p.Context().Err()
 			}
@@ -233,6 +235,7 @@ func (c *conversation) generate(p *grpcproc.Process[*conversationsv1.Request]) (
 			switch {
 			case err != nil:
 				errs = append(errs, fmt.Errorf("%s: %w", node, err))
+				c.models = append(slices.DeleteFunc(c.models, func(n string) bool { return n == node }), node)
 				// It may have taken the request and published tokens, unless
 				// the error says the request never left.
 				if link, ok := errors.AsType[*grpcproc.LinkError](err); !ok || !link.Unsent {

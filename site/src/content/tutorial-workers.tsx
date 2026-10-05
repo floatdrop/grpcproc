@@ -117,8 +117,8 @@ export const tutorialWorkers: Doc = {
 					<p>
 						A call to a node that goes down does not wait for its deadline. The call fails when the
 						link to that node breaks, which is what makes failing over quick. In this test{' '}
-						<C>gpu-1</C> is stopped after its first token; the second turn finds it gone, at once,
-						without a word to the subscribers:
+						<C>gpu-1</C> is stopped after its first token. A node that failed goes to the back of
+						the conversation's list, so what comes after is asked of <C>gpu-2</C> first:
 					</p>
 					<Drawing caption="gpu-1 is lost in the middle of an answer">
 						<Failover />
