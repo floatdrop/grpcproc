@@ -54,6 +54,8 @@ func WithResolver(r grpcproc.Resolver, opts ...grpc.DialOption) Option {
 func WithPeers(f PeerFunc) Option { return func(s *Server) { s.peers, s.dialer = f, nil } }
 
 // ReadOnly refuses SetLogLevel, Send, Call and Exit with PermissionDenied.
+// It allows Query, which only a process spawned with grpcproc.WithQuery
+// answers, and which changes nothing.
 func ReadOnly() Option { return func(s *Server) { s.readOnly = true } }
 
 // Server implements grpcproc.inspect.v1.Inspector for one node.
@@ -289,14 +291,11 @@ func (s *Server) Send(ctx context.Context, req *inspectv1.SendRequest) (*inspect
 	if err != nil {
 		return nil, err
 	}
-	if req.GetBody() == nil {
-		return nil, status.Error(codes.InvalidArgument, "inspect: body is required")
-	}
-	body, err := req.GetBody().UnmarshalNew()
+	b, err := body(req.GetBody())
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "inspect: body: %v", err)
+		return nil, err
 	}
-	if err := s.node.SendTo(ctx, to, body); err != nil {
+	if err := s.node.SendTo(ctx, to, b); err != nil {
 		return nil, status.Errorf(codes.Unavailable, "inspect: %v", err)
 	}
 	return &inspectv1.SendResponse{}, nil
@@ -313,14 +312,68 @@ func (s *Server) Call(ctx context.Context, req *inspectv1.CallRequest) (*inspect
 	if err != nil {
 		return nil, err
 	}
-	if req.GetBody() == nil {
+	b, err := body(req.GetBody())
+	if err != nil {
+		return nil, err
+	}
+	a, err := answer(s.node.CallTo[proto.Message](ctx, to, b))
+	if err != nil {
+		return nil, err
+	}
+	return &inspectv1.CallResponse{Body: a}, nil
+}
+
+// Query asks a process a question, through the function it was spawned with
+// grpcproc.WithQuery, which changes nothing; a read-only server allows it. A
+// process spawned with none is Unimplemented.
+func (s *Server) Query(ctx context.Context, req *inspectv1.QueryRequest) (*inspectv1.QueryResponse, error) {
+	if c, node, err := s.remote(ctx, req.GetNode(), req.GetTarget()); c != nil || err != nil {
+		return forward(node, err, func() (*inspectv1.QueryResponse, error) { return c.Query(ctx, req) })
+	}
+	pid, err := s.local(req.GetTarget())
+	if err != nil {
+		return nil, err
+	}
+	q, err := body(req.GetBody())
+	if err != nil {
+		return nil, err
+	}
+	resp, err := s.node.Query(ctx, pid, q)
+	// Node.Query's own refusals are its sentinels themselves; what wraps
+	// one is the function's answer.
+	switch {
+	case err == nil:
+	case err == grpcproc.ErrNoQuery:
+		return nil, status.Errorf(codes.Unimplemented, "inspect: %v", err)
+	case err == grpcproc.ErrNoProc:
+		return nil, status.Errorf(codes.NotFound, "inspect: %v", err)
+	case ctx.Err() != nil:
+		return nil, status.FromContextError(ctx.Err()).Err()
+	default:
+		// The process's answer: its text, as a Call's is.
+		return nil, status.Error(codes.Unknown, err.Error())
+	}
+	a, err := anypb.New(resp)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "inspect: answer: %v", err)
+	}
+	return &inspectv1.QueryResponse{Body: a}, nil
+}
+
+// body is what a request carries, decoded.
+func body(a *anypb.Any) (proto.Message, error) {
+	if a == nil {
 		return nil, status.Error(codes.InvalidArgument, "inspect: body is required")
 	}
-	body, err := req.GetBody().UnmarshalNew()
+	m, err := a.UnmarshalNew()
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "inspect: body: %v", err)
 	}
-	resp, err := s.node.CallTo[proto.Message](ctx, to, body)
+	return m, nil
+}
+
+// answer is a call's answer as a response carries it, or how it failed.
+func answer(resp proto.Message, err error) (*anypb.Any, error) {
 	if err != nil {
 		return nil, callStatus(err)
 	}
@@ -328,7 +381,7 @@ func (s *Server) Call(ctx context.Context, req *inspectv1.CallRequest) (*inspect
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "inspect: answer: %v", err)
 	}
-	return &inspectv1.CallResponse{Body: a}, nil
+	return a, nil
 }
 
 // callStatus is how a call that failed reads over gRPC: an answer that is an

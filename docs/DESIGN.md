@@ -763,6 +763,7 @@ service Inspector {
   rpc SetLogLevel(SetLogLevelRequest) returns (SetLogLevelResponse);
   rpc Send(SendRequest) returns (SendResponse);                            // Any body, from a tool
   rpc Call(CallRequest) returns (CallResponse);                            // Node.CallTo from a tool; an error answer is Unknown
+  rpc Query(QueryRequest) returns (QueryResponse);                         // Node.Query: a process's WithQuery
   rpc Exit(ExitRequest) returns (ExitResponse);
   rpc Watch(WatchRequest) returns (stream WatchResponse);                  // Node.Subscribe over the wire
 }
@@ -780,6 +781,19 @@ answer, with `inspect_error` saying so. Access control is the application's
 (interceptors, mTLS), as for any of its other services; `inspect.ReadOnly()`
 refuses `SetLogLevel`, `Send`, `Call` and `Exit` with `PermissionDenied`, for
 an Inspector that should only be looked at.
+
+`Query` is how such an Inspector still lets a tool ask a process something
+that `WithInspect` cannot answer, because it takes a question or reads
+outside the process: a saga engine's runs are in its store. The Inspector
+cannot tell a call that reads from one that writes, and delivering a
+question as a message would reach any process whose mailbox takes every
+type, such as a pub/sub topic, which would publish it. So a process opts in
+when it is spawned, with `grpcproc.WithQuery(fn)`, and `Node.Query` calls
+`fn` directly, on the asker's goroutine with the asker's ctx; a process
+spawned without one is `ErrNoQuery`, Unimplemented over the wire, and its
+mailbox is never touched. A query must change nothing: that is the
+contract `WithQuery` states, and the one guarantee a read-only Inspector
+relies on.
 
 What sits on top, outside the core, is `grpcproc/tools`, one binary,
 `grpcprocctl`, with three faces over the same Go client (`tools/client`):
@@ -1540,6 +1554,15 @@ snap, err := orders.Wait(ctx, eng, "order-123") // its state, data and status, o
   claims the run at its next tick, without waiting the lease out. A node
   that dies leaves the lease to run out (`Config.Lease`, 30s). A run that
   waits is a record and no more.
+- **An engine answers for the store.** Through the Inspector, an engine is
+  asked a `grpcproc.saga.v1.Query`, which lists runs or gets one with its
+  data as JSON, and called with a `Control`, which resumes one; any engine
+  that shares the store answers for the runs of its sagas, or of one named.
+  A query reads, so it is the engine's `WithQuery`, which a read-only
+  Inspector serves, run on the asker's goroutine; a resume is a `Call`,
+  which it refuses, answered in a process of its own. Neither asks the
+  store from the loop, which would hold up the claims; four of each at
+  once, `ErrBusy` past that.
 - **`Sequence` is the saga of the textbooks, as a machine.** Steps in
   order, each with what undoes it: a step that fails for good before the
   pivot has the steps before it undone, last first, itself included, since
@@ -1590,8 +1613,10 @@ OpenTelemetry and the PostgreSQL saga store are.
   installation with no database; a wrapper for
   participants that answers a repeated key with the stored reply and refuses
   a lower fence; steps that run side by side; retention of finished runs;
-  dropping the signals no state of a run will take;
-  `grpcprocctl saga` and a view in the web UI.
+  dropping the signals no state of a run will take; a `Store.List` that
+  pages and leaves the data out, since an engine's list reads every run of
+  a saga for each page; `grpcprocctl saga`, which the engine's queries are
+  for, and a view in the web UI.
 - **Process groups**, Erlang's `pg` and Akka's Receptionist: the live
   members of a group, found and watched. Pub/sub topics already monitor their
   subscribers through a relay per node, so it is a thin module.

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/floatdrop/fsm"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/floatdrop/grpcproc"
@@ -131,7 +132,9 @@ type Definition[S comparable, D proto.Message] struct {
 	steps   map[S]*step
 	timers  map[S]timer
 	signals map[string]take[S, D]
-	errs    []error
+	// payloads renders the payload of each event Accept took, as JSON.
+	payloads map[string]func([]byte) string
+	errs     []error
 }
 
 type timer struct {
@@ -152,6 +155,7 @@ func Define[D proto.Message, S comparable](name string, m *fsm.Machine[S]) *Defi
 		name: name, m: m,
 		states: map[string]S{}, names: map[S]string{}, ends: map[S]bool{},
 		effects: map[S]Effect[S, D]{}, steps: map[S]*step{}, timers: map[S]timer{}, signals: map[string]take[S, D]{},
+		payloads: map[string]func([]byte) string{},
 	}
 	if name == "" {
 		d.errs = append(d.errs, errors.New("saga: a saga needs a name"))
@@ -239,6 +243,7 @@ func (d *Definition[S, D]) After(state S, after time.Duration, ev fsm.Event[fsm.
 // state that takes it by an internal transition (fsm's Stay) keeps its visit:
 // its effect is not run again, and its timer stands.
 func (d *Definition[S, D]) Accept[P proto.Message](ev fsm.Event[P], apply func(data D, p P)) *Definition[S, D] {
+	d.payloads[ev.Name()] = jsonOf[P]
 	d.accept(ev.Name(), func(ctx context.Context, st *S, data D, payload []byte) (bool, bool, error) {
 		p := newMessage[P]()
 		if err := proto.Unmarshal(payload, p); err != nil {
@@ -359,11 +364,7 @@ func (d *Definition[S, D]) signal(ctx context.Context, e *Engine, id string, s S
 
 // Resume has a Stuck run tried again, from the state it is in.
 func (d *Definition[S, D]) Resume(ctx context.Context, e *Engine, id string) error {
-	if err := e.cfg.Store.Resume(ctx, d.name, id); err != nil {
-		return err
-	}
-	e.nudge()
-	return nil
+	return e.resume(ctx, d.name, id)
 }
 
 // Get returns a run as it stands; ErrNoRun if there is none.
@@ -421,4 +422,26 @@ func (d *Definition[S, D]) enter(r *Record, st S, now time.Time) {
 	if t, ok := d.timers[st]; ok {
 		r.Deadline = now.Add(t.after)
 	}
+}
+
+func (*Definition[S, D]) dataJSON(data []byte) string { return jsonOf[D](data) }
+
+func (d *Definition[S, D]) payloadJSON(event string, payload []byte) string {
+	if render, ok := d.payloads[event]; ok {
+		return render(payload)
+	}
+	return ""
+}
+
+// jsonOf is b, a protobuf encoding of an M, as JSON; "" if it is not one.
+func jsonOf[M proto.Message](b []byte) string {
+	m := newMessage[M]()
+	if proto.Unmarshal(b, m) != nil {
+		return ""
+	}
+	j, err := protojson.Marshal(m)
+	if err != nil {
+		return ""
+	}
+	return string(j)
 }

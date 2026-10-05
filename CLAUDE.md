@@ -14,10 +14,11 @@ other frameworks do. This file is the working detail behind it; the two are
 edited together.
 
 Core: `node.go` (`Config`, `Node`, `NewNode`, `Start`, `Stop`, `Disconnect`,
-discovery interfaces, `dispatch`), `link.go` (outbound and inbound links,
+discovery interfaces, `dispatch`, `Query`), `link.go` (outbound and inbound links,
 dialing and backoff, the handshake, sessions: `supersede`, `admit`,
 `outLost`, `inLost`, `takeLinks`), `process.go` (`Process`, `Msg`, spawn
-options, mailbox, monitors and links), `addr.go` (`Addr[M]`, typed `Send` and
+options, `WithInspect` and `WithQuery` among them, mailbox, monitors and
+links), `addr.go` (`Addr[M]`, typed `Send` and
 `Call`, `Caller`, metadata), `pid.go` (`PID`, `Name`, `Ref`, `Down`, the
 error types), `queue.go` (the mailbox and link queue), `admit.go` (`Policy`,
 `Export`), `names.go` (global names), `hooks.go`, `events.go`, `info.go`
@@ -325,7 +326,7 @@ works on a newer one's runs. A store must pass `sagatest.Store`.
 - **Errors are values with what a caller needs:** `LinkError` with `Peer`
   and `Unsent`, `ExitError` with the reason, `RemoteError` matching by
   message; sentinels (`ErrNoProc`, `ErrNoConnection`, `ErrType`,
-  `ErrLinkBusy`, `ErrMailboxFull`, `ErrNodeStopped`) are matched with
+  `ErrLinkBusy`, `ErrMailboxFull`, `ErrNoQuery`, `ErrNodeStopped`) are matched with
   `errors.Is`.
 
 ## Tooling caveats

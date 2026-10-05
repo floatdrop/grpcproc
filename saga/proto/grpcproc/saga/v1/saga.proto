@@ -1,0 +1,107 @@
+// grpcproc.saga.v1 is what a saga engine is asked about the runs in its
+// store, through the Inspector: queries, which read, and controls, which
+// change a run.
+syntax = "proto3";
+
+package grpcproc.saga.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/floatdrop/grpcproc/saga/proto/grpcproc/saga/v1;sagav1";
+
+// Query is the body of an Inspector Query to an engine.
+message Query {
+  oneof op {
+    // Answered with Runs.
+    ListRuns list = 1;
+    // Answered with Run, its data and its signals' payloads as JSON.
+    RunRef get = 2;
+  }
+}
+
+// Control is the body of an Inspector Call to an engine. Every op is
+// answered with google.protobuf.Empty or an error.
+message Control {
+  oneof op {
+    // Makes a Stuck run Active, due at once, its attempts counted from
+    // none, as Definition.Resume does.
+    RunRef resume = 1;
+  }
+}
+
+// ListRuns asks for the runs of saga, or, with none named, of every saga
+// the engine runs, by saga and then ID, after the run after names. A page
+// ends at its limit or at two megabytes, and more says so.
+message ListRuns {
+  string saga = 1;
+  // The statuses to list; all of them when there is none.
+  repeated Status status = 2;
+  // How many to answer with: 100 when 0, at most 1000.
+  uint32 limit = 3;
+  // The run to list after, as the last of a previous answer.
+  RunRef after = 4;
+}
+
+message RunRef {
+  string saga = 1;
+  string id = 2;
+}
+
+message Runs {
+  repeated Run runs = 1;
+  // Set when there are more after the last.
+  bool more = 2;
+}
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_ACTIVE = 1;
+  STATUS_DONE = 2;
+  STATUS_STUCK = 3;
+}
+
+// Run is a run as its store keeps it. A run in a list has neither its data
+// nor its signals, only how many wait, and a kilobyte of its error and
+// cause.
+message Run {
+  string saga = 1;
+  string id = 2;
+  uint64 saga_version = 3;
+  string state = 4;
+  Status status = 5;
+  // The run's data, as JSON, when the engine runs the saga.
+  string data = 6;
+  // The size of the data, encoded or as JSON, when it is over a megabyte,
+  // too much to carry: data is then empty.
+  uint64 data_omitted = 23;
+  // How many signals wait, in a list.
+  uint32 waiting = 24;
+  uint64 visit = 7;
+  bool effect_done = 8;
+  int64 attempts = 9;
+  string error = 10;
+  string cause = 11;
+  google.protobuf.Timestamp wake = 12;
+  google.protobuf.Timestamp retry_at = 13;
+  google.protobuf.Timestamp deadline = 14;
+  string owner = 15;
+  google.protobuf.Timestamp lease_until = 16;
+  uint64 epoch = 17;
+  uint64 seen = 18;
+  repeated Signal inbox = 19;
+  uint64 revision = 20;
+  google.protobuf.Timestamp created_at = 21;
+  google.protobuf.Timestamp updated_at = 22;
+}
+
+message Signal {
+  uint64 seq = 1;
+  string event = 2;
+  // Its payload, as JSON, when the engine runs the saga and it accepts
+  // the event.
+  string payload = 3;
+  uint64 version = 4;
+  // The size of the payload, encoded or as JSON, when it is over sixteen
+  // kilobytes: payload is then empty.
+  uint64 payload_omitted = 5;
+}

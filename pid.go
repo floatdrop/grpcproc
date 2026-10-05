@@ -123,6 +123,7 @@ var (
 	ErrNodeStopped  = errors.New("grpcproc: node stopped")
 	ErrNotCall      = errors.New("grpcproc: message is not a call")
 	ErrType         = errors.New("grpcproc: process does not accept this message type")
+	ErrNoQuery      = errors.New("grpcproc: process answers no queries") // see WithQuery
 )
 
 // RemoteError is the error a Call handler returned, carried back to the

@@ -41,7 +41,9 @@ defer insp.Close()`}</Code>
 					</p>
 					<p>
 						<C>inspect.ReadOnly()</C> refuses the four writes: <C>Send</C>, <C>Call</C>,{' '}
-						<C>Exit</C> and <C>SetLogLevel</C>. Anything finer is the job of the interceptors and
+						<C>Exit</C> and <C>SetLogLevel</C>. It allows <C>Query</C>, which only a process
+						spawned with <C>grpcproc.WithQuery</C> answers, and which changes nothing. Anything
+						finer is the job of the interceptors and
 						transport credentials that guard your other services. The tutorial's platform serves the
 						Inspector read-only because it shares the node's port and nothing there authenticates.
 					</p>
@@ -77,6 +79,15 @@ defer insp.Close()`}</Code>
 									A call, as <C>Node.CallTo</C> makes it: the answer as an <C>Any</C>, the request's
 									deadline as the call's, and an answer that is an error as <C>Unknown</C> with its
 									text.
+								</>
+							],
+							[
+								<C>Query</C>,
+								<>
+									A question to a process spawned with <C>WithQuery</C>, as <C>Node.Query</C> asks
+									it: its function answers on the Inspector's goroutine, without the mailbox. A
+									process spawned without one is <C>Unimplemented</C>. A saga engine answers queries
+									about its runs.
 								</>
 							],
 							[<C>Exit</C>, <>A request to exit; the reason defaults to <C>killed</C>.</>],
