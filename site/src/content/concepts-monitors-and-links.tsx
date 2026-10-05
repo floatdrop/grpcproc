@@ -278,6 +278,12 @@ for {
 								'The function panicked; the message follows, and the stack goes to the log. Abnormal.'
 							],
 							[
+								<C>goexit</C>,
+								<>
+									The function called <C>runtime.Goexit</C>, as <C>t.FailNow</C> does. Abnormal.
+								</>
+							],
+							[
 								<C>shutdown</C>,
 								'An orderly stop: the node is stopping, or a supervisor stopped the child. Not abnormal.'
 							],

@@ -107,6 +107,15 @@ export const referenceErrors: Doc = {
 								</>
 							],
 							[
+								<C>actor.ErrWorkersBusy</C>,
+								<>
+									Returned by <C>Workers.ReplyLater</C> when all its workers are answering, without
+									running the call's <C>fn</C>. <C>HandleCall</C> returning it answers the caller, who
+									gets a <C>*RemoteError</C> that is it to <C>errors.Is</C>; making the call again cannot
+									run it twice.
+								</>
+							],
+							[
 								<C>actor.ErrAlreadyStarted</C>,
 								<>
 									A <C>StartChild</C> or <C>StartChildFrom</C> of a name the supervisor already runs a
@@ -218,6 +227,7 @@ if errors.Is(err, grpcproc.ErrNoConnection) {
 							[<C>normal</C>, <>The process function returned <C>nil</C>, or the actor returned <C>actor.ErrStop</C>.</>],
 							['the error’s text', 'The process function returned an error, or an actor’s handler did.'],
 							[<C>panic: …</C>, 'The process panicked; the stack is logged.'],
+							[<C>goexit</C>, <>The process function called <C>runtime.Goexit</C>, as <C>t.FailNow</C> does.</>],
 							['what Exit asked for', <>A process or the node called <C>Exit</C> with that reason. It is never trapped.</>],
 							[<C>shutdown</C>, <>The node is stopping, or a supervisor is stopping its child, or a supervisor ended itself because its significant children ended.</>],
 							[<C>killed</C>, <>The Inspector's <C>Exit</C>, and <C>grpcprocctl exit</C>, with no reason given.</>],

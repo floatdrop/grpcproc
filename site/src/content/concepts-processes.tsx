@@ -294,6 +294,10 @@ if t.Stop() {
 							like an error. The node keeps running.
 						</li>
 						<li>
+							<C>goexit</C> for a function that called <C>runtime.Goexit</C>, as <C>t.FailNow</C>{' '}
+							does.
+						</li>
+						<li>
 							What <C>Exit</C> asked for: a request to exit reaches the process as an error from{' '}
 							<C>Receive</C>, and the reason is the one the request carried. The node stops its
 							processes with <C>shutdown</C>, and the Inspector's <C>Exit</C> defaults to{' '}
