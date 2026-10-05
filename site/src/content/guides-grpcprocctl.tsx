@@ -187,9 +187,10 @@ b     billing  yearly  @yearly     UTC   disabled                    0`}</Output
 				<>
 					<p>
 						<C>saga</C> finds the <A to="guides/sagas/">grpcproc/saga</A> engines and asks one that
-						says it runs the saga, or the first found, or the one on <C>--node</C>: an engine answers
-						for the runs of the sagas it runs, and shows their data only with its{' '}
-						<C>Config.InspectData</C>.{' '}
+						says it runs the saga, on <C>--node</C> if given: an engine answers for the runs of the
+						sagas it runs and no others, and shows their data only with its{' '}
+						<C>Config.InspectData</C>. With no saga named, <C>runs</C> lists the sagas of the first
+						engine found.{' '}
 						<C>runs</C> lists them a page at a time, by <C>--status</C>, and prints the flags for the
 						next page:
 					</p>
@@ -299,7 +300,7 @@ orders  order-17  charging  stuck   5         1               2026-10-05T11:49:2
 						[
 							<C>saga runs [&lt;saga&gt;]</C>,
 							<>
-								Runs in the engines' store: <C>--status</C>, <C>--limit</C>, <C>--after</C> and{' '}
+								Runs of a saga, or of one engine's sagas: <C>--status</C>, <C>--limit</C>, <C>--after</C> and{' '}
 								<C>--after-saga</C> for the next page.
 							</>
 						],

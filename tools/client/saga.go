@@ -41,8 +41,9 @@ type SagaRunView struct {
 	Version uint64 `json:"version,omitzero" jsonschema:"the highest version of the saga that began, signalled or worked on it"`
 	State   string `json:"state" jsonschema:"the state of the saga's machine it is in"`
 	Status  string `json:"status" jsonschema:"active: it goes on, at work or waiting; done: it ended; stuck: an effect failed for good with nothing to fire, and it waits for a resume"`
-	// Data is the run's data as JSON, when an engine asked for one run runs
-	// its saga.
+	// Data is the run's data as JSON, asked for one run of an engine that
+	// shows data (saga.Config.InspectData); left out when it shows none, or
+	// cannot read it.
 	Data        any          `json:"data,omitempty"`
 	DataOmitted uint64       `json:"data_omitted,omitzero" jsonschema:"the size of the data when it is too large to carry: data is then left out"`
 	Waiting     uint32       `json:"waiting,omitzero" jsonschema:"how many signals wait, in a list, which carries the count and not the signals"`
@@ -67,7 +68,7 @@ type SagaRunView struct {
 type SagaSignal struct {
 	Seq     uint64 `json:"seq"`
 	Event   string `json:"event"`
-	Payload any    `json:"payload,omitempty" jsonschema:"its payload as JSON, when an engine asked for one run runs its saga and accepts the event"`
+	Payload any    `json:"payload,omitempty" jsonschema:"its payload as JSON, asked for one run of an engine that shows data and accepts the event; left out otherwise, and for a signal with none"`
 	Omitted uint64 `json:"payload_omitted,omitzero" jsonschema:"the size of the payload when it is too large to carry: payload is then left out"`
 	Version uint64 `json:"version,omitzero"`
 }
@@ -139,51 +140,56 @@ func (c *Client) sagaEngine(ctx context.Context, node, pid string) SagaEngineVie
 }
 
 // engine is the saga engine to ask about saga: on node, or, when node is
-// empty, the first of the cluster's that says it runs saga, or the first
-// found when none does or none is asked about. Any engine answers for the
-// runs of a store it shares; one that runs the saga renders their data.
-// One too busy to say what it runs is still asked: a query does not wait
-// for it.
+// empty, the first of the cluster's that says it runs saga, since an engine
+// answers for no other. One too busy to say what it runs is asked when none
+// says so: a query does not wait for what keeps it busy. With no saga named,
+// the first engine found is asked, for the sagas it runs.
 func (c *Client) engine(ctx context.Context, node, saga string) (*inspectv1.Target, string, error) {
 	nodes, err := c.nodesOf(ctx, node)
 	if err != nil {
 		return nil, "", err
 	}
-	var first, firstNode string
+	var busy, busyNode string
+	found := false
 	for _, n := range nodes {
 		ps, err := c.Processes(ctx, n, Filter{Label: sagaLabel})
 		if err != nil {
 			return nil, "", err
 		}
 		for _, p := range ps {
-			if first == "" {
-				first, firstNode = p.PID, n
-			}
+			found = true
 			if saga == "" {
-				break
-			}
-			if info, err := c.Process(ctx, n, p.PID, true, 0); err == nil && info.Inspect["saga "+saga] != "" {
 				t, _ := parseTarget(p.PID) // as the Inspector wrote it
 				return t, n, nil
 			}
-		}
-		if first != "" && saga == "" {
-			break
+			info, err := c.Process(ctx, n, p.PID, true, 0)
+			switch {
+			case err != nil: // gone since it was listed
+			case info.Inspect["saga "+saga] != "":
+				t, _ := parseTarget(p.PID)
+				return t, n, nil
+			case busy == "" && info.InspectError != "":
+				busy, busyNode = p.PID, n
+			}
 		}
 	}
-	if first == "" {
-		if node == "" {
-			return nil, "", errors.New("no saga engine reachable from this node")
-		}
-		return nil, "", fmt.Errorf("no saga engine on node %s", node)
+	switch {
+	case busy != "":
+		t, _ := parseTarget(busy)
+		return t, busyNode, nil
+	case found && node != "":
+		return nil, "", fmt.Errorf("no saga engine on node %s runs saga %q", node, saga)
+	case found:
+		return nil, "", fmt.Errorf("no saga engine runs saga %q", saga)
+	case node == "":
+		return nil, "", errors.New("no saga engine reachable from this node")
 	}
-	t, _ := parseTarget(first)
-	return t, firstNode, nil
+	return nil, "", fmt.Errorf("no saga engine on node %s", node)
 }
 
-// SagaRuns lists the runs q asks for, from the store of the engine on node,
-// or of an engine found as engine finds one, by saga and then ID; more says
-// whether there are more after the last.
+// SagaRuns lists the runs q asks for, from an engine found as engine finds
+// one, by saga and then ID; more says whether there are more after the
+// last. With no saga named, they are the runs of the sagas one engine runs.
 func (c *Client) SagaRuns(ctx context.Context, node string, q SagaQuery) (runs []SagaRunView, more bool, err error) {
 	list := &sagav1.ListRuns{Saga: q.Saga, Limit: uint32(min(max(q.Limit, 0), 1000))}
 	for _, s := range q.Status {
@@ -212,7 +218,7 @@ func (c *Client) SagaRuns(ctx context.Context, node string, q SagaQuery) (runs [
 }
 
 // SagaRun describes one run, with its data and its signals' payloads as
-// JSON when the engine asked runs its saga.
+// JSON when the engine shows them (saga.Config.InspectData).
 func (c *Client) SagaRun(ctx context.Context, node, saga, id string) (SagaRunView, error) {
 	t, n, err := c.engine(ctx, node, saga)
 	if err != nil {

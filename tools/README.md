@@ -80,7 +80,7 @@ monitors:              2
 | `cron [list] [<pid\|name>]` | [grpcproc/cron](../cron/README.md) processes and their jobs: `--node`, every node by default |
 | `cron enable\|disable\|remove <pid\|name> <job>` | change a job of a cron process: `--node` |
 | `saga [engines]` | [grpcproc/saga](../saga/README.md) engines and the sagas they run: `--node`, every node by default |
-| `saga runs [<saga>]` | runs in the engines' store: `--status active,done,stuck`, `--limit`, `--after <id>` (and `--after-saga` when no saga is named) for the next page, `--node` |
+| `saga runs [<saga>]` | runs of a saga, or of the sagas one engine runs: `--status active,done,stuck`, `--limit`, `--after <id>` (and `--after-saga` when no saga is named) for the next page, `--node` |
 | `saga get <saga> <id>` | one run: its state, error, timers and waiting signals, with its data and payloads as JSON when the engine shows them: `--node` |
 | `saga resume <saga> <id>` | make a stuck run active again, then show it: `--node` |
 | `dot` | Graphviz of processes and who started whom: `--node`, `--cluster` |
@@ -164,9 +164,10 @@ grpcprocctl --plaintext saga resume orders order-17
 ```
 
 `saga` finds the saga engines by their label and asks one that says it
-runs the saga, or the first found, or the one on `--node`: an engine
-answers for the runs of the sagas it runs, and shows their data only with
-its `Config.InspectData`. `runs` lists them a page at a time, at most 100 unless
+runs the saga, on `--node` if given: an engine answers for the runs of the
+sagas it runs and no others, and shows their data only with its
+`Config.InspectData`. With no saga named, `runs` lists the sagas of the
+first engine found. `runs` lists them a page at a time, at most 100 unless
 `--limit` says otherwise, and prints the flags for the next page; `get`
 shows one, its error and the signals waiting for a state that takes them,
 with its data and their payloads as JSON when the engine shows them.

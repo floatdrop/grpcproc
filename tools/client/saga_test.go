@@ -73,15 +73,18 @@ func TestSagas(t *testing.T) {
 	for name, err := range map[string]error{
 		"a bad status":       func() error { _, _, err := c.SagaRuns(ctx, "", client.SagaQuery{Status: []string{"lost"}}); return err }(),
 		"no such run":        func() error { _, err := c.SagaRun(ctx, "", "orders", "none"); return err }(),
-		"a bad saga":         func() error { _, err := c.SagaRun(ctx, "", "\xff", "1"); return err }(),
+		"a bad saga":         func() error { _, err := c.SagaRun(ctx, "", "orders", "\xff"); return err }(),
 		"no engine":          func() error { _, err := c.SagaRun(ctx, "b", "orders", "1"); return err }(),
 		"resume none":        func() error { _, err := c.ResumeSaga(ctx, "", "orders", "none"); return err }(),
-		"resume bad":         func() error { _, err := c.ResumeSaga(ctx, "", "\xff", "1"); return err }(),
+		"resume bad":         func() error { _, err := c.ResumeSaga(ctx, "", "orders", "\xff"); return err }(),
 		"resume on b":        func() error { _, err := c.ResumeSaga(ctx, "b", "orders", "1"); return err }(),
 		"no node":            func() error { _, _, err := c.SagaRuns(ctx, "nowhere", client.SagaQuery{}); return err }(),
 		"engines of no node": func() error { _, err := c.SagaEngines(ctx, "nowhere"); return err }(),
 		"runs on b":          func() error { _, _, err := c.SagaRuns(ctx, "b", client.SagaQuery{}); return err }(),
-		"runs of a bad saga": func() error { _, _, err := c.SagaRuns(ctx, "", client.SagaQuery{Saga: "\xff"}); return err }(),
+		"runs of a bad saga": func() error {
+			_, _, err := c.SagaRuns(ctx, "", client.SagaQuery{Saga: "orders", AfterID: "\xff"})
+			return err
+		}(),
 		"no engine anywhere": func() error {
 			_, err := client.New(testcluster.Start(t).C.Conn("a")).SagaRun(ctx, "", "orders", "1")
 			return err
@@ -109,8 +112,12 @@ func TestSagasOfSeveralEngines(t *testing.T) {
 			t.Errorf("%s: %+v %v", s, runs, err)
 		}
 	}
-	// A saga no engine says it runs is asked of the first found.
-	if _, err := c.SagaRun(ctx, "", "unknown", "1"); err == nil || !strings.Contains(err.Error(), "no such run") {
+	// A saga no engine runs is asked of none.
+	if _, err := c.SagaRun(ctx, "", "unknown", "1"); err == nil || err.Error() != `no saga engine runs saga "unknown"` {
 		t.Errorf("a saga nobody runs: %v", err)
+	}
+	// Asked on a node whose engine does not run it, the engine says so.
+	if _, err := c.SagaRun(ctx, "b", "orders", "1"); err == nil || err.Error() != `no saga engine on node b runs saga "orders"` {
+		t.Errorf("orders asked on b: %v", err)
 	}
 }

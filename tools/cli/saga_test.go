@@ -84,3 +84,10 @@ func TestSagaErrors(t *testing.T) {
 		}
 	}
 }
+
+// An engine that shows no data: get says so rather than print nothing.
+func TestSagaDataNotShown(t *testing.T) {
+	f := testcluster.Start(t)
+	f.SagaHidingData(t, "a", "orders")
+	has(t, ok(t, run(t, f, "saga", "get", "orders", "1")), "data: (not shown)", "status: active")
+}

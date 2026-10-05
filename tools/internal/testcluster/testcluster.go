@@ -197,6 +197,17 @@ func (f *Fixture) Cron(t *testing.T, node, name string) grpcproc.PID {
 // with data too large to show.
 func (f *Fixture) Saga(t *testing.T, node, name string) *saga.Engine {
 	t.Helper()
+	return f.saga(t, node, name, true)
+}
+
+// SagaHidingData is Saga with an engine that shows no run's data.
+func (f *Fixture) SagaHidingData(t *testing.T, node, name string) *saga.Engine {
+	t.Helper()
+	return f.saga(t, node, name, false)
+}
+
+func (f *Fixture) saga(t *testing.T, node, name string, inspect bool) *saga.Engine {
+	t.Helper()
 	paid := fsm.Define[*wrapperspb.StringValue]("paid")
 	m := fsm.MustNew(name, fsm.Initial("charging"), fsm.From("charging").On(paid).To("done"))
 	orders := saga.Define[*wrapperspb.StringValue](name, m).Accept(paid, nil).Version(2)
@@ -211,7 +222,7 @@ func (f *Fixture) Saga(t *testing.T, node, name string) *saga.Engine {
 			t.Fatal(err)
 		}
 	}
-	e, err := saga.Start(f.C.Node(node), saga.Config{Store: store}, orders)
+	e, err := saga.Start(f.C.Node(node), saga.Config{Store: store, InspectData: inspect}, orders)
 	if err != nil {
 		t.Fatal(err)
 	}
