@@ -3,6 +3,7 @@ package grpcproc_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -74,16 +75,20 @@ func TestRemoteByPIDAndName(t *testing.T) {
 		if err != nil || r.N != 10 {
 			t.Fatalf("call by name: %v %v", r, err)
 		}
-		// A typed call from inside a process, reply type explicit, request inferred.
+		// A typed call from inside a process, reply type explicit, request
+		// inferred. The test waits for it: the call must end before the test's
+		// ctx does.
+		called := make(chan string, 1)
 		_, err = a.Spawn[proto.Message](func(p *grpcproc.Process[proto.Message]) error {
 			r, err := e.Call[*testpb.Pong](ctx(t), p, &testpb.Ping{N: 99})
-			if err != nil || r.N != 100 {
-				t.Errorf("process call: %v %v", r, err)
-			}
+			called <- fmt.Sprint(r.GetN(), " ", err)
 			return nil
 		})
 		if err != nil {
 			t.Fatal(err)
+		}
+		if got := <-called; got != "100 <nil>" {
+			t.Fatalf("process call: %s", got)
 		}
 		// Errors from handlers cross the wire.
 		_, err = a.CallTo[*testpb.Pong](ctx(t), e, &testpb.Ping{N: -1})
