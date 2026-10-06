@@ -174,16 +174,18 @@ func Store(t *testing.T, open func(t *testing.T) saga.Store) {
 		if _, _, err := s.Create(ctx, saga.Record{Saga: "a", ID: "1", Wake: time.Now()}); err != nil {
 			t.Fatal(err)
 		}
+		// Renewed late in the lease and tried just past its first end, so a
+		// slow store has most of the renewed lease to answer in.
 		mine := claimOne(t, s, "e1")
-		time.Sleep(150 * time.Millisecond)
+		time.Sleep(lease * 3 / 4)
 		if err := s.Renew(ctx, "a", "1", mine.Epoch, lease); err != nil {
 			t.Fatal(err)
 		}
-		time.Sleep(300 * time.Millisecond) // past the first lease, within the renewed one
+		time.Sleep(lease/4 + lease/10) // past the first lease, within the renewed one
 		if got, _ := s.Claim(ctx, "e2", map[string]uint64{"a": 0}, time.Minute, 1); len(got) != 0 {
 			t.Fatalf("claimed under a renewed lease: %+v", got)
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(lease) // past the renewed lease
 		theirs := claimOne(t, s, "e2")
 		if theirs.Epoch != mine.Epoch+1 {
 			t.Fatalf("epoch %d after %d", theirs.Epoch, mine.Epoch)
@@ -319,7 +321,7 @@ func Store(t *testing.T, open func(t *testing.T) saga.Store) {
 }
 
 // lease is how long claimOne's claims hold.
-const lease = 400 * time.Millisecond
+const lease = time.Second
 
 // claimOne claims the one run that is due, of saga "a".
 func claimOne(t *testing.T, s saga.Store, owner string) saga.Record {
