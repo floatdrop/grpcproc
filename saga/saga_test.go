@@ -289,15 +289,17 @@ func TestSignals(t *testing.T) {
 		ctx := t.Context()
 
 		begin(t, d, e, "1")
-		// These come early: first takes neither, and they are kept.
-		if err := d.Signal(ctx, e, "1", evPaid, wrapperspb.String("42")); err != nil {
-			t.Fatal(err)
-		}
-		// Two the saga cannot read, as another version of it might leave.
+		// Two the saga cannot read, as another version of it might leave. The
+		// store does not wake the engine: the signal after them, through it,
+		// does.
 		for _, s := range []saga.Signal{{Event: "bogus"}, {Event: "paid", Payload: []byte{0xff}}} {
 			if err := store.Signal(ctx, "signals", "1", s); err != nil {
 				t.Fatal(err)
 			}
+		}
+		// This comes early: first does not take it, and it is kept.
+		if err := d.Signal(ctx, e, "1", evPaid, wrapperspb.String("42")); err != nil {
+			t.Fatal(err)
 		}
 		synctest.Wait()
 		if s, _ := d.Get(ctx, e, "1"); s.State != first || s.Status != saga.Active {
