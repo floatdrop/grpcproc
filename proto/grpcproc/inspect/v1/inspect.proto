@@ -92,6 +92,20 @@ message NodeInfo {
   repeated Link links = 8;
   // The node's Config.Metadata: its version, its zone.
   map<string, string> metadata = 9;
+  // What the node's Config.Membership reports up, by name (Node.Members):
+  // the node among them once it reports it; none without a Membership. A
+  // member whose name, address or metadata could not be a node's own (not
+  // valid UTF-8, or over 16 KiB) is left out.
+  repeated Member members = 10;
+}
+
+// A node that Membership reports up.
+message Member {
+  // The incarnation is 0 when the Membership does not know it.
+  NodeID id = 1;
+  // Where peers dial it: its Config.Advertise.
+  string addr = 2;
+  map<string, string> metadata = 3;
 }
 
 enum ProcessState {

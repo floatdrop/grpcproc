@@ -361,6 +361,21 @@ func TestMembers(t *testing.T) {
 		if _, ok := a.Member("x"); ok {
 			t.Fatal("x is still a member")
 		}
+		// One whose text could not be a node's own is left out, never listed
+		// with it changed.
+		m.events <- grpcproc.MemberEvent{Up: true, Member: grpcproc.Member{Name: "q\xff"}}
+		m.events <- grpcproc.MemberEvent{Up: true, Member: grpcproc.Member{Name: "r", Addr: "\xff"}}
+		m.events <- grpcproc.MemberEvent{Up: true, Member: grpcproc.Member{Name: "s", Metadata: map[string]string{"k": "\xff"}}}
+		m.events <- grpcproc.MemberEvent{Up: true, Member: grpcproc.Member{Name: "t", Metadata: map[string]string{"k": strings.Repeat("v", 16<<10+1)}}}
+		m.events <- grpcproc.MemberEvent{Up: true}
+		check("a#" + fmt.Sprint(a.ID().Incarnation) + "map[version:2] y#0map[version:3]")
+		// A newer incarnation that cannot be listed replaces the one kept all
+		// the same: the older is gone, and listed no more.
+		up("w", 1, "1")
+		m.events <- grpcproc.MemberEvent{Up: true, Member: grpcproc.Member{Name: "w", Incarnation: 1, Metadata: map[string]string{"k": "\xff"}}}
+		check("a#" + fmt.Sprint(a.ID().Incarnation) + "map[version:2] w#1map[version:1] y#0map[version:3]")
+		m.events <- grpcproc.MemberEvent{Up: true, Member: grpcproc.Member{Name: "w", Incarnation: 2, Metadata: map[string]string{"k": "\xff"}}}
+		check("a#" + fmt.Sprint(a.ID().Incarnation) + "map[version:2] y#0map[version:3]")
 	})
 }
 

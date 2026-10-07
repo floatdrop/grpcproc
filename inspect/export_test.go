@@ -4,4 +4,5 @@ package inspect
 var (
 	EventToProto    = eventTo
 	NodeInfoToProto = nodeInfoTo
+	MembersToProto  = membersTo
 )

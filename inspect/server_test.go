@@ -116,6 +116,44 @@ func TestGetNodeLocalAndForwarded(t *testing.T) {
 	})
 }
 
+// members is a Membership that reports its members up once.
+type members []grpcproc.Member
+
+func (ms members) Watch(ctx context.Context) (<-chan grpcproc.MemberEvent, error) {
+	ch := make(chan grpcproc.MemberEvent, len(ms))
+	for _, m := range ms {
+		ch <- grpcproc.MemberEvent{Member: m, Up: true}
+	}
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
+	return ch, nil
+}
+
+// GetNode lists the members the node's Membership reports, linked or not.
+func TestGetNodeMembers(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ms := members{{Name: "a", Addr: "a"}, {Name: "z", Incarnation: 3, Addr: "z:9000", Metadata: map[string]string{"zone": "eu-1"}}}
+		c := grpcproctest.NewWith(t, []grpcproctest.Option{
+			grpcproctest.WithConfig(func(_ string, cfg *grpcproc.Config) { cfg.Membership = ms }),
+			grpcproctest.WithServices(func(n *grpcproc.Node, s *grpc.Server) { inspect.New(n).Register(s) }),
+		}, "a")
+		synctest.Wait()
+		resp, err := client(c, "a").GetNode(t.Context(), &inspectv1.GetNodeRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, m := range resp.GetNode().GetMembers() {
+			got = append(got, fmt.Sprintf("%s#%d %s %v", m.GetId().GetName(), m.GetId().GetIncarnation(), m.GetAddr(), m.GetMetadata()))
+		}
+		if strings.Join(got, ", ") != "a#0 a map[], z#3 z:9000 map[zone:eu-1]" {
+			t.Fatalf("members %q", got)
+		}
+	})
+}
+
 func TestListProcessesFilters(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := cluster(t, nil, "a")

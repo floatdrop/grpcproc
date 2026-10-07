@@ -334,6 +334,12 @@ func NewNode(cfg Config) (*Node, error) {
 	if cfg.Admit == nil {
 		return nil, errors.New("grpcproc: Config.Admit is required: AdmitTLS admits peers whose certificates name them, AdmitAll every peer")
 	}
+	if !validName(cfg.Advertise) {
+		return nil, errors.New("grpcproc: Config.Advertise must be valid UTF-8 and at most 16 KiB")
+	}
+	if !validMetadata(cfg.Metadata) {
+		return nil, errors.New("grpcproc: Config.Metadata must be valid UTF-8, each key and value at most 16 KiB")
+	}
 	if cfg.MaxMessageSize != 0 && cfg.MaxMessageSize < minMessageSize {
 		return nil, fmt.Errorf("grpcproc: Config.MaxMessageSize is %d, less than %d", cfg.MaxMessageSize, minMessageSize)
 	}
@@ -490,13 +496,24 @@ func (n *Node) watchMembers(events <-chan MemberEvent) {
 
 // recordMember keeps Members up to date: a member reported up replaces one
 // of the same name, unless it is an older incarnation, and one reported down
-// goes, if it is the incarnation kept or the event says whichever.
+// goes, if it is the incarnation kept or the event says whichever. A member
+// whose name, address or metadata could not be a node's own (NewNode) is
+// left out, so that whatever lists Members can send them.
 func (n *Node) recordMember(ev MemberEvent) {
 	m := ev.Member
+	listable := m.Name != "" && validName(m.Name) && validName(m.Addr) && validMetadata(m.Metadata)
+	if ev.Up && !listable {
+		n.log.Warn("left a member out: its name, address or metadata is not valid UTF-8, or is over 16 KiB", "peer", wireText(m.Name))
+	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	kept, ok := n.members[m.Name]
 	switch {
+	case ev.Up && !listable:
+		// Not listed, but newer than what is kept: that one is gone.
+		if ok && (m.Incarnation == 0 || m.Incarnation > kept.Incarnation) {
+			delete(n.members, m.Name)
+		}
 	case ev.Up && (!ok || m.Incarnation == 0 || m.Incarnation >= kept.Incarnation):
 		n.members[m.Name] = m
 	case !ev.Up && ok && (m.Incarnation == 0 || m.Incarnation == kept.Incarnation):
@@ -504,7 +521,8 @@ func (n *Node) recordMember(ev MemberEvent) {
 	}
 }
 
-// Members lists the nodes Config.Membership reports up, this one included,
+// Members lists the nodes Config.Membership reports up, this one among them
+// once it reports it,
 // ordered by name, each as the newest incarnation reported and with the
 // Metadata it registered: what placement chooses among, by version or zone
 // say. It is this node's view, as current as the Membership's events, and
@@ -1506,6 +1524,16 @@ func wire(kind grpcprocv1.Kind, from, to PID, name string) *grpcprocv1.Envelope 
 // UTF-8, which protobuf needs of a string, and at most maxText bytes.
 // WithName refuses any other.
 func validName(name string) bool { return len(name) <= maxText && utf8.ValidString(name) }
+
+// validMetadata reports whether each key and value of md is a valid name.
+func validMetadata(md map[string]string) bool {
+	for k, v := range md {
+		if !validName(k) || !validName(v) {
+			return false
+		}
+	}
+	return true
+}
 
 // wireName is name as a peer is sent it: as it is, or, for one that cannot
 // travel and so no process holds, "", which with no PID is no process, so
