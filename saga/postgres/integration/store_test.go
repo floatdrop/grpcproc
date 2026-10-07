@@ -1,4 +1,4 @@
-package postgres_test
+package integration
 
 import (
 	"context"
@@ -21,9 +21,9 @@ import (
 	"github.com/floatdrop/grpcproc/saga/sagatest"
 )
 
-// db is the database every test shares: see TestDSN.
+// db is the database every test shares: see dsn.
 var db = sync.OnceValue(func() *sql.DB {
-	db, err := sql.Open("pgx", postgres.TestDSN)
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		panic(err)
 	}
@@ -59,7 +59,7 @@ func TestStore(t *testing.T) {
 // The store asks of its driver only what database/sql does: lib/pq, which
 // knows no Go type beyond database/sql's, keeps it as well as pgx.
 func TestStoreOnAnotherDriver(t *testing.T) {
-	pq, err := sql.Open("postgres", postgres.TestDSN+"?sslmode=disable")
+	pq, err := sql.Open("postgres", dsn+"?sslmode=disable")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,8 +80,8 @@ func TestStoreOnAnotherDriver(t *testing.T) {
 // through either driver.
 func TestNothingIsNil(t *testing.T) {
 	for _, driver := range []struct{ name, dsn string }{
-		{"pgx", postgres.TestDSN},
-		{"postgres", postgres.TestDSN + "?sslmode=disable"},
+		{"pgx", dsn},
+		{"postgres", dsn + "?sslmode=disable"},
 	} {
 		conn, err := sql.Open(driver.name, driver.dsn)
 		if err != nil {
@@ -327,7 +327,7 @@ func TestErrors(t *testing.T) {
 	}
 
 	// A database that cannot be reached fails every method.
-	closed, err := sql.Open("pgx", postgres.TestDSN)
+	closed, err := sql.Open("pgx", dsn)
 	if err != nil {
 		t.Fatal(err)
 	}

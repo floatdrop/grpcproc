@@ -19,8 +19,9 @@ core=github.com/floatdrop/grpcproc
 # require a tag it comes before.
 modules=(otel etcd tools saga/postgres)
 # Nested modules that are not released, whose requirement on the core is
-# bumped with the pin all the same: they build against the working tree.
-unreleased=(examples benchmarks)
+# bumped with the pin all the same: examples and benchmarks build against the
+# working tree, saga/postgres/integration against saga/postgres's core.
+unreleased=(examples benchmarks saga/postgres/integration)
 
 dry=false yes=false
 while getopts ny opt; do

@@ -4,8 +4,10 @@ The repository holds the core module, `github.com/floatdrop/grpcproc`, and
 four nested modules that are released: `otel`, `etcd`, `tools` and
 `saga/postgres`. Each
 has its own tags (`v0.6.0`, `otel/v0.6.0`, …). `cron` and `leader` are
-packages of the core, released with it. `examples` and `benchmarks` are
-modules too, but never released: they build against the working tree.
+packages of the core, released with it. `examples`, `benchmarks` and
+`saga/postgres/integration` (saga/postgres's tests, with the drivers it
+must not require) are modules too, but never released: they build against
+the working tree.
 
 ## Versions
 
@@ -47,7 +49,8 @@ A minor release:
 1. tags the core and pushes the tag, so that the module proxy serves it;
 2. pins each nested module to it (`go get`, `go mod tidy`, `go build`),
    dropping requirements on modules of this repository that are modules no
-   more, and bumps the requirement of `examples` and `benchmarks`;
+   more, and bumps the core requirement of `examples`, `benchmarks` and
+   `saga/postgres/integration`;
 3. commits that to `main` as "Pin … to grpcproc vX.Y.0" and pushes it;
 4. tags each nested module on that commit and pushes the tags.
 
