@@ -88,8 +88,9 @@ monitors:              2
 			body: (
 				<>
 					<p>
-						<C>nodes</C> walks the cluster from the node it asks, following links, and says which
-						peers it could not reach, with each node's metadata, its version say, which follows a
+						<C>nodes</C> walks the cluster from the node it asks, following links and, on nodes
+						with a <C>Config.Membership</C>, the members it reports, so a node nothing has talked to yet
+						is found too, and says which it could not reach, with each node's metadata, its version say, which follows a
 						rolling deploy node by node. <C>node [name]</C> shows one: its processes, dead letters, and
 						each link with its traffic, the envelopes queued on it and their bytes, and its last
 						error. A down outbound link with a <C>RETRY IN</C> is a peer whose dials failed: sends to
@@ -254,7 +255,7 @@ orders  order-17  charging  stuck   5         1               2026-10-05T11:49:2
 					head={['Command', '']}
 					rows={[
 						[<C>node [name]</C>, 'Counters and links of a node.'],
-						[<C>nodes</C>, 'Every node reachable from this one, following links.'],
+						[<C>nodes</C>, "Every node reachable from this one, following links and the members a node's Membership reports."],
 						[
 							<C>ps</C>,
 							<>

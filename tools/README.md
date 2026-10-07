@@ -66,7 +66,7 @@ monitors:              2
 | Command | |
 | --- | --- |
 | `node [name]` | counters and links of a node |
-| `nodes` | every node reachable from this one, following links |
+| `nodes` | every node reachable from this one, following links and the members a node's `Membership` reports |
 | `ps` | processes: `--node`, `--name`, `--label`, `--state`, `--min-mailbox`, `--sort pid\|mailbox\|received\|sent`, `--limit` |
 | `inspect <pid\|name>` | one process, with what it says about itself: `--node`, `--wait` |
 | `names [name]` | [global names](https://floatdrop.github.io/grpcproc/concepts/addressing/#global): who holds one, or a list: `--node`, `--prefix`, `--limit` |

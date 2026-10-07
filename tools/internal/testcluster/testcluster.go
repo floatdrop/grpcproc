@@ -3,6 +3,7 @@ package testcluster
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,21 @@ func worker(p *grpcproc.Process[*testpb.Ping]) error {
 	}
 }
 
+// members is a Membership that reports each of its nodes up once.
+type members []string
+
+func (ms members) Watch(ctx context.Context) (<-chan grpcproc.MemberEvent, error) {
+	ch := make(chan grpcproc.MemberEvent, len(ms))
+	for _, name := range ms {
+		ch <- grpcproc.MemberEvent{Member: grpcproc.Member{Name: name, Addr: name}, Up: true}
+	}
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
+	return ch, nil
+}
+
 // unlisted is a store of global names that cannot list them.
 type unlisted struct{ grpcproc.Names }
 
@@ -49,9 +65,12 @@ type unlisted struct{ grpcproc.Names }
 // forward to each other, and links a to b. Node a backs off from a peer whose
 // dials fail (Config.DialBackoff), so a test can show it a down link, and
 // says version=1.0 in its metadata. A node named "nonames" has no global
-// names, and one named "unlisted" has names it cannot list.
+// names, and one named "unlisted" has names it cannot list. With a node named
+// "quiet", which nothing links to, a's Membership reports every node up,
+// and "ghost", which is not running.
 func Start(t *testing.T, more ...string) *Fixture {
 	t.Helper()
+	names := append([]string{"a", "b"}, more...)
 	// Each Inspector reaches the others as its node does, through the node's
 	// Dial (so a Partition cuts it off too).
 	c := grpcproctest.NewWith(t, []grpcproctest.Option{
@@ -60,6 +79,9 @@ func Start(t *testing.T, more ...string) *Fixture {
 			case "a":
 				cfg.DialBackoff = time.Hour
 				cfg.Metadata = map[string]string{"version": "1.0"}
+				if slices.Contains(names, "quiet") {
+					cfg.Membership = members(append(slices.Clone(names), "ghost"))
+				}
 			case "nonames":
 				cfg.Names = nil
 			case "unlisted":
@@ -71,7 +93,7 @@ func Start(t *testing.T, more ...string) *Fixture {
 			insp.Register(s)
 			t.Cleanup(func() { _ = insp.Close() })
 		}),
-	}, append([]string{"a", "b"}, more...)...)
+	}, names...)
 	a, b := c.Node("a"), c.Node("b")
 
 	f := &Fixture{C: c, Resolver: c.Resolver()}

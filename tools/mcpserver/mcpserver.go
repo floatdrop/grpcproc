@@ -60,8 +60,8 @@ func New(c *client.Client, o Options) *mcp.Server {
 	})
 	t := tools{c: c, timeout: o.Timeout}
 	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
-	mcp.AddTool(s, &mcp.Tool{Name: "cluster_nodes", Description: "Every node reachable from the one serving the Inspector: counters, links, and which could not be reached.", Annotations: readOnly}, t.clusterNodes)
-	mcp.AddTool(s, &mcp.Tool{Name: "node_info", Description: "One node: process counts, dead letters, and each link with its traffic, queue, and last error.", Annotations: readOnly}, t.nodeInfo)
+	mcp.AddTool(s, &mcp.Tool{Name: "cluster_nodes", Description: "Every node reachable from the one serving the Inspector, by links and by the members a node's Membership reports, if it has one: counters, links, members, and which could not be reached.", Annotations: readOnly}, t.clusterNodes)
+	mcp.AddTool(s, &mcp.Tool{Name: "node_info", Description: "One node: process counts, dead letters, each link with its traffic, queue, and last error, and the members its Membership reports.", Annotations: readOnly}, t.nodeInfo)
 	mcp.AddTool(s, &mcp.Tool{Name: "list_processes", Description: "Processes of a node, filtered and sorted. Sort by mailbox to find backlogs.", Annotations: readOnly}, t.listProcesses)
 	mcp.AddTool(s, &mcp.Tool{Name: "get_process", Description: "One process by pid or name, with what it says about itself.", Annotations: readOnly}, t.getProcess)
 	mcp.AddTool(s, &mcp.Tool{Name: "watch_events", Description: "Collect a node's events for a few seconds: spawns, exits with reasons, links up and down, dead letters.", Annotations: readOnly}, t.watchEvents)

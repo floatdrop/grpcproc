@@ -18,7 +18,16 @@ type NodeView struct {
 	Exited      uint64            `json:"exited"`
 	DeadLetters uint64            `json:"dead_letters" jsonschema:"messages that could not be delivered"`
 	Links       []LinkView        `json:"links,omitempty"`
+	Members     []MemberView      `json:"members,omitempty" jsonschema:"the nodes its Config.Membership reports up, by name: the cluster as its discovery sees it, linked or not; none without a Membership"`
 	Error       string            `json:"error,omitempty" jsonschema:"why the node could not be inspected"`
+}
+
+// MemberView is a node as a node's Membership reports it.
+type MemberView struct {
+	Name        string            `json:"name"`
+	Incarnation uint64            `json:"incarnation,omitzero" jsonschema:"0 when the Membership does not know it"`
+	Addr        string            `json:"addr,omitempty" jsonschema:"where peers dial it"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
 // LinkView is one direction of traffic with a peer.
