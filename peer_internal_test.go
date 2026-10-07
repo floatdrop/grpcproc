@@ -7,14 +7,18 @@ import (
 	"math"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 
@@ -615,6 +619,34 @@ func TestStopWithdrawsAfterALongFlush(t *testing.T) {
 		_ = n.Stop(ctx)
 		if err := <-r.withdrawCtxErr; err != nil {
 			t.Fatalf("withdraw ran with a ctx already done: %v", err)
+		}
+	})
+}
+
+// A peer name that cannot travel enters no link, and a dial error's text
+// is kept as text that can.
+func TestPeerTextThatCannotTravel(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n, err := NewNode(Config{Admit: AdmitAll, Name: "a", Incarnation: 1, Resolver: ResolverFunc(func(context.Context, string) (string, error) {
+			return "", errors.New("no address for \xff")
+		})})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = n.Stop(context.Background()) })
+		if _, err := n.getOut(t.Context(), "\xff"); err == nil {
+			t.Fatal("dialed a name that is not UTF-8")
+		}
+		ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(mdNode, "\xff", mdIncarnation, "2", mdVersion, strconv.Itoa(protoVersion)))
+		if err := n.serveLink(&fakeStream{ctx: ctx, recv: make(chan *grpcprocv1.Frame)}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("link from a name that is not UTF-8: %v", err)
+		}
+		if _, err := n.getOut(t.Context(), "b"); err == nil {
+			t.Fatal("dialed what the resolver does not know")
+		}
+		info := n.Info()
+		if len(info.Links) != 1 || !utf8.ValidString(info.Links[0].LastError) || !strings.Contains(info.Links[0].LastError, "no address for �") {
+			t.Fatalf("links %+v", info.Links)
 		}
 	})
 }

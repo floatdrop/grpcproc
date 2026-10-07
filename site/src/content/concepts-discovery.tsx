@@ -124,7 +124,8 @@ for _, m := range node.Members() {
 }`}</Code>
 					<p>
 						<C>NodeInfo.Metadata</C> and the Inspector show a node's own, so a rollout can be
-						followed node by node. Metadata is what a node says about itself, not what it has
+						followed node by node, and the Inspector's <C>GetNode</C> lists the members a node
+						knows, so a tool finds the nodes no link leads to yet. Metadata is what a node says about itself, not what it has
 						proven: authorization decides by credentials, in <C>Config.Admit</C>.
 					</p>
 				</>

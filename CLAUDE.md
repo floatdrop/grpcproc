@@ -257,7 +257,9 @@ works on a newer one's runs. A store must pass `sagatest.Store`.
   peer cannot take ends the link for everything on it: sends and calls are
   checked and fail (`encode`, `fits`: `ErrTooLarge`, UTF-8), answers are
   made to fit (`replyEnv`, `wireText`), and a name that cannot travel
-  travels as none (`wireName`), never as another name. A new string or
+  travels as none (`wireName`), never as another name. A peer whose name
+  cannot travel gets no link (`getOut`, `serveLink`), and a member whose
+  text cannot is not listed (`recordMember`). A new string or
   unbounded field on an envelope goes through one of them.
 - The library opens no listener, reads no environment and installs no
   global; the application owns the `*grpc.Server`, credentials, discovery

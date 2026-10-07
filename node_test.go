@@ -27,6 +27,14 @@ func TestNewNodeValidation(t *testing.T) {
 		if _, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "\xff", Resolver: grpcproc.StaticResolver{}}); err == nil {
 			t.Fatal("a name that is not UTF-8")
 		}
+		if _, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Advertise: "\xff"}); err == nil {
+			t.Fatal("an address that is not UTF-8")
+		}
+		for _, md := range []map[string]string{{"\xff": "v"}, {"k": "\xff"}, {"k": strings.Repeat("v", 16<<10+1)}} {
+			if _, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Metadata: md}); err == nil {
+				t.Fatalf("metadata %q", md)
+			}
+		}
 		if _, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, MaxMessageSize: 1 << 10}); err == nil {
 			t.Fatal("MaxMessageSize below the least taken")
 		}

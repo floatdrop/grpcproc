@@ -95,6 +95,16 @@ func nodeInfoTo(n grpcproc.NodeInfo) *inspectv1.NodeInfo {
 	return out
 }
 
+// membersTo carries the members Node.Members has, which left out any whose
+// text could not travel.
+func membersTo(ms []grpcproc.Member) []*inspectv1.Member {
+	var out []*inspectv1.Member
+	for _, m := range ms {
+		out = append(out, &inspectv1.Member{Id: nodeIDTo(grpcproc.NodeID{Name: m.Name, Incarnation: m.Incarnation}), Addr: m.Addr, Metadata: m.Metadata})
+	}
+	return out
+}
+
 func processInfoTo(p grpcproc.ProcessInfo) *inspectv1.ProcessInfo {
 	return &inspectv1.ProcessInfo{
 		Pid:       p.PID.Proto(),
@@ -139,6 +149,17 @@ func eventTo(ev grpcproc.Event) *inspectv1.Event {
 		out.Kind = &inspectv1.Event_DeadLetter{DeadLetter: &inspectv1.DeadLetter{
 			From: ev.From.Proto(), To: ev.To.Proto(), Type: ev.Type, Reason: ev.Reason,
 		}}
+	}
+	return out
+}
+
+// Members converts the members a wire NodeInfo lists, as the node's
+// Node.Members has them.
+func Members(n *inspectv1.NodeInfo) []grpcproc.Member {
+	var out []grpcproc.Member
+	for _, m := range n.GetMembers() {
+		id := nodeIDFrom(m.GetId())
+		out = append(out, grpcproc.Member{Name: id.Name, Incarnation: id.Incarnation, Addr: m.GetAddr(), Metadata: m.GetMetadata()})
 	}
 	return out
 }

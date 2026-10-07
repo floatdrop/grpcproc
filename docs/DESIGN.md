@@ -575,7 +575,12 @@ with its metadata: the newest incarnation of each name, this node
 included, as current as the events. It is the input for choosing where a
 child goes (the newest version, the caller's zone) without a lookup of its
 own; `NodeInfo.Metadata` and the Inspector show a node's own, so a tool
-sees a rollout's progress node by node.
+sees a rollout's progress node by node. The Inspector's `GetNode` also
+lists `Members`, so a tool finds the nodes no link leads to yet. A member
+whose name, address or metadata could not be a node's own (`NewNode`
+refuses text that is not valid UTF-8, or over 16 KiB) is left out of
+`Members`, with a warning, never listed with its text changed: a changed
+name names another node.
 
 - **Fixed for the node's life.** A version or a zone does not change while
   a process runs, and metadata that did would need publishing again and

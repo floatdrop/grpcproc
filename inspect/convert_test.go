@@ -1,6 +1,7 @@
 package inspect_test
 
 import (
+	"fmt"
 	"log/slog"
 	"testing"
 	"testing/synctest"
@@ -67,6 +68,11 @@ func TestEventConversions(t *testing.T) {
 		}
 		if n := inspect.NodeInfo(inspect.NodeInfoToProto(grpcproc.NodeInfo{Metadata: map[string]string{"version": "2"}})); n.Metadata["version"] != "2" {
 			t.Fatalf("metadata %v", n.Metadata)
+		}
+		// Members cross the wire as Node.Members has them.
+		ms := []grpcproc.Member{{Name: "a", Incarnation: 7, Addr: "a:9000", Metadata: map[string]string{"zone": "eu-1"}}, {Name: "d"}}
+		if got := inspect.Members(&inspectv1.NodeInfo{Members: inspect.MembersToProto(ms)}); fmt.Sprint(got) != fmt.Sprint(ms) {
+			t.Fatalf("members %+v", got)
 		}
 	})
 }

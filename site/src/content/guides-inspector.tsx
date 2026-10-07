@@ -68,7 +68,7 @@ defer insp.Close()`}</Code>
 					<Table
 						head={['Method', 'What it answers']}
 						rows={[
-							[<C>GetNode</C>, <>The node's <C>NodeInfo</C>: counters, dead letters, and its links.</>],
+							[<C>GetNode</C>, <>The node's <C>NodeInfo</C>: counters, dead letters, its links; and the members its <C>Membership</C> reports up.</>],
 							[
 								<C>ListProcesses</C>,
 								'Every process of a node, filtered by name, label, state or minimum mailbox depth.'

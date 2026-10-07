@@ -275,6 +275,9 @@ func (n *Node) getOut(ctx context.Context, peer string) (*outLink, error) {
 	if peer == "" {
 		return nil, errors.New("grpcproc: empty destination node")
 	}
+	if !validName(peer) {
+		return nil, errors.New("grpcproc: the destination node is not valid UTF-8, or is over 16 KiB")
+	}
 	l, err := n.getOutOnce(ctx, peer)
 	if errors.Is(err, errSessionEnded) {
 		l, err = n.getOutOnce(ctx, peer)
@@ -395,7 +398,7 @@ func (n *Node) finishDial(peer string, d *dialOp) {
 	l, err := n.dial(peer)
 	var why string
 	if err != nil {
-		why = err.Error() // outside n.mu: the Resolver's or an interceptor's error
+		why = wireText(err.Error()) // outside n.mu: the Resolver's or an interceptor's error
 	}
 	var discard *outLink
 	refused, began := false, false
@@ -666,8 +669,8 @@ func (n *Node) serveLink(stream grpc.BidiStreamingServer[grpcprocv1.Frame, grpcp
 	switch {
 	case version != protoVersion:
 		return status.Errorf(codes.FailedPrecondition, "grpcproc: protocol version %d, this node speaks %d", version, protoVersion)
-	case peer.Name == "" || peer.Name == n.id.Name:
-		return status.Errorf(codes.InvalidArgument, "grpcproc: bad node name %q", peer.Name)
+	case peer.Name == "" || peer.Name == n.id.Name || !validName(peer.Name):
+		return status.Errorf(codes.InvalidArgument, "grpcproc: bad node name %q", wireText(peer.Name))
 	}
 	pol, err := n.cfg.Admit(ctx, peer)
 	if err != nil {
@@ -895,7 +898,7 @@ func (n *Node) outLost(l *outLink, err error) {
 	var why string
 	if young {
 		ended = fmt.Errorf("its link ended %v after it came up: %w", time.Since(l.established).Round(time.Millisecond), cmp.Or(err, ErrNoConnection))
-		why = ended.Error()
+		why = wireText(ended.Error())
 	}
 	n.mu.Lock()
 	current := n.out[peer] == l

@@ -171,7 +171,9 @@ func (s *Server) GetNode(ctx context.Context, req *inspectv1.GetNodeRequest) (*i
 	if c, node, err := s.remote(ctx, req.GetNode(), nil); c != nil || err != nil {
 		return forward(node, err, func() (*inspectv1.GetNodeResponse, error) { return c.GetNode(ctx, req) })
 	}
-	return &inspectv1.GetNodeResponse{Node: nodeInfoTo(s.node.Info())}, nil
+	info := nodeInfoTo(s.node.Info())
+	info.Members = membersTo(s.node.Members())
+	return &inspectv1.GetNodeResponse{Node: info}, nil
 }
 
 // names is the node's Config.Names, or FailedPrecondition.
