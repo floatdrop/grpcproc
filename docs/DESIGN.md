@@ -76,6 +76,7 @@ grpcproc/leader              optional: leader election, and a singleton that run
 grpcproc/saga                optional: durable sagas, an fsm machine and its data per run, behind a Store
 grpcproc/etcd     (nested module)   Resolver + Registrar + Membership on etcd leases
 grpcproc/saga/postgres (nested module)   saga.Store in PostgreSQL
+grpcproc/saga/postgres/integration (nested module) its tests, with the drivers it does not require
 grpcproc/otel     (nested module)   Hooks implementation: OTel metrics + trace propagation
 grpcproc/tools    (nested module)   grpcprocctl over the Inspector: CLI, Graphviz, MCP server, web UI
 grpcproc/examples (nested module)   runnable examples and the agent runtime the site's tutorial builds

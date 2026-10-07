@@ -1,4 +1,4 @@
-package postgres
+package integration
 
 import (
 	"fmt"
@@ -9,9 +9,9 @@ import (
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 )
 
-// TestDSN is the database every test of the package shares, on a PostgreSQL
-// TestMain starts; each store is in tables of its own.
-var TestDSN string
+// dsn is the database every test shares, on a PostgreSQL TestMain starts;
+// each store is in tables of its own.
+var dsn string
 
 func TestMain(m *testing.M) { os.Exit(run(m)) }
 
@@ -42,6 +42,6 @@ func run(m *testing.M) int {
 			panic(err)
 		}
 	}
-	TestDSN = fmt.Sprintf("postgres://postgres:postgres@localhost:%d/postgres", port)
+	dsn = fmt.Sprintf("postgres://postgres:postgres@localhost:%d/postgres", port)
 	return m.Run()
 }

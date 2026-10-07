@@ -12,8 +12,11 @@ jobs:
   go:
     # Every Go module in the repository, one job each: grpcproc itself, cron
     # and leader included; the adapters with dependencies grpcproc does not
-    # have; the examples the README and the site embed; and the benchmarks. A module with a cover list must keep each of those
-    # packages at 100%.
+    # have; the examples the README and the site embed; the benchmarks; and
+    # saga/postgres/integration, saga/postgres's tests, whose job measures
+    # saga/postgres's coverage (saga/postgres's own job vets, lints and
+    # builds it). A module with a cover list must keep each of those
+    # packages, or its coverpkg, at 100%.
     name: ${{ matrix.module == '.' && 'grpcproc' || matrix.module }}
     strategy:
       fail-fast: false
@@ -26,7 +29,11 @@ jobs:
           - module: etcd
             cover: .
           - module: saga/postgres
+          # saga/postgres's tests, a module of their own so that it requires
+          # no driver; they cover the package they test.
+          - module: saga/postgres/integration
             cover: .
+            coverpkg: github.com/floatdrop/grpcproc/saga/postgres
           - module: tools
             cover: ./client ./dot ./cli ./mcpserver ./web
           - module: examples
@@ -68,7 +75,7 @@ jobs:
         if: matrix.cover
         run: |
           for pkg in ${{ matrix.cover }}; do
-            go test -count=1 -coverprofile=coverage.out -coverpkg=$pkg $pkg
+            go test -count=1 -coverprofile=coverage.out -coverpkg=${{ matrix.coverpkg || '$pkg' }} $pkg
             total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}')
             echo "${{ matrix.module }}/$pkg coverage: $total"
             [ "$total" = "100.0%" ] || { go tool cover -func=coverage.out | awk '$3 != "100.0%"'; exit 1; }

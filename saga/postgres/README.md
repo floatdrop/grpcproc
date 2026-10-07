@@ -82,10 +82,15 @@ Versions are kept as `bigint`: a `Definition.Version` past
 ## Tests
 
 ```sh
-go test -race ./...
+cd integration && go test -race ./...
 ```
 
-The tests start a PostgreSQL 14 with
+The tests are a module of their own, `integration/`, so that this one
+requires no driver: an application that imports it gets no pgx, lib/pq or
+embedded-postgres in its module graph. They build the saga/postgres next
+to them, against the core it requires; under a `go.work`, add
+`./saga/postgres/integration` to it, or run them with `GOWORK=off`. They
+start a PostgreSQL 14 with
 [embedded-postgres](https://github.com/fergusstrange/embedded-postgres),
 which downloads it on the first run. They run
 [`sagatest.Store`](../sagatest/store.go) through two drivers, signals and

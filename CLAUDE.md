@@ -26,8 +26,9 @@ error types), `queue.go` (the mailbox and link queue), `admit.go` (`Policy`,
 (clusters over bufconn), `inspect` (the Inspector service), `actor`
 (handler loop, supervisor, `Workers`), `pubsub`, `cron`, `leader`, `saga`
 (durable sagas behind a `Store`; `saga/sagatest` checks a store). Nested modules:
-`otel`, `etcd`, `tools`, `saga/postgres` (released), `examples`, `benchmarks`
-(not). `site/`
+`otel`, `etcd`, `tools`, `saga/postgres` (released), `examples`, `benchmarks`,
+`saga/postgres/integration` (not: saga/postgres's tests, with the drivers
+it must not require). `site/`
 is the documentation site. Protos are under `proto/` and beside the packages
 that own them.
 
@@ -90,15 +91,18 @@ test -z "$(gofmt -l .)" && go vet ./... && golangci-lint run ./... \
   && go run github.com/campoy/embedmd@v1.0.0 -d README.md
 ```
 
-In `examples`, and in `otel`, `etcd`, `tools` and `saga/postgres` when touched,
-`go vet ./... && golangci-lint run ./... && go test -race -count=1 ./...`.
+In `examples`, and in `otel`, `etcd`, `tools`, `saga/postgres` and
+`saga/postgres/integration` when touched (the last for any change to either
+or to `saga`), `go vet ./... && golangci-lint run ./... && go test -race -count=1 ./...`.
 In `benchmarks`, which builds against the working tree, so any change to
 the core's API can break it, `go vet ./... && golangci-lint run ./... &&
 go test -run '^$' -bench . -benchtime=50ms ./...`.
 
 Then coverage, which must stay at 100% for each package CI lists — in the
-root `. ./inspect ./actor ./pubsub ./cron ./leader ./saga`, in `otel`, `etcd` and
-`saga/postgres` `.`, in `tools` `./client ./dot ./cli ./mcpserver ./web`:
+root `. ./inspect ./actor ./pubsub ./cron ./leader ./saga`, in `otel` and `etcd`
+`.`, in `tools` `./client ./dot ./cli ./mcpserver ./web`, and `saga/postgres`
+from `saga/postgres/integration`
+(`go test -coverpkg=github.com/floatdrop/grpcproc/saga/postgres .`):
 
 ```sh
 for pkg in . ./inspect ./actor ./pubsub ./cron ./leader ./saga; do
@@ -311,7 +315,9 @@ works on a newer one's runs. A store must pass `sagatest.Store`.
   and `etcd` (`Resolver`, `Registrar`, `Membership`, `Names`) do.
 - **Released nested modules require a published core, never a `replace`**,
   since a `replace` is ignored by whoever imports them. `examples` and
-  `benchmarks` use `replace ../` and are never released. For work across
+  `benchmarks` use `replace ../` and are never released;
+  `saga/postgres/integration` replaces only `saga/postgres`, so its tests
+  run against the core `saga/postgres` requires. For work across
   modules, or across this repository and fsm, use a `go.work` (ignored by
   git) or `GOWORK=/path/to/go.work`.
 - **Releases follow `RELEASING.md`:** the minor version is shared by every
