@@ -84,6 +84,35 @@ func TestAgainstACluster(t *testing.T) {
 		t.Fatalf("%+v %v", nodes, err)
 	}
 
+	// Members no link leads to are asked too: quiet answers, ghost cannot be
+	// reached.
+	q := testcluster.Start(t, "quiet")
+	qc := client.New(q.C.Conn("a"))
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(time.Millisecond) { // the Membership is watched from Start
+		n, err := qc.Node(ctx, "")
+		if err != nil || len(n.Members) == 4 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("a's members: %+v", n.Members)
+		}
+	}
+	nodes, err = qc.Cluster(ctx)
+	var got []string
+	for _, n := range nodes {
+		state := "ok"
+		if n.Error != "" {
+			state = "unreachable"
+		}
+		got = append(got, n.Name+":"+state)
+	}
+	if err != nil || strings.Join(got, " ") != "a:ok b:ok ghost:unreachable quiet:ok" {
+		t.Fatalf("%v %v", got, err)
+	}
+	if ghost := nodes[2]; ghost.Advertise != "ghost" {
+		t.Errorf("ghost as its Membership reports it: %+v", ghost)
+	}
+
 	// A minimum past uint32 matches nothing; it used to wrap, and 1<<32
 	// matched everything.
 	if ps, err := c.Processes(ctx, "", client.Filter{MinMailbox: 1 << 32}); err != nil || len(ps) != 0 {

@@ -112,15 +112,22 @@ func (c *Client) Node(ctx context.Context, node string) (NodeView, error) {
 	if err != nil {
 		return NodeView{}, err
 	}
-	return c.nodeView(inspect.NodeInfo(resp.GetNode())), nil
+	v := c.nodeView(inspect.NodeInfo(resp.GetNode()))
+	for _, m := range inspect.Members(resp.GetNode()) {
+		v.Members = append(v.Members, MemberView{Name: m.Name, Incarnation: m.Incarnation, Addr: m.Addr, Metadata: m.Metadata})
+	}
+	return v, nil
 }
 
 // Cluster describes every node reachable from this one by following links,
-// in the order found. A node that cannot be reached is reported with Error,
-// and so is a peer a node only fails to dial (a down link), which this
-// Inspector may reach all the same. Those peers are asked last, and
-// together: they are the likeliest to hang until ctx ends, and one that does
-// must not use up the time the others need.
+// and the members each node's Config.Membership reports, linked or not. A
+// node that cannot be reached is reported with Error, and so is a peer a
+// node only fails to dial (a down link), which this Inspector may reach all
+// the same. Those peers, and members no link leads to, are asked last, in
+// order of name, laterAtOnce at a time: they are the likeliest to hang until
+// ctx ends, and one that does must not use up the time the others need. A
+// member that cannot be reached is shown with the address and metadata its
+// Membership reports.
 func (c *Client) Cluster(ctx context.Context) ([]NodeView, error) {
 	first, err := c.Node(ctx, "")
 	if err != nil {
@@ -128,36 +135,60 @@ func (c *Client) Cluster(ctx context.Context) ([]NodeView, error) {
 	}
 	out := []NodeView{first}
 	seen := map[string]bool{first.Name: true}
-	var later []string // peers seen only over down links
+	var later []string // peers seen only over down links, and members no link leads to
+	queued := map[string]bool{}
+	members := map[string]MemberView{} // as the first Membership to report each has it
+	queue := func(peer string) {
+		if !seen[peer] && !queued[peer] {
+			queued[peer] = true
+			later = append(later, peer)
+		}
+	}
 	for i := 0; ; {
 		for ; i < len(out); i++ {
 			for _, l := range out[i].Links {
 				switch {
 				case seen[l.Peer]:
 				case l.State == "down":
-					if !slices.Contains(later, l.Peer) {
-						later = append(later, l.Peer)
-					}
+					queue(l.Peer)
 				default:
 					seen[l.Peer] = true
 					out = append(out, c.probe(ctx, l.Peer))
 				}
+			}
+			for _, m := range out[i].Members {
+				if _, ok := members[m.Name]; !ok {
+					members[m.Name] = m
+				}
+				queue(m.Name)
 			}
 		}
 		later = slices.DeleteFunc(later, func(peer string) bool { return seen[peer] })
 		if len(later) == 0 {
 			return out, nil
 		}
+		slices.Sort(later)
 		found := make([]NodeView, len(later))
+		slots := make(chan struct{}, laterAtOnce)
 		var wg sync.WaitGroup
 		for j, peer := range later {
 			seen[peer] = true
-			wg.Go(func() { found[j] = c.probe(ctx, peer) })
+			wg.Go(func() {
+				slots <- struct{}{}
+				defer func() { <-slots }()
+				found[j] = c.probe(ctx, peer)
+				if m, ok := members[peer]; ok && found[j].Error != "" {
+					found[j].Incarnation, found[j].Advertise, found[j].Metadata = m.Incarnation, m.Addr, m.Metadata
+				}
+			})
 		}
 		wg.Wait()
 		out, later = append(out, found...), nil
 	}
 }
+
+// laterAtOnce bounds how many of the peers Cluster asks last it asks at once.
+const laterAtOnce = 16
 
 // probe describes node, or says why it could not.
 func (c *Client) probe(ctx context.Context, node string) NodeView {
