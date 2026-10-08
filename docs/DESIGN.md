@@ -834,9 +834,12 @@ callback on the process's `Context` runs on whoever ended it, under their
 labels. Every goroutine the node starts begins with none (`unlabelled`),
 whoever starts it, the application's own labels included: a process's send
 starts a dial and the link under it, which would otherwise charge their
-whole life to whichever process sent first. A PID in a profile is not a
-metric's series, so the label-not-PID rule of `Hooks` does not apply; the
-cost is three allocations per spawn, none per message.
+whole life to whichever process sent first. An inbound link is served on
+gRPC's goroutine, which no process starts: it keeps the labels gRPC and
+the application gave it, which are the application's for the `Admit` and
+hooks it runs. A PID in a profile is not a metric's series, so the
+label-not-PID rule of `Hooks` does not apply; the cost is three
+allocations per spawn, none per message.
 
 ## Helpers (`grpcproc/actor`)
 
