@@ -114,15 +114,15 @@ func (l *outLink) info() LinkInfo {
 
 func (l *outLink) start() {
 	n := l.node
-	go l.writeLoop()
-	go func() {
+	go unlabelled(l.writeLoop)()
+	go unlabelled(func() {
 		// The server never sends after Hello; Recv returning is the close signal.
 		_, err := l.stream.Recv()
 		if errors.Is(err, io.EOF) {
 			err = nil
 		}
 		n.outLost(l, err)
-	}()
+	})()
 }
 
 func (l *outLink) writeLoop() {
@@ -333,7 +333,8 @@ func (n *Node) dialFor(peer string) (*dialOp, error) {
 		d = &dialOp{done: make(chan struct{})}
 		n.dialing[peer] = d
 		// Under n.mu, and only while not stopped: Stop's Wait sees every Add.
-		n.dialWG.Go(func() { n.finishDial(peer, d) })
+		// A sender starts the dial, and the link it makes is no process's.
+		n.dialWG.Go(unlabelled(func() { n.finishDial(peer, d) }))
 	}
 	return d, nil
 }
@@ -513,7 +514,7 @@ func (n *Node) dial(peer string) (*outLink, error) {
 	// deadline ends them by cancelling it. Nothing else would: the wait for a
 	// connection lasts gRPC's connect timeout (20s), or forever with
 	// WaitForReady, and the wait for the Hello forever.
-	stop := context.AfterFunc(ctx, scancel)
+	stop := context.AfterFunc(ctx, unlabelled(scancel))
 	stream, err := grpcprocv1.NewNodeClient(cc).Link(sctx)
 	var hello *grpcprocv1.Hello
 	if err == nil {
@@ -748,7 +749,7 @@ func (n *Node) serveLink(stream grpc.BidiStreamingServer[grpcprocv1.Frame, grpcp
 	// context is deliberately not selected on: a peer's cancel must be seen
 	// through Recv, after every envelope that preceded it.
 	errs := make(chan error, 1)
-	go func() {
+	go unlabelled(func() {
 		for {
 			f, err := stream.Recv()
 			if err != nil {
@@ -759,7 +760,7 @@ func (n *Node) serveLink(stream grpc.BidiStreamingServer[grpcprocv1.Frame, grpcp
 				return
 			}
 		}
-	}()
+	})()
 	select {
 	case err = <-errs:
 	case <-l.done:

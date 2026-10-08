@@ -22,8 +22,9 @@ links), `addr.go` (`Addr[M]`, typed `Send` and
 `Call`, `Caller`, metadata), `pid.go` (`PID`, `Name`, `Ref`, `Down`, the
 error types), `queue.go` (the mailbox and link queue), `admit.go` (`Policy`,
 `Export`), `names.go` (global names), `hooks.go`, `events.go`, `info.go`
-(the inspection types). Packages of the core module: `grpcproctest`
-(clusters over bufconn), `inspect` (the Inspector service), `actor`
+(the inspection types, and the pprof label keys). Packages of the core
+module: `grpcproctest` (clusters over bufconn), `inspect` (the Inspector
+service), `actor`
 (handler loop, supervisor, `Workers`), `pubsub`, `cron`, `leader`, `saga`
 (durable sagas behind a `Store`; `saga/sagatest` checks a store). Nested modules:
 `otel`, `etcd`, `tools`, `saga/postgres` (released), `examples`, `benchmarks`,
@@ -265,6 +266,10 @@ works on a newer one's runs. A store must pass `sagatest.Store`.
   cannot travel gets no link (`getOut`, `serveLink`), and a member whose
   text cannot is not listed (`recordMember`). A new string or
   unbounded field on an envelope goes through one of them.
+- A process's goroutine carries its pprof labels (`profileLabels`), and
+  every other goroutine the core starts, a `go` or a `context.AfterFunc`,
+  goes through `unlabelled`: a process's send starts a dial, and a link
+  that kept its labels would be charged to whichever process sent first.
 - The library opens no listener, reads no environment and installs no
   global; the application owns the `*grpc.Server`, credentials, discovery
   and logging. Every goroutine it starts — a process, a link's reader and

@@ -132,11 +132,11 @@ func (n *Node) Subscribe(ctx context.Context, buffer int) <-chan Event {
 	// first. Ending it unhooks it from both: a callback left on the node's
 	// ctx would keep the subscriber, and its buffer, until the node stops.
 	ctx, cancel := context.WithCancel(ctx)
-	unhook := context.AfterFunc(n.ctx, cancel)
-	context.AfterFunc(ctx, func() {
+	unhook := context.AfterFunc(n.ctx, unlabelled(cancel))
+	context.AfterFunc(ctx, unlabelled(func() {
 		unhook()
 		n.subs.remove(sub)
 		sub.close()
-	})
+	}))
 	return sub.ch
 }

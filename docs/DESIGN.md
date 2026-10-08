@@ -822,7 +822,21 @@ What sits on top, outside the core, is `grpcproc/tools`, one binary,
   client like the other two; no node serves a page.
 
 Goroutine dumps and heap profiles are `net/http/pprof`; `grpcproc` does not
-duplicate them.
+duplicate them, but makes them readable per process. A process's goroutine,
+and every goroutine its code starts, carries the pprof labels `grpcproc.label`,
+`grpcproc.pid` and, for a named process, `grpcproc.name`, set once at spawn
+(`ProfileLabel`, `ProfilePID`, `ProfileName`), so a CPU profile splits by
+process and a goroutine dump says whose each goroutine is. They are on the
+process's `Context` too, so `pprof.Do` over it adds labels of the
+application's own rather than dropping these, and a `SendAfter` timer,
+which fires on a runtime goroutine, sends under them. A `context.AfterFunc`
+callback on the process's `Context` runs on whoever ended it, under their
+labels. Every goroutine the node starts begins with none (`unlabelled`),
+whoever starts it, the application's own labels included: a process's send
+starts a dial and the link under it, which would otherwise charge their
+whole life to whichever process sent first. A PID in a profile is not a
+metric's series, so the label-not-PID rule of `Hooks` does not apply; the
+cost is three allocations per spawn, none per message.
 
 ## Helpers (`grpcproc/actor`)
 

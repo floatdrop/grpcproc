@@ -439,7 +439,7 @@ func (n *Node) Start(ctx context.Context) error {
 		return err
 	}
 	if m := n.cfg.Membership; m != nil {
-		stop := context.AfterFunc(ctx, unwatch) // ctx bounds the Watch call too
+		stop := context.AfterFunc(ctx, unlabelled(unwatch)) // ctx bounds the Watch call too
 		events, err := m.Watch(watching)
 		if !stop() && err == nil {
 			err = context.Cause(ctx)
@@ -448,15 +448,15 @@ func (n *Node) Start(ctx context.Context) error {
 			close(watched)
 			return failed(fmt.Errorf("grpcproc: membership: %w", err))
 		}
-		go func() {
+		go unlabelled(func() {
 			defer close(watched)
 			n.watchMembers(events)
-		}()
+		})()
 	} else {
 		close(watched)
 	}
 	if names := n.cfg.Names; names != nil {
-		stop := context.AfterFunc(ctx, unwatch) // ctx bounds the Watch call too
+		stop := context.AfterFunc(ctx, unlabelled(unwatch)) // ctx bounds the Watch call too
 		err := names.Watch(watching)
 		if !stop() && err == nil {
 			err = context.Cause(ctx)
@@ -605,7 +605,7 @@ func (n *Node) Stop(ctx context.Context) error {
 
 	n.cancel()
 	done := make(chan struct{})
-	go func() { n.wg.Wait(); close(done) }()
+	go unlabelled(func() { n.wg.Wait(); close(done) })()
 	var err error
 	select {
 	case <-done:
@@ -639,14 +639,14 @@ func (n *Node) Stop(ctx context.Context) error {
 	// A link that came up before the node stopped may still be announced
 	// (OnLinkUp): no hook runs once Stop has returned.
 	announced := make(chan struct{})
-	go func() {
+	go unlabelled(func() {
 		n.mu.Lock()
 		for len(n.announcing) > 0 {
 			n.settled.Wait()
 		}
 		n.mu.Unlock()
 		close(announced)
-	}()
+	})()
 	select {
 	case <-announced:
 	case <-ctx.Done():
@@ -675,7 +675,7 @@ func (n *Node) Stop(ctx context.Context) error {
 	// that installed its link may still be announcing it, so every dial is
 	// waited for, not only those under way.
 	dialed := make(chan struct{})
-	go func() { n.dialWG.Wait(); close(dialed) }()
+	go unlabelled(func() { n.dialWG.Wait(); close(dialed) })()
 	select {
 	case <-dialed:
 	case <-ctx.Done():
@@ -686,7 +686,7 @@ func (n *Node) Stop(ctx context.Context) error {
 	// Global names its processes held are given up before the node is
 	// withdrawn, which, with etcd, would drop them all at once anyway.
 	released := make(chan struct{})
-	go func() { n.releases.Wait(); close(released) }()
+	go unlabelled(func() { n.releases.Wait(); close(released) })()
 	select {
 	case <-released:
 	case <-ctx.Done():

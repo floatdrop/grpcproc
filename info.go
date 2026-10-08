@@ -8,6 +8,14 @@ import (
 
 func itoa(v uint64) string { return strconv.FormatUint(v, 10) }
 
+// The pprof labels a process's goroutine carries, and the goroutines its code
+// starts: a profile splits by them (see docs/DESIGN.md, Observability).
+const (
+	ProfileLabel = "grpcproc.label" // WithLabel
+	ProfilePID   = "grpcproc.pid"   // PID.String
+	ProfileName  = "grpcproc.name"  // WithName; absent for an unnamed process
+)
+
 // ProcessState is where a process is in its loop.
 type ProcessState uint8
 

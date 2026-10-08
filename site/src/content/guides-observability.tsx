@@ -250,6 +250,16 @@ if err := node.SetLogLevel(pid, slog.LevelDebug); err != nil {
 						A panic in a process is logged with its stack, and the process exits with reason{' '}
 						<C>panic: …</C>. Goroutine dumps and heap profiles are <C>net/http/pprof</C>'s job.
 					</p>
+					<p>
+						A process's goroutine, and every goroutine its code starts, carries the pprof labels{' '}
+						<C>grpcproc.label</C>, <C>grpcproc.pid</C> and, for a named process,{' '}
+						<C>grpcproc.name</C>; the goroutines the node starts, a link's among them, carry none. So
+						a CPU profile splits by
+						process, and a goroutine dump says whose each goroutine is. <C>pprof.Do</C> over{' '}
+						<C>p.Context()</C> adds labels of your own to them.
+					</p>
+					<Code lang="sh">{`go tool pprof -tags http://localhost:6060/debug/pprof/profile               # CPU by label and by PID
+go tool pprof -tagfocus=grpcproc.label=ledger http://localhost:6060/debug/pprof/profile`}</Code>
 				</>
 			)
 		},

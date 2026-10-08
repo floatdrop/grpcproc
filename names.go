@@ -245,7 +245,7 @@ func (p *proc) Claim(ctx context.Context, name string, opts ...ClaimOption) (*Cl
 	}
 	// A wait for the name ends with the process too.
 	ctx, cancel := context.WithCancel(ctx)
-	defer context.AfterFunc(p.ctx, cancel)()
+	defer context.AfterFunc(p.ctx, unlabelled(cancel))()
 	defer cancel()
 	c := &Claim{name: name, p: p, keep: o.KeepOnLoss, held: true}
 	nc, err := names.Claim(ctx, name, p.pid, o, c.notified)
@@ -286,13 +286,13 @@ func (p *proc) claimNames() []string {
 // wait for it. Stop waits for them, before it withdraws the node.
 func (n *Node) release(claims ...NameClaim) {
 	for _, nc := range claims {
-		n.releases.Go(func() {
+		n.releases.Go(unlabelled(func() { // started by the process that exited
 			ctx, cancel := context.WithTimeout(context.Background(), n.cfg.DialTimeout)
 			defer cancel()
 			if err := nc.Release(ctx); err != nil {
 				n.log.Warn("release of a global name failed", "err", err)
 			}
-		})
+		}))
 	}
 }
 

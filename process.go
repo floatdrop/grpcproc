@@ -9,6 +9,7 @@ import (
 	"maps"
 	"reflect"
 	"runtime/debug"
+	"runtime/pprof"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -448,10 +449,14 @@ func spawn[M proto.Message](n *Node, fn func(*Process[M]) error, opts []SpawnOpt
 		o.label = typ
 	}
 	id := n.nextID.Add(1)
-	ctx, cancel := context.WithCancelCause(n.ctx)
+	pid := PID{Node: n.id.Name, Incarnation: n.id.Incarnation, ID: id}
+	pidText := pid.String()
+	// The labels ride on the process's ctx, so that pprof.Do over its
+	// Context adds to them rather than replacing them.
+	ctx, cancel := context.WithCancelCause(pprof.WithLabels(n.ctx, profileLabels(pidText, o.name, o.label)))
 	p := &proc{
 		n:       n,
-		pid:     PID{Node: n.id.Name, Incarnation: n.id.Incarnation, ID: id},
+		pid:     pid,
 		name:    o.name,
 		label:   o.label,
 		typ:     typ,
@@ -467,7 +472,7 @@ func spawn[M proto.Message](n *Node, fn func(*Process[M]) error, opts []SpawnOpt
 		started: time.Now(),
 	}
 	p.log = slog.New(&levelHandler{h: n.log.Handler(), p: p}).With(
-		"pid", p.pid.String(), "label", o.label)
+		"pid", pidText, "label", o.label)
 
 	// One critical section admits the child: under n.mu, with the parent's
 	// lock inside it (n.mu first, then a process's lock: the one order), a
@@ -560,7 +565,8 @@ func (p *Process[M]) Addr() Addr[M] { return Addr[M]{pid: p.pid} }
 
 // Context is cancelled when the process is asked to exit, a process it is
 // linked to exits, or its node stops. context.Cause is then an *ExitError,
-// or context.Canceled.
+// or context.Canceled. It carries the process's pprof labels (ProfileLabel),
+// which pprof.Do over it keeps, and over another context drops.
 func (p *proc) Context() context.Context { return p.ctx }
 
 // Log returns a logger with the process's pid and label attached. Its
@@ -660,6 +666,7 @@ func (p *proc) sendAfter(d time.Duration, to dest, m proto.Message) *Timer {
 	}
 	p.timers[tm] = struct{}{}
 	tm.t = time.AfterFunc(d, func() {
+		pprof.SetGoroutineLabels(p.ctx) // a runtime goroutine, sending for p
 		p.mu.Lock()
 		_, pending := p.timers[tm]
 		delete(p.timers, tm)
@@ -1250,6 +1257,7 @@ func (p *proc) peerDown(peer string) (downs []Down, exits []Exited) {
 
 func (p *proc) run(fn func() error) {
 	defer p.n.wg.Done()
+	pprof.SetGoroutineLabels(p.ctx)
 	p.setState(StateRunning)
 	err := errGoexit // what fn leaves when it neither returns nor panics
 	defer func() { p.terminate(p.exitReason(err)) }()
@@ -1260,6 +1268,23 @@ func (p *proc) run(fn func() error) {
 		}
 	}()
 	err = fn()
+}
+
+// profileLabels are a process's pprof labels: its label, PID and name.
+func profileLabels(pid, name, label string) pprof.LabelSet {
+	if name == "" {
+		return pprof.Labels(ProfileLabel, label, ProfilePID, pid)
+	}
+	return pprof.Labels(ProfileLabel, label, ProfilePID, pid, ProfileName, name)
+}
+
+// unlabelled is f for a goroutine the node starts, whoever starts it: it
+// drops the pprof labels the goroutine inherited.
+func unlabelled(f func()) func() {
+	return func() {
+		pprof.SetGoroutineLabels(context.Background())
+		f()
+	}
 }
 
 // errGoexit is the exit of a process whose function called runtime.Goexit.

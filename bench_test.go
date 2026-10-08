@@ -85,3 +85,13 @@ func BenchmarkRemoteSend(b *testing.B) {
 	c := grpcproctest.New(b, "a", "b")
 	benchSend(b, c.Node("a"), c.Node("b"))
 }
+
+func BenchmarkSpawn(b *testing.B) {
+	n := grpcproctest.New(b, "a").Node("a")
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := n.Spawn(func(*grpcproc.Process[*testpb.Ping]) error { return nil }); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
