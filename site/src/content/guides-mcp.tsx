@@ -52,7 +52,7 @@ export const guidesMcp: Doc = {
 							[<C>node_info</C>, 'One node: counts, dead letters, and each link with its traffic, queue and last error.'],
 							[
 								<C>list_processes</C>,
-								'Processes of a node, filtered by name, label, state or mailbox depth, and sorted: by mailbox, to find backlogs. At most 100 unless asked for more.'
+								'Processes of a node, filtered by name, label, state or mailbox depth, and sorted: by mailbox, to find backlogs, or by busy time. At most 100 unless asked for more.'
 							],
 							[<C>get_process</C>, 'One process by pid or name, with what it says about itself, waiting a while for a busy one.'],
 							[<C>watch_events</C>, 'A node’s events, collected for a few seconds: spawns, exits with reasons, links, dead letters.'],

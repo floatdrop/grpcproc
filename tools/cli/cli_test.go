@@ -78,7 +78,7 @@ func TestReadCommands(t *testing.T) {
 	has(t, ok(t, run(t, f, "node")), "node:          a#", "PEER", "QUEUED", "QUEUED BYTES", "RETRY IN", "b#", "out", "in", "up")
 	has(t, ok(t, run(t, f, "node", "b")), "node:          b#")
 	has(t, ok(t, run(t, f, "nodes")), "NODE", "PEERS", "a ", "b ")
-	has(t, ok(t, run(t, f, "ps")), "PID", "sup", "w1", "stuck", "talker", "supervisor")
+	has(t, ok(t, run(t, f, "ps")), "PID", "BUSY", "sup", "w1", "stuck", "talker", "supervisor")
 	out := ok(t, run(t, f, "ps", "--sort", "mailbox", "--limit", "1"))
 	has(t, out, "stuck")
 	if strings.Count(out, "\n") != 2 {
@@ -86,7 +86,7 @@ func TestReadCommands(t *testing.T) {
 	}
 	has(t, ok(t, run(t, f, "ps", "--node", "b", "--name", "ech", "--state", "idle")), "echo")
 	has(t, ok(t, run(t, f, "inspect", "talker")), "name:", "talker", "state:          ready")
-	has(t, ok(t, run(t, f, "inspect", "--wait", "10ms", "stuck")), "inspect:", "busy", "mailbox:", "(peak")
+	has(t, ok(t, run(t, f, "inspect", "--wait", "10ms", "stuck")), "inspect:", "busy", "mailbox:", "(peak", "busy for:")
 	// A wait longer than --timeout still gets its answer: busy.
 	has(t, ok(t, run(t, f, "--timeout", "200ms", "inspect", "--wait", "400ms", "stuck")), "busy")
 	has(t, ok(t, run(t, f, "inspect", f.Echo.String())), "echo")

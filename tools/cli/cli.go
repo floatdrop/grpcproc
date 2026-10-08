@@ -288,6 +288,19 @@ func (a *app) table(header string, rows [][]string) error {
 
 func u(v uint64) string { return strconv.FormatUint(v, 10) }
 
+// busy is a process's busy time as ps and inspect print it, rounded as the
+// client rounds its other durations.
+func busy(p client.ProcessView) string {
+	d := time.Duration(p.BusySeconds * float64(time.Second))
+	switch {
+	case d >= time.Minute:
+		return d.Round(time.Second).String()
+	case d >= time.Second:
+		return d.Round(time.Millisecond).String()
+	}
+	return d.Round(time.Microsecond).String()
+}
+
 func cmdNode(ctx context.Context, a *app, args []string) error {
 	fs, err := a.flags("node", args, func(*flag.FlagSet) {})
 	if err != nil {
@@ -414,7 +427,7 @@ func cmdPS(ctx context.Context, a *app, args []string) error {
 		fs.StringVar(&f.Label, "label", "", "only processes with this label")
 		fs.StringVar(&f.State, "state", "", "only processes in this state: idle, running, waiting-reply, exiting")
 		fs.IntVar(&f.MinMailbox, "min-mailbox", 0, "only processes with at least this many waiting messages")
-		fs.StringVar(&sortBy, "sort", "pid", "order: pid, mailbox, received or sent")
+		fs.StringVar(&sortBy, "sort", "pid", "order: pid, mailbox, received, sent or busy")
 		fs.IntVar(&limit, "limit", 0, "show at most this many (0: all)")
 	}); err != nil {
 		return err
@@ -436,9 +449,9 @@ func cmdPS(ctx context.Context, a *app, args []string) error {
 	}
 	rows := make([][]string, 0, len(ps))
 	for _, p := range ps {
-		rows = append(rows, []string{p.PID, p.Name, p.Label, p.State, strconv.Itoa(p.Mailbox), p.OldestWait, u(p.Received), u(p.Sent), p.LastMessage, p.Uptime})
+		rows = append(rows, []string{p.PID, p.Name, p.Label, p.State, strconv.Itoa(p.Mailbox), p.OldestWait, u(p.Received), u(p.Sent), busy(p), p.LastMessage, p.Uptime})
 	}
-	return a.table("PID\tNAME\tLABEL\tSTATE\tMAILBOX\tOLDEST\tRECEIVED\tSENT\tLAST MESSAGE\tUPTIME", rows)
+	return a.table("PID\tNAME\tLABEL\tSTATE\tMAILBOX\tOLDEST\tRECEIVED\tSENT\tBUSY\tLAST MESSAGE\tUPTIME", rows)
 }
 
 func cmdInspect(ctx context.Context, a *app, args []string) error {
@@ -472,6 +485,7 @@ func cmdInspect(ctx context.Context, a *app, args []string) error {
 		{"parent", p.Parent}, {"state", p.State}, {"uptime", p.Uptime},
 		{"mailbox", fmt.Sprintf("%d (peak %d, oldest %s)", p.Mailbox, p.MailboxPeak, cmp.Or(p.OldestWait, "-"))},
 		{"received", u(p.Received)}, {"sent", u(p.Sent)}, {"calls in flight", strconv.Itoa(int(p.CallsInFlight))},
+		{"busy", busy(p)}, {"busy for", cmp.Or(p.BusyFor, "-")},
 		{"last message", p.LastMessage}, {"monitors", strconv.Itoa(p.Monitors)}, {"watchers", strconv.Itoa(p.Watchers)},
 		{"links", strconv.Itoa(p.Links)}, {"trap exit", strconv.FormatBool(p.TrapExit)},
 		{"log level", p.LogLevel},

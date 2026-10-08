@@ -42,9 +42,9 @@ grpcprocctl --plaintext --addr 10.0.0.5:9000 web   # http://localhost:9911`}</Co
 							[
 								'Processes',
 								<>
-									The table <C>grpcprocctl ps</C> prints, with messages in and out per second. The
-									scope (name, label, state, mailbox) is sent to the node; search and order stay in
-									the page.
+									The table <C>grpcprocctl ps</C> prints, with messages in and out per second and the
+									share of each second each process was busy. The scope (name, label, state, mailbox) is
+									sent to the node; search and order stay in the page.
 								</>
 							],
 							[
@@ -82,8 +82,8 @@ grpcprocctl --plaintext --addr 10.0.0.5:9000 web   # http://localhost:9911`}</Co
 			body: (
 				<>
 					<p>
-						Clicking a process opens it beside any view: its mailbox and messages per second
-						charted, what it <A to="guides/observability/#inspect">says about itself</A>, and what
+						Clicking a process opens it beside any view: its mailbox, messages per second and how
+						busy it is charted, what it <A to="guides/observability/#inspect">says about itself</A>, and what
 						it started. Asking a process what it says takes it a turn, so the page asks when told
 						to, or on an interval you choose. Here <C>ledger</C> handles about 20 messages a second
 						while more arrive, and its mailbox climbs:

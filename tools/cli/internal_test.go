@@ -16,6 +16,14 @@ func TestEventLine(t *testing.T) {
 	}
 }
 
+func TestBusy(t *testing.T) {
+	for secs, want := range map[float64]string{0: "0s", 0.0004: "400µs", 1.5: "1.5s", 90.4: "1m30s"} {
+		if got := busy(client.ProcessView{BusySeconds: secs}); got != want {
+			t.Errorf("busy(%v) = %q, want %q", secs, got, want)
+		}
+	}
+}
+
 func TestLoopback(t *testing.T) {
 	for addr, want := range map[string]bool{
 		"localhost:9911": true, "127.0.0.1:9911": true, "[::1]:9911": true,
