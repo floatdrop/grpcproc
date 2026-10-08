@@ -27,6 +27,9 @@ type flaky struct {
 	failing map[string]error
 	// onRelease, if set, runs once, just before a save that lets a run go.
 	onRelease func()
+	// onClaim, if set, runs once, after a Claim that took runs and before it
+	// answers, with the Claim's ctx.
+	onClaim func(context.Context)
 	// hang, if set, holds every Renew until it is closed, or its ctx ends.
 	hang chan struct{}
 	// slow, if set, is how long every Renew takes, unless its ctx ends first.
@@ -73,8 +76,14 @@ func (f *flaky) Claim(ctx context.Context, owner string, sagas map[string]uint64
 		runs[i].LeaseUntil = runs[i].LeaseUntil.Add(-f.behind)
 	}
 	f.mu.Lock()
-	late := f.late
+	late, hook := f.late, f.onClaim
+	if len(runs) > 0 {
+		f.onClaim = nil
+	}
 	f.mu.Unlock()
+	if hook != nil && len(runs) > 0 {
+		hook(ctx)
+	}
 	select {
 	case <-time.After(late):
 	case <-ctx.Done():
@@ -245,12 +254,41 @@ func TestANodeThatStopsOrDies(t *testing.T) {
 				if took := time.Since(began); s.Status != saga.Done || took < tc.atLeast || took > tc.atMost {
 					t.Fatalf("%+v after %v", s, took)
 				}
-				if keys, fences, _ := h.seen(); len(keys) != 2 || keys[0] != keys[1] || fences[1] != 2 {
+				// a's engine may claim the run, let go by its work, once more
+				// as a stops, and let it go again.
+				if keys, fences, _ := h.seen(); len(keys) != 2 || keys[0] != keys[1] || fences[1] < 2 || fences[1] > 3 {
 					t.Fatalf("keys %v, fences %v", keys, fences)
 				}
 			})
 		})
 	}
+}
+
+// A run claimed as its engine's node stops, when no process can work on it,
+// is let go at once.
+func TestAClaimAsTheNodeStops(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := grpcproctest.New(t, "a", "b")
+		store := &flaky{Store: saga.Memory()}
+		// a stops as Claim answers, so its engine can start no process.
+		store.onClaim = func(ctx context.Context) {
+			go c.Stop("a")
+			<-ctx.Done()
+		}
+		d := saga.Define[text]("plain", twoSteps()).Do(first, step("first")).Do(second, step("second"))
+		begin(t, d, engine(t, c.Node("a"), store, d), "1")
+		synctest.Wait()
+
+		b := engine(t, c.Node("b"), store, d)
+		began := time.Now()
+		s := wait(t, d, b, "1")
+		if took := time.Since(began); s.Status != saga.Done || s.Data.Value != "firstsecond" || took > 2*time.Second {
+			t.Fatalf("%+v after %v", s, took)
+		}
+		if r, _, _ := store.Get(t.Context(), "plain", "1"); r.Epoch != 2 {
+			t.Fatalf("claimed %d times", r.Epoch)
+		}
+	})
 }
 
 func TestAStoreThatFails(t *testing.T) {

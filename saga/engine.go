@@ -186,7 +186,7 @@ func (e *Engine) loop(p *grpcproc.Process[proto.Message]) error {
 // claim takes up to n due runs and starts a process for each; it returns how
 // many it started.
 func (e *Engine) claim(p *grpcproc.Process[proto.Message], n int) int {
-	if n <= 0 {
+	if n <= 0 || p.Context().Err() != nil {
 		return 0
 	}
 	// A lease is counted from before the call, by this clock, not the store's.
@@ -196,14 +196,28 @@ func (e *Engine) claim(p *grpcproc.Process[proto.Message], n int) int {
 		p.Log().Warn("saga: claim", "err", err)
 		return 0
 	}
-	for _, r := range runs {
-		// It fails only as the node stops: the run's lease then runs out.
-		_, _, _ = p.SpawnMonitor(func(w *grpcproc.Process[proto.Message]) error {
+	for i, r := range runs {
+		if _, _, err := p.SpawnMonitor(func(w *grpcproc.Process[proto.Message]) error {
 			e.work(w, r, claimed)
 			return nil
-		}, grpcproc.WithLabel("saga:"+r.Saga), grpcproc.LinkParent())
+		}, grpcproc.WithLabel("saga:"+r.Saga), grpcproc.LinkParent()); err != nil {
+			// It fails only once the engine is told to exit or its node
+			// stops, which may have let r go just before the claim took it.
+			e.letGo(p, runs[i:]...)
+			return i
+		}
 	}
 	return len(runs)
+}
+
+// letGo gives up the leases on runs, within a second in all, so that another
+// engine need not wait them out, even as p is told to exit.
+func (e *Engine) letGo(p *grpcproc.Process[proto.Message], runs ...Record) {
+	ctx, done := context.WithTimeout(context.WithoutCancel(p.Context()), time.Second)
+	defer done()
+	for _, r := range runs {
+		_ = e.cfg.Store.Renew(ctx, r.Saga, r.ID, r.Epoch, 0)
+	}
 }
 
 // work is a run's process, its lease counted from claimed: it keeps the
@@ -256,11 +270,7 @@ func (e *Engine) work(p *grpcproc.Process[proto.Message], r Record, claimed time
 	cancel(nil)
 	renewing.Wait()
 	if p.Context().Err() != nil && !lost {
-		// Told to exit with the run in hand: let the lease go, so that
-		// another engine need not wait it out.
-		ctx, done := context.WithTimeout(context.WithoutCancel(p.Context()), time.Second)
-		defer done()
-		_ = e.cfg.Store.Renew(ctx, r.Saga, r.ID, r.Epoch, 0)
+		e.letGo(p, r) // told to exit with the run in hand
 	}
 }
 
