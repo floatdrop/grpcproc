@@ -663,6 +663,8 @@ type ProcessInfo struct {
     Links      int               // process links held by this process
     Watchers   int               // processes monitoring or linked to this one
     Wakeups    uint64            // Receive returns
+    Busy       time.Duration     // not waiting in Receive, waits in Call included
+    BusyFor    time.Duration     // since its last wait ended or it took a batch; 0 while it waits
     LogLevel   slog.Level
     TrapExit   bool
 }
@@ -671,6 +673,20 @@ func (n *Node) Processes() []ProcessInfo          // ordered by PID.ID
 func (n *Node) Process(pid PID) (ProcessInfo, bool)
 func (n *Node) Info() NodeInfo                   // name, incarnation, metadata, uptime, counts, Links []LinkInfo
 ```
+
+`Busy` is what saturation is read from: its growth between two snapshots
+over the time between them is the share of that time the process was busy,
+so a tool that polls has the rate without the node keeping a history or
+sampling anything. Only a wait is not busy, and a wait ends the same way
+however it ends: a message, a timeout or the process's exit, whose teardown
+is work. The clock is read as a wait starts and as it ends, and when the
+process takes a batch, all that was queued for it, without waiting: once
+per batch rather than per message, since a read per message added about a
+quarter to `BenchmarkReceive`; `BenchmarkLocalCall`, whose callee waits for
+every call, moved by about 1%. `BusyFor` counts from the later of the last
+wait's end and the last batch, so it is at least as long as the current
+message, or the timeout that woke the process, has taken, and bounded by its
+batch for a process that never runs dry.
 
 `LinkInfo` per peer: state, established at, reconnects, sessions ended,
 messages and bytes in and out, envelopes waiting to be written, last error,

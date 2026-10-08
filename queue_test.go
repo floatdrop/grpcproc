@@ -10,7 +10,7 @@ import (
 func TestQueue(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := newQueue[int](true)
-		if _, ok := q.tryPop(); ok || q.oldestStamp() != 0 || q.takenAt.Load() != 0 {
+		if _, ok := q.tryPop(); ok || q.oldestStamp() != 0 {
 			t.Fatal("empty")
 		}
 		before := time.Now().UnixNano()
@@ -22,7 +22,7 @@ func TestQueue(t *testing.T) {
 		if q.len() != 3 || first < before || first > time.Now().UnixNano() {
 			t.Fatalf("len %d oldest %d", q.len(), first)
 		}
-		if v, _ := q.tryPop(); v != 1 || q.oldestStamp() != first || q.takenAt.Load() < first {
+		if v, _ := q.tryPop(); v != 1 || q.oldestStamp() != first || !q.tookBatch() {
 			t.Fatalf("pop %d oldest %d", v, q.oldestStamp())
 		}
 		q.push(4) // lands in the producers' buffer while the consumer holds 2, 3

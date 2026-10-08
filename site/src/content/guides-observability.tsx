@@ -93,6 +93,18 @@ export const guidesObservability: Doc = {
 							[<C>Wakeups</C>, <>How many times <C>Receive</C> returned.</>],
 							[
 								<>
+									<C>Busy</C>, <C>BusyFor</C>
+								</>,
+								<>
+									The time it has spent anywhere but waiting in <C>Receive</C>, waits in <C>Call</C>{' '}
+									included, and at least how long it has been on its current message, or on the timeout
+									that woke it, 0 while it waits. The growth of <C>Busy</C> between two snapshots, over the
+									time between them, is the share of that time it was busy: near 1, it is never idle, and a
+									growing <C>Depth</C> says it does not keep up.
+								</>
+							],
+							[
+								<>
 									<C>LogLevel</C>, <C>TrapExit</C>
 								</>,
 								'The threshold of its logger, and whether it traps exits.'

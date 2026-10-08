@@ -3,6 +3,7 @@ package grpcproc_test
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strconv"
 	"strings"
 	"testing"
@@ -158,6 +159,222 @@ func TestBusyMeasuresTheCurrentMessage(t *testing.T) {
 		u, _ := a.Spawn[proto.Message](func(p *grpcproc.Process[proto.Message]) error { _, err := p.Receive(); return err })
 		if info, _ := a.Process(u.PID()); info.Type != "proto.Message" || info.Label != "proto.Message" {
 			t.Fatalf("%+v", info)
+		}
+	})
+}
+
+// Busy counts the time a process spends anywhere but waiting in Receive,
+// waits in Call included, and BusyFor the time since it took the messages
+// queued for it at once.
+func TestBusyTime(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a := grpcproctest.New(t, "a").Node("a")
+		events := a.Subscribe(t.Context(), 16)
+		slow, _ := a.Spawn(func(p *grpcproc.Process[*testpb.Ping]) error {
+			for {
+				m, err := p.Receive()
+				if err != nil {
+					return err
+				}
+				time.Sleep(3 * time.Second)
+				_ = m.Reply(&testpb.Pong{}, nil)
+			}
+		})
+		w, _ := a.Spawn(func(p *grpcproc.Process[*testpb.Ping]) error {
+			time.Sleep(2 * time.Second)
+			for {
+				m, err := p.Receive()
+				if err != nil {
+					return err
+				}
+				if m.Body.N == 1 {
+					if _, err := slow.Call[*testpb.Pong](p.Context(), p, &testpb.Ping{}); err != nil {
+						return err
+					}
+				} else {
+					time.Sleep(time.Second)
+				}
+			}
+		})
+		check := func(when string, busy, busyFor time.Duration) {
+			t.Helper()
+			info, _ := a.Process(w.PID())
+			if info.Busy != busy || info.BusyFor != busyFor {
+				t.Fatalf("%s: busy %v, for %v; want %v, for %v", when, info.Busy, info.BusyFor, busy, busyFor)
+			}
+		}
+		time.Sleep(5 * time.Second)
+		check("idle after its start", 2*time.Second, 0)
+		_ = w.Send(t.Context(), a, &testpb.Ping{N: 1})
+		time.Sleep(time.Second)
+		check("in a Call", 3*time.Second, time.Second)
+		time.Sleep(4 * time.Second)
+		check("idle after the Call", 5*time.Second, 0)
+		_ = w.Send(t.Context(), a, &testpb.Ping{N: 2})
+		_ = w.Send(t.Context(), a, &testpb.Ping{N: 2})
+		time.Sleep(1500 * time.Millisecond)
+		check("on the second of two queued", 6500*time.Millisecond, 1500*time.Millisecond)
+		_ = w.Send(t.Context(), a, &testpb.Ping{N: 2})
+		time.Sleep(750 * time.Millisecond)
+		check("on one queued while it was busy", 7250*time.Millisecond, 250*time.Millisecond)
+		time.Sleep(3 * time.Second)
+		if err := a.Exit(t.Context(), w.PID(), "stop"); err != nil {
+			t.Fatal(err)
+		}
+		ev := nextEvent(t, events, grpcproc.EventExit)
+		for ev.Process.PID != w.PID() {
+			ev = nextEvent(t, events, grpcproc.EventExit)
+		}
+		if ev.Process.Busy != 8*time.Second || ev.Process.BusyFor != 0 {
+			t.Fatalf("exited from a wait: busy %v, for %v", ev.Process.Busy, ev.Process.BusyFor)
+		}
+	})
+}
+
+// A wait ends the same whether a message, a timeout or an exit ends it: what
+// the process does next is busy, and BusyFor counts from then.
+func TestBusyTimeAfterAWaitEnds(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a := grpcproctest.New(t, "a").Node("a")
+		timer, _ := a.Spawn(func(p *grpcproc.Process[*testpb.Ping]) error {
+			for {
+				if _, err := p.ReceiveTimeout(time.Second); !errors.Is(err, context.DeadlineExceeded) {
+					return err
+				}
+				time.Sleep(500 * time.Millisecond)
+			}
+		})
+		teardown, _ := a.Spawn(func(p *grpcproc.Process[*testpb.Ping]) error {
+			_, err := p.Receive()
+			time.Sleep(2 * time.Second)
+			return err
+		})
+		// The timer works from 1s to 1.5s, 2.5s to 3s, and so on.
+		time.Sleep(10*time.Second + 250*time.Millisecond)
+		if info, _ := a.Process(timer.PID()); info.Busy != 3250*time.Millisecond || info.BusyFor != 250*time.Millisecond {
+			t.Fatalf("timer: busy %v, for %v", info.Busy, info.BusyFor)
+		}
+		if err := a.Exit(t.Context(), teardown.PID(), "stop"); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second)
+		if info, _ := a.Process(teardown.PID()); info.Busy != time.Second || info.BusyFor != time.Second {
+			t.Fatalf("teardown: busy %v, for %v", info.Busy, info.BusyFor)
+		}
+	})
+}
+
+// slowReceive takes a second over every message a process takes.
+type slowReceive struct{ grpcproc.NopHooks }
+
+func (slowReceive) OnReceive(_ grpcproc.ReceiveInfo, md grpcproc.Metadata) (grpcproc.Metadata, grpcproc.Done) {
+	time.Sleep(time.Second)
+	return md, nil
+}
+
+// What OnReceive takes of a message that ended a wait is busy time.
+func TestBusyTimeOfOnReceive(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Hooks: slowReceive{}, Logger: slog.New(slog.DiscardHandler)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := n.Start(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = n.Stop(context.Background()) })
+		addr, _ := n.Spawn(func(p *grpcproc.Process[*testpb.Ping]) error {
+			for {
+				if _, err := p.Receive(); err != nil {
+					return err
+				}
+			}
+		})
+		time.Sleep(time.Second)
+		_ = addr.Send(t.Context(), n, &testpb.Ping{})
+		time.Sleep(2 * time.Second)
+		if info, _ := n.Process(addr.PID()); info.Busy != time.Second || info.BusyFor != 0 {
+			t.Fatalf("busy %v, for %v", info.Busy, info.BusyFor)
+		}
+	})
+}
+
+// A Receive inside an inspect function, served while its process waits,
+// leaves the wait as it found it.
+func TestBusyTimeOfAReceiveInAnInspect(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a := grpcproctest.New(t, "a").Node("a")
+		var self *grpcproc.Process[*testpb.Ping]
+		addr, _ := a.Spawn(func(p *grpcproc.Process[*testpb.Ping]) error {
+			self = p
+			time.Sleep(time.Second)
+			_, err := p.Receive()
+			return err
+		}, grpcproc.WithInspect(func() map[string]string {
+			_, _ = self.ReceiveTimeout(time.Second)
+			return nil
+		}))
+		time.Sleep(2 * time.Second)
+		if _, err := a.Inspect(t.Context(), addr.PID()); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second)
+		if info, _ := a.Process(addr.PID()); info.Busy != time.Second || info.BusyFor != 0 {
+			t.Fatalf("busy %v, for %v", info.Busy, info.BusyFor)
+		}
+	})
+}
+
+// An inspect function that panics in a wait ends the wait, for a process
+// that recovers the panic and goes on as for one it ends.
+func TestBusyTimeAfterAnInspectPanics(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a := grpcproctest.New(t, "a").Node("a")
+		panicked := false
+		addr, _ := a.Spawn(func(p *grpcproc.Process[*testpb.Ping]) error {
+			for p.Context().Err() == nil {
+				func() {
+					defer func() { _ = recover() }()
+					if _, err := p.Receive(); err == nil {
+						time.Sleep(time.Second)
+					}
+				}()
+			}
+			return nil
+		}, grpcproc.WithInspect(func() map[string]string {
+			if !panicked {
+				panicked = true
+				panic("once")
+			}
+			return nil
+		}))
+		time.Sleep(time.Second)
+		_, _ = a.Inspect(t.Context(), addr.PID())
+		time.Sleep(time.Second)
+		_ = addr.Send(t.Context(), a, &testpb.Ping{})
+		time.Sleep(2 * time.Second)
+		if info, _ := a.Process(addr.PID()); info.Busy != time.Second || info.BusyFor != 0 {
+			t.Fatalf("busy %v, for %v", info.Busy, info.BusyFor)
+		}
+	})
+}
+
+// An inspect that cannot be delivered to a process waiting in Receive, as it
+// serves another, says no busy time.
+func TestInspectOfAProcessServingAnother(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a := grpcproctest.New(t, "a").Node("a")
+		p, _ := a.Spawn(func(p *grpcproc.Process[*testpb.Ping]) error {
+			_, err := p.Receive()
+			return err
+		}, grpcproc.WithInspect(func() map[string]string { time.Sleep(2 * time.Second); return nil }))
+		synctest.Wait()
+		go func() { _, _ = a.Inspect(t.Context(), p.PID()) }()
+		synctest.Wait()
+		short, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		if _, err := a.Inspect(short, p.PID()); err == nil || strings.Contains(err.Error(), "busy for") || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("inspect of a waiting process: %v", err)
 		}
 	})
 }
