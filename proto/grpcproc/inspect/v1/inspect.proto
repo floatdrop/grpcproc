@@ -151,6 +151,12 @@ message ProcessInfo {
   bool trap_exit = 18;
   // The global names it holds (Process.Claim), ordered.
   repeated string globals = 19;
+  // The time it has not spent waiting in Receive since it started, waits in
+  // Call included.
+  google.protobuf.Duration busy = 20;
+  // The time since its last wait in Receive ended, or it took what was
+  // queued for it, or it started; 0 while it waits.
+  google.protobuf.Duration busy_for = 21;
 }
 
 // Target names a process by pid or by name, on the request's node.

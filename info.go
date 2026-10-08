@@ -63,6 +63,16 @@ type ProcessInfo struct {
 	Wakeups       uint64 // Receive returns
 	LogLevel      slog.Level
 	TrapExit      bool // see Process.SetTrapExit
+	// Busy is the time it has not spent waiting in Receive since it started,
+	// waits in Call included: its growth between two snapshots over the time
+	// between them is the share of that time it was busy, near 1 for a
+	// process that is never idle.
+	Busy time.Duration
+	// BusyFor is the time since its last wait in Receive ended, or it took
+	// what was queued for it, or it started: at least how long it has been on
+	// its current message, or on what woke it, such as a timeout. 0 while it
+	// waits.
+	BusyFor time.Duration
 }
 
 // LinkState is the state of a link to a peer.

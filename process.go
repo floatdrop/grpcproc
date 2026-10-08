@@ -78,6 +78,13 @@ type proc struct {
 	levelSet                atomic.Bool
 	trapExit                atomic.Bool
 
+	// busy is the time not spent waiting in receive, by sinceStart: while
+	// waiting, -1 less the total; otherwise when the current stretch began
+	// less the total before it.
+	busy      atomic.Int64
+	busySince atomic.Int64 // by sinceStart: the last wait's end or batch taken
+	waits     int          // receives waiting, one inside another's inspect; the process's goroutine only
+
 	// mu guards what follows. Taken inside Node.mu, never around it; two
 	// processes' locks are held at once only under Node.mu held exclusively
 	// (see WatchedBy).
@@ -1032,7 +1039,7 @@ func (p *proc) endHandling(err error) {
 }
 
 // receive serves inspect requests between messages, then blocks for the
-// next item.
+// next item. A wait is the only time not busy.
 func (p *proc) receive(ctx context.Context) (item, error) {
 	p.endHandling(nil)
 	p.setState(StateIdle)
@@ -1042,16 +1049,25 @@ func (p *proc) receive(ctx context.Context) (item, error) {
 		p.serveInspect(r)
 	default:
 	}
-	for {
-		if it, ok := p.mbox.tryPop(); ok {
-			return p.took(it), nil
+	if it, ok := p.mbox.tryPop(); ok {
+		if p.waits == 0 && p.mbox.tookBatch() {
+			p.busySince.Store(p.sinceStart())
 		}
+		return p.took(it), nil
+	}
+	p.pause()
+	for {
 		select {
 		case <-p.mbox.notify:
 		case r := <-p.sys:
-			p.serveInspect(r)
+			p.serveWaiting(r)
 		case <-ctx.Done():
+			p.woke()
 			return item{}, context.Cause(ctx)
+		}
+		if it, ok := p.mbox.tryPop(); ok {
+			p.woke()
+			return p.took(it), nil
 		}
 	}
 }
@@ -1089,12 +1105,28 @@ func (p *proc) serveInspect(r inspectReq) {
 	r.ch <- m
 }
 
+// serveWaiting serves r inside a wait, which an inspect function that
+// panics or exits its goroutine ends.
+func (p *proc) serveWaiting(r inspectReq) {
+	served := false
+	defer func() {
+		if !served {
+			p.woke()
+		}
+	}()
+	p.serveInspect(r)
+	served = true
+}
+
 func (p *proc) inspectNow(ctx context.Context) (map[string]string, error) {
 	r := inspectReq{ch: make(chan map[string]string, 1)}
 	select {
 	case p.sys <- r:
 	case <-ctx.Done():
-		return nil, fmt.Errorf("grpcproc: inspect %s: busy for %s: %w", p.pid, p.busyFor().Round(time.Millisecond), ctx.Err())
+		if _, busyFor, waiting := p.busyTimes(); !waiting {
+			return nil, fmt.Errorf("grpcproc: inspect %s: busy for %s: %w", p.pid, busyFor.Round(time.Millisecond), ctx.Err())
+		}
+		return nil, fmt.Errorf("grpcproc: inspect %s: %w", p.pid, ctx.Err())
 	case <-p.ctx.Done():
 		return nil, ErrNoProc
 	}
@@ -1111,14 +1143,42 @@ func (p *proc) inspectNow(ctx context.Context) (map[string]string, error) {
 
 func (p *proc) setState(s ProcessState) { p.state.Store(uint32(s)) }
 
-// busyFor is how long ago the process took the batch its current message
-// came in (so at least as long as it has been on that message), or since it
-// started if it has taken none.
-func (p *proc) busyFor() time.Duration {
-	if since := p.mbox.takenAt.Load(); since != 0 {
-		return time.Since(time.Unix(0, since))
+// sinceStart is the clock busy is kept by.
+func (p *proc) sinceStart() int64 { return int64(time.Since(p.started)) }
+
+// pause ends a busy stretch, as the outermost wait in receive starts.
+func (p *proc) pause() {
+	if p.waits++; p.waits == 1 {
+		p.busy.Store(-1 - (p.sinceStart() - p.busy.Load()))
 	}
-	return time.Since(p.started)
+}
+
+// woke begins one, as the outermost wait ends, however it ends.
+func (p *proc) woke() {
+	if p.waits--; p.waits == 0 {
+		now := p.sinceStart()
+		p.busySince.Store(now)
+		p.busy.Store(now - (-1 - p.busy.Load()))
+	}
+}
+
+// busyTimes is the time the process has not spent waiting in Receive, the
+// time since its last wait ended or it took a batch, and whether it is
+// waiting now; read again while a pause or wake lands between, a few times.
+func (p *proc) busyTimes() (total, current time.Duration, waiting bool) {
+	for range 3 {
+		m := p.busy.Load()
+		if m < 0 {
+			return time.Duration(-1 - m), 0, true
+		}
+		since := p.busySince.Load()
+		now := p.sinceStart()
+		total, current = time.Duration(now-m), time.Duration(now-since)
+		if p.busy.Load() == m && p.busySince.Load() == since {
+			break
+		}
+	}
+	return total, current, false
 }
 
 // typeString names M for display and as the default label. proto.Message is
@@ -1155,6 +1215,7 @@ func (p *proc) info() ProcessInfo {
 		Wakeups:       p.wakeups.Load(),
 		LogLevel:      p.logLevel(),
 	}
+	info.Busy, info.BusyFor, _ = p.busyTimes()
 	if t := p.lastMsg.Load(); t != nil {
 		info.LastMessage = *t
 	}

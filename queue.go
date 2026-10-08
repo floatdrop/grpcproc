@@ -18,10 +18,9 @@ import (
 // rather than once per item, and the two buffers are reused, so a queue that
 // is kept up with allocates nothing.
 //
-// A stamped queue also knows how long its oldest item has waited and when
-// the consumer took what it is working on, reading the clock once per batch
-// rather than per item: when in goes from empty to holding something (the
-// oldest item of that batch, exactly), and when the consumer takes a batch.
+// A stamped queue also knows how long its oldest item has waited, reading
+// the clock once per batch rather than per item: when in goes from empty to
+// holding something, which stamps the oldest item of that batch exactly.
 type queue[T any] struct {
 	mu     sync.Mutex
 	in     []T
@@ -47,11 +46,9 @@ type queue[T any] struct {
 	stamped  bool
 	inSince  int64        // guarded by mu: when in stopped being empty
 	outSince atomic.Int64 // when the consumer's batch started queueing; 0 when used up
-	takenAt  atomic.Int64 // when the consumer took its batch; 0 before the first
 }
 
-// newQueue returns a queue; a stamped one tracks the ages oldestStamp and
-// takenAt report.
+// newQueue returns a queue; a stamped one tracks the age oldestStamp reports.
 func newQueue[T any](stamped bool) *queue[T] {
 	return &queue[T]{notify: make(chan struct{}, 1), stamped: stamped}
 }
@@ -162,6 +159,10 @@ func (q *queue[T]) tryPop() (T, bool) {
 	return v, true
 }
 
+// tookBatch is whether the last tryPop took the first item of a batch.
+// Consumer only.
+func (q *queue[T]) tookBatch() bool { return q.head == 1 }
+
 // refill swaps the producers' buffer for the consumer's used-up one, whose
 // slots tryPop has already cleared. Consumer only.
 func (q *queue[T]) refill() bool {
@@ -174,7 +175,6 @@ func (q *queue[T]) refill() bool {
 	}
 	if q.stamped && len(q.out) > 0 {
 		q.outSince.Store(q.inSince)
-		q.takenAt.Store(time.Now().UnixNano())
 	}
 	return len(q.out) > 0
 }

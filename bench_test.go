@@ -95,3 +95,46 @@ func BenchmarkSpawn(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkReceive measures taking messages from a mailbox that already holds
+// them, with no sender racing the receiver: what a process that is behind
+// pays per message. It uses b.N rather than b.Loop to leave each batch's
+// sends untimed.
+func BenchmarkReceive(b *testing.B) {
+	const batch = 1000
+	n := grpcproctest.New(b, "a").Node("a")
+	start, done := make(chan int), make(chan struct{})
+	addr, err := n.Spawn(func(p *grpcproc.Process[*testpb.Ping]) error {
+		for {
+			select {
+			case k := <-start:
+				for range k {
+					if _, err := p.Receive(); err != nil {
+						return err
+					}
+				}
+				done <- struct{}{}
+			case <-p.Context().Done():
+				return nil
+			}
+		}
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	msg := &testpb.Ping{}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for left := b.N; left > 0; left -= batch {
+		b.StopTimer()
+		k := min(batch, left)
+		for range k {
+			if err := addr.Send(b.Context(), n, msg); err != nil {
+				b.Fatal(err)
+			}
+		}
+		b.StartTimer()
+		start <- k
+		<-done
+	}
+}
