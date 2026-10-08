@@ -189,11 +189,17 @@ func (e *Engine) claim(p *grpcproc.Process[proto.Message], n int) int {
 	if n <= 0 || p.Context().Err() != nil {
 		return 0
 	}
+	// A claim the store made as the node stops comes back, to be let go,
+	// rather than ending with ctx and leaving its runs to their leases.
+	ctx, done := outlive(p.Context(), time.Second)
+	defer done()
 	// A lease is counted from before the call, by this clock, not the store's.
 	claimed := time.Now()
-	runs, err := e.cfg.Store.Claim(p.Context(), e.n.Name(), e.versions, e.cfg.Lease, n)
+	runs, err := e.cfg.Store.Claim(ctx, e.n.Name(), e.versions, e.cfg.Lease, n)
 	if err != nil {
-		p.Log().Warn("saga: claim", "err", err)
+		if p.Context().Err() == nil { // not cut short by the stop
+			p.Log().Warn("saga: claim", "err", err)
+		}
 		return 0
 	}
 	for i, r := range runs {
@@ -203,18 +209,26 @@ func (e *Engine) claim(p *grpcproc.Process[proto.Message], n int) int {
 		}, grpcproc.WithLabel("saga:"+r.Saga), grpcproc.LinkParent()); err != nil {
 			// It fails only once the engine is told to exit or its node
 			// stops, which may have let r go just before the claim took it.
-			e.letGo(p, runs[i:]...)
+			e.letGo(ctx, runs[i:]...)
 			return i
 		}
 	}
 	return len(runs)
 }
 
-// letGo gives up the leases on runs, within a second in all, so that another
-// engine need not wait them out, even as p is told to exit.
-func (e *Engine) letGo(p *grpcproc.Process[proto.Message], runs ...Record) {
-	ctx, done := context.WithTimeout(context.WithoutCancel(p.Context()), time.Second)
-	defer done()
+// outlive returns a context that ends d after parent does, or when done is
+// called.
+func outlive(parent context.Context, d time.Duration) (ctx context.Context, done func()) {
+	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
+	grace := time.AfterFunc(d, cancel)
+	grace.Stop()
+	stop := context.AfterFunc(parent, func() { grace.Reset(d) })
+	return ctx, func() { stop(); grace.Stop(); cancel() }
+}
+
+// letGo gives up the leases on runs, within ctx, so that another engine need
+// not wait them out.
+func (e *Engine) letGo(ctx context.Context, runs ...Record) {
 	for _, r := range runs {
 		_ = e.cfg.Store.Renew(ctx, r.Saga, r.ID, r.Epoch, 0)
 	}
@@ -270,7 +284,10 @@ func (e *Engine) work(p *grpcproc.Process[proto.Message], r Record, claimed time
 	cancel(nil)
 	renewing.Wait()
 	if p.Context().Err() != nil && !lost {
-		e.letGo(p, r) // told to exit with the run in hand
+		// Told to exit with the run in hand.
+		ctx, done := outlive(p.Context(), time.Second)
+		defer done()
+		e.letGo(ctx, r)
 	}
 }
 

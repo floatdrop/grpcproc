@@ -252,7 +252,9 @@ have it; the new owner runs the effect again, with the same key.
 
 When the node stops, a run's `ctx` is cancelled, nothing is saved, and its
 lease is let go, so another engine claims it at its next `Poll`, without
-waiting the lease out. A node that dies leaves the lease to run out.
+waiting the lease out. A claim under way as it stops has a second, in
+all, to answer and to let its runs go likewise; past that they wait out
+their leases. A node that dies leaves the lease to run out.
 
 ## Two versions of a program
 

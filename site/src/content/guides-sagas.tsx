@@ -304,8 +304,9 @@ err = orders.Notify(ctx, eng, "order-123", cancelled)`}</Code>
 					<p>
 						When the node stops, a run's <C>ctx</C> is cancelled, nothing is saved, and its lease is
 						let go, so another engine claims it at its next <C>Poll</C>, without waiting the lease
-						out. A node that dies leaves the lease to run
-						out.
+						out. A claim under way as it stops has a second, in all, to answer and to let its runs
+						go likewise; past that they wait out their leases. A node that dies leaves the lease to
+						run out.
 					</p>
 				</>
 			)

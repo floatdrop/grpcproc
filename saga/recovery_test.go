@@ -28,13 +28,15 @@ type flaky struct {
 	// onRelease, if set, runs once, just before a save that lets a run go.
 	onRelease func()
 	// onClaim, if set, runs once, after a Claim that took runs and before it
-	// answers, with the Claim's ctx.
-	onClaim func(context.Context)
+	// answers.
+	onClaim func()
 	// hang, if set, holds every Renew until it is closed, or its ctx ends.
 	hang chan struct{}
 	// slow, if set, is how long every Renew takes, unless its ctx ends first.
 	slow time.Duration
-	// late, if set, is how long after the store claimed runs Claim answers.
+	// late, if set, is how long after the store claimed runs Claim answers;
+	// if its ctx ends first, it answers with the ctx's error, as a database
+	// that committed the claim may.
 	late time.Duration
 	// behind, if set, is how far the leases Claim reports lag, as on a store
 	// whose clock is behind.
@@ -82,13 +84,14 @@ func (f *flaky) Claim(ctx context.Context, owner string, sagas map[string]uint64
 	}
 	f.mu.Unlock()
 	if hook != nil && len(runs) > 0 {
-		hook(ctx)
+		hook()
 	}
 	select {
 	case <-time.After(late):
+		return runs, err
 	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-	return runs, err
 }
 
 func (f *flaky) Save(ctx context.Context, r saga.Record) (saga.Record, error) {
@@ -265,30 +268,49 @@ func TestANodeThatStopsOrDies(t *testing.T) {
 }
 
 // A run claimed as its engine's node stops, when no process can work on it,
-// is let go at once.
+// is let go at once: the claim, which the store made, comes back though the
+// engine was told to exit while it waited for the answer. The engine waits
+// for that answer a second, then stops, and leaves the run to its lease,
+// counted from the claim.
 func TestAClaimAsTheNodeStops(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		c := grpcproctest.New(t, "a", "b")
-		store := &flaky{Store: saga.Memory()}
-		// a stops as Claim answers, so its engine can start no process.
-		store.onClaim = func(ctx context.Context) {
-			go c.Stop("a")
-			<-ctx.Done()
-		}
-		d := saga.Define[text]("plain", twoSteps()).Do(first, step("first")).Do(second, step("second"))
-		begin(t, d, engine(t, c.Node("a"), store, d), "1")
-		synctest.Wait()
+	for name, tc := range map[string]struct {
+		late, stop, taken time.Duration
+	}{
+		"answered in time": {late: 500 * time.Millisecond, stop: 500 * time.Millisecond, taken: 0},
+		"answered late":    {late: 5 * time.Second, stop: time.Second, taken: 30 * time.Second},
+	} {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c := grpcproctest.New(t, "a", "b")
+				store := &flaky{Store: saga.Memory(), late: tc.late}
+				var claimed time.Time
+				stopped := make(chan time.Duration, 1)
+				store.onClaim = func() {
+					claimed = time.Now()
+					go func() {
+						c.Stop("a")
+						stopped <- time.Since(claimed)
+					}()
+				}
+				d := saga.Define[text]("plain", twoSteps()).Do(first, step("first")).Do(second, step("second"))
+				begin(t, d, engine(t, c.Node("a"), store, d), "1")
+				if took := <-stopped; took != tc.stop {
+					t.Fatalf("a stopped in %v", took)
+				}
 
-		b := engine(t, c.Node("b"), store, d)
-		began := time.Now()
-		s := wait(t, d, b, "1")
-		if took := time.Since(began); s.Status != saga.Done || s.Data.Value != "firstsecond" || took > 2*time.Second {
-			t.Fatalf("%+v after %v", s, took)
-		}
-		if r, _, _ := store.Get(t.Context(), "plain", "1"); r.Epoch != 2 {
-			t.Fatalf("claimed %d times", r.Epoch)
-		}
-	})
+				store.mu.Lock()
+				store.late = 0
+				store.mu.Unlock()
+				s := wait(t, d, engine(t, c.Node("b"), store, d), "1")
+				if took := time.Since(claimed); s.Status != saga.Done || s.Data.Value != "firstsecond" || took < tc.taken || took > tc.taken+2*time.Second {
+					t.Fatalf("%+v after %v", s, took)
+				}
+				if r, _, _ := store.Get(t.Context(), "plain", "1"); r.Epoch != 2 {
+					t.Fatalf("claimed %d times", r.Epoch)
+				}
+			})
+		})
+	}
 }
 
 func TestAStoreThatFails(t *testing.T) {

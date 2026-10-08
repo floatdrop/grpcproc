@@ -1562,7 +1562,10 @@ snap, err := orders.Wait(ctx, eng, "order-123") // its state, data and status, o
   waits. So a run at work is in the process list and the Inspector, its
   effect's calls come from it, and the node's stop ends it: its ctx is
   cancelled, nothing is saved, its lease is let go, and another engine
-  claims the run at its next tick, without waiting the lease out. A node
+  claims the run at its next tick, without waiting the lease out. A claim
+  under way as the node stops is given a second, in all, to answer and to
+  let its runs go likewise: a store may commit a claim and still report
+  the ctx's end, and runs claimed so would wait out their leases. A node
   that dies leaves the lease to run out (`Config.Lease`, 30s). A run that
   waits is a record and no more.
 - **An engine answers for the store.** Through the Inspector, an engine is
