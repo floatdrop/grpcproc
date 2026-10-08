@@ -32,6 +32,7 @@ const instructions = `These tools inspect a grpcproc cluster: Go processes (goro
 
 - A process has a PID, written <node.incarnation.id>, and may have a registered name. Its label (the message type by default) groups processes of one kind.
 - Its mailbox holds messages waiting to be handled. A deep mailbox, or a large oldest_wait, is a backlog: the process cannot keep up, or is stuck in a handler (state running for a long time), or waits on a call (state waiting-reply).
+- busy_seconds is the time a process has spent anywhere but waiting for a message. Read it twice: its growth over the seconds between the reads is the share of that time it was busy, near 1 for one that is never idle, which with a growing mailbox cannot keep up. busy_for is at least how long it has been on its current message.
 - get_process with inspect returns what the process publishes about itself (its state machine's state, counters); inspect_error "busy" means it is inside a handler right now.
 - Supervisors (label supervisor) restart children; their inspect lists each child and its restarts.
 - watch_events shows spawns, exits with reasons, links going up and down, and dead letters (messages that found no process or the wrong type, or that a broken link never delivered).
@@ -121,7 +122,7 @@ type listIn struct {
 	Label      string `json:"label,omitempty" jsonschema:"only processes with this label"`
 	State      string `json:"state,omitempty" jsonschema:"only processes in this state: idle, running, waiting-reply, exiting"`
 	MinMailbox int    `json:"min_mailbox,omitempty" jsonschema:"only processes with at least this many waiting messages"`
-	Sort       string `json:"sort,omitempty" jsonschema:"pid (default), mailbox, received or sent; largest first"`
+	Sort       string `json:"sort,omitempty" jsonschema:"pid (default), mailbox, received, sent or busy (busy_seconds, a total since the process started, so long-lived processes rank high); largest first"`
 	Limit      uint   `json:"limit,omitempty" jsonschema:"at most this many; default 100"`
 }
 

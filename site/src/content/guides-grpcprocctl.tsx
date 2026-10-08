@@ -45,12 +45,12 @@ grpcprocctl --plaintext nodes`}</Code>
 						first:
 					</p>
 					<Code lang="sh">{'grpcprocctl --plaintext ps --sort mailbox'}</Code>
-					<Output>{`PID                  NAME           LABEL        STATE    MAILBOX  OLDEST  RECEIVED  SENT  LAST MESSAGE    UPTIME
-<orders-1.1718.4>    ledger-writer  ledger       running  41       1.111s  1         0     ledger.v1.Post  1.112s
-<orders-1.1718.1>    orders-sup     supervisor   idle     0                0         0                     1.112s
-<orders-1.1718.2>    reservations   reservation  idle     0                0         0                     1.112s
-<orders-1.1718.3>    payments       payment      idle     0                0         0                     1.112s
-<orders-1.1718.5>    bank-session   session      idle     0                0         0                     1.112s`}</Output>
+					<Output>{`PID                NAME           LABEL        STATE    MAILBOX  OLDEST  RECEIVED  SENT  BUSY    LAST MESSAGE    UPTIME
+<orders-1.1718.4>  ledger-writer  ledger       running  41       1.111s  1         0     1.111s  ledger.v1.Post  1.112s
+<orders-1.1718.1>  orders-sup     supervisor   idle     0                0         0     0s                      1.112s
+<orders-1.1718.2>  reservations   reservation  idle     0                0         0     0s                      1.112s
+<orders-1.1718.3>  payments       payment      idle     0                0         0     0s                      1.112s
+<orders-1.1718.5>  bank-session   session      idle     0                0         0     0s                      1.112s`}</Output>
 					<p>
 						<C>ledger-writer</C> has been running one message for a second while 41 wait.{' '}
 						<C>inspect</C> asks a process what it publishes about itself; this one cannot answer,
@@ -59,6 +59,8 @@ grpcprocctl --plaintext nodes`}</Code>
 					<Code lang="sh">{'grpcprocctl --plaintext inspect --wait 50ms ledger-writer'}</Code>
 					<Output>{`state:            running
 mailbox:          41 (peak 42, oldest 1.136s)
+busy:             1.137s
+busy for:         1.136s
 last message:     ledger.v1.Post
 inspect:          grpcproc: inspect <orders-1.1718.4>: busy for 1.187s: context deadline exceeded`}</Output>
 					<p>
@@ -75,7 +77,8 @@ monitors:              2
 					<p>
 						<C>ps</C> filters by <C>--name</C> (a substring), <C>--label</C>, <C>--state</C> (idle,
 						running, waiting-reply, exiting) and <C>--min-mailbox</C>; sorts by pid, mailbox,
-						received or sent; and stops at <C>--limit</C>. A pid is written as grpcproc prints it,{' '}
+						received, sent or busy, the time it has spent anywhere but waiting for a message, as
+						Unix <C>ps</C> counts CPU time; and stops at <C>--limit</C>. A pid is written as grpcproc prints it,{' '}
 						<C>&lt;node.incarnation.id&gt;</C>, and reaches its node wherever it is; a name is
 						looked up on <C>--node</C>, by default the node serving the Inspector.
 					</p>
@@ -260,7 +263,7 @@ orders  order-17  charging  stuck   5         1               2026-10-05T11:49:2
 							<C>ps</C>,
 							<>
 								Processes: <C>--node</C>, <C>--name</C>, <C>--label</C>, <C>--state</C>,{' '}
-								<C>--min-mailbox</C>, <C>--sort pid|mailbox|received|sent</C>, <C>--limit</C>.
+								<C>--min-mailbox</C>, <C>--sort pid|mailbox|received|sent|busy</C>, <C>--limit</C>.
 							</>
 						],
 						[

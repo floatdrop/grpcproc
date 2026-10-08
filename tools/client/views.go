@@ -62,6 +62,8 @@ type ProcessView struct {
 	Received      uint64            `json:"received"`
 	Sent          uint64            `json:"sent"`
 	CallsInFlight uint32            `json:"calls_in_flight,omitzero"`
+	BusySeconds   float64           `json:"busy_seconds" jsonschema:"seconds it has spent anywhere but waiting for a message since it started, waits in calls included; its growth between two reads over the seconds between them is the share of that time it was busy, near 1 for a process that is never idle"`
+	BusyFor       string            `json:"busy_for,omitempty" jsonschema:"how long since it last stopped waiting for a message or took a batch of them: at least how long it has been on its current one; empty while it waits"`
 	LastMessage   string            `json:"last_message,omitempty" jsonschema:"type of the last message it took"`
 	Monitors      int               `json:"monitors,omitzero" jsonschema:"processes it watches"`
 	Links         int               `json:"links,omitzero" jsonschema:"processes it is linked to: whose exit ends it, or reaches it as a message if it traps exits"`
@@ -146,6 +148,7 @@ func (c *Client) processView(p grpcproc.ProcessInfo) ProcessView {
 		State: p.State.String(), Uptime: c.since(p.StartedAt),
 		Mailbox: p.Mailbox.Depth, MailboxPeak: p.Mailbox.Peak, OldestWait: short(p.Mailbox.OldestAge),
 		Received: p.Received, Sent: p.Sent, CallsInFlight: p.CallsInFlight, LastMessage: p.LastMessage,
+		BusySeconds: p.Busy.Seconds(), BusyFor: short(p.BusyFor),
 		Monitors: p.Monitors, Links: p.Links, TrapExit: p.TrapExit, Watchers: p.Watchers, LogLevel: p.LogLevel.String(),
 	}
 }

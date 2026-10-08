@@ -28,12 +28,12 @@ grpcprocctl --plaintext ps --sort mailbox
 ```
 
 ```
-PID                  NAME           LABEL        STATE    MAILBOX  OLDEST  RECEIVED  SENT  LAST MESSAGE    UPTIME
-<orders-1.1718.4>    ledger-writer  ledger       running  41       1.111s  1         0     ledger.v1.Post  1.112s
-<orders-1.1718.1>    orders-sup     supervisor   idle     0                0         0                     1.112s
-<orders-1.1718.2>    reservations   reservation  idle     0                0         0                     1.112s
-<orders-1.1718.3>    payments       payment      idle     0                0         0                     1.112s
-<orders-1.1718.5>    bank-session   session      idle     0                0         0                     1.112s
+PID                NAME           LABEL        STATE    MAILBOX  OLDEST  RECEIVED  SENT  BUSY    LAST MESSAGE    UPTIME
+<orders-1.1718.4>  ledger-writer  ledger       running  41       1.111s  1         0     1.111s  ledger.v1.Post  1.112s
+<orders-1.1718.1>  orders-sup     supervisor   idle     0                0         0     0s                      1.112s
+<orders-1.1718.2>  reservations   reservation  idle     0                0         0     0s                      1.112s
+<orders-1.1718.3>  payments       payment      idle     0                0         0     0s                      1.112s
+<orders-1.1718.5>  bank-session   session      idle     0                0         0     0s                      1.112s
 ```
 
 `ledger-writer` has been running one message for a second while 41 wait.
@@ -46,6 +46,8 @@ grpcprocctl --plaintext inspect --wait 50ms ledger-writer
 ```
 state:            running
 mailbox:          41 (peak 42, oldest 1.136s)
+busy:             1.137s
+busy for:         1.136s
 last message:     ledger.v1.Post
 inspect:          grpcproc: inspect <orders-1.1718.4>: busy for 1.187s: context deadline exceeded
 ```
@@ -67,7 +69,7 @@ monitors:              2
 | --- | --- |
 | `node [name]` | counters and links of a node |
 | `nodes` | every node reachable from this one, following links and the members a node's `Membership` reports |
-| `ps` | processes: `--node`, `--name`, `--label`, `--state`, `--min-mailbox`, `--sort pid\|mailbox\|received\|sent`, `--limit` |
+| `ps` | processes: `--node`, `--name`, `--label`, `--state`, `--min-mailbox`, `--sort pid\|mailbox\|received\|sent\|busy`, `--limit` |
 | `inspect <pid\|name>` | one process, with what it says about itself: `--node`, `--wait` |
 | `names [name]` | [global names](https://floatdrop.github.io/grpcproc/concepts/addressing/#global): who holds one, or a list: `--node`, `--prefix`, `--limit` |
 | `watch` | stream spawns, exits, links, dead letters: `--node`, `--kind`, `--count` |
@@ -192,8 +194,9 @@ through the same Inspector and refreshes every second:
   per second on each, dead letters and queues.
 - **Node**: its counters and links, with the last minute charted.
 - **Processes**: the table `ps` prints, with messages in and out per
-  second; the scope (name, label, state, mailbox) goes to the node, the
-  search and the order stay in the page.
+  second and the share of each second each process was busy; the scope
+  (name, label, state, mailbox) goes to the node, the search and the order
+  stay in the page.
 - **Supervision**: each process under the one that started it, coloured by
   state, mailbox or activity.
 - **Events**: spawns, exits with reasons, links and dead letters, streamed

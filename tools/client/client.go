@@ -314,21 +314,23 @@ func (c *Client) Watch(ctx context.Context, node string, fn func(EventView) bool
 	}
 }
 
-// SortProcesses orders ps by pid (as listed), or by mailbox, received or
-// sent, largest first.
+// SortProcesses orders ps by pid (as listed), or by mailbox, received, sent
+// or busy (BusySeconds), largest first.
 func SortProcesses(ps []ProcessView, by string) error {
-	var key func(ProcessView) uint64
+	var key func(ProcessView) float64
 	switch by {
 	case "", "pid":
 		return nil
 	case "mailbox":
-		key = func(p ProcessView) uint64 { return uint64(p.Mailbox) }
+		key = func(p ProcessView) float64 { return float64(p.Mailbox) }
 	case "received":
-		key = func(p ProcessView) uint64 { return p.Received }
+		key = func(p ProcessView) float64 { return float64(p.Received) }
 	case "sent":
-		key = func(p ProcessView) uint64 { return p.Sent }
+		key = func(p ProcessView) float64 { return float64(p.Sent) }
+	case "busy":
+		key = func(p ProcessView) float64 { return p.BusySeconds }
 	default:
-		return fmt.Errorf("bad sort %q: want pid, mailbox, received or sent", by)
+		return fmt.Errorf("bad sort %q: want pid, mailbox, received, sent or busy", by)
 	}
 	slices.SortStableFunc(ps, func(a, b ProcessView) int { return cmp.Compare(key(b), key(a)) })
 	return nil

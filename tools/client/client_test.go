@@ -53,8 +53,8 @@ func TestParseLevelAndSort(t *testing.T) {
 	if _, err := client.ParseKinds([]string{"exits"}); err == nil || !strings.Contains(err.Error(), "dead-letter") {
 		t.Fatalf("got %v", err)
 	}
-	ps := []client.ProcessView{{PID: "1", Mailbox: 1, Received: 5, Sent: 1}, {PID: "2", Mailbox: 3, Received: 1, Sent: 9}}
-	for by, first := range map[string]string{"pid": "1", "mailbox": "2", "received": "1", "sent": "2"} {
+	ps := []client.ProcessView{{PID: "1", Mailbox: 1, Received: 5, Sent: 1, BusySeconds: 0.5}, {PID: "2", Mailbox: 3, Received: 1, Sent: 9, BusySeconds: 0.25}}
+	for by, first := range map[string]string{"pid": "1", "mailbox": "2", "received": "1", "sent": "2", "busy": "1"} {
 		cp := append([]client.ProcessView(nil), ps...)
 		if err := client.SortProcesses(cp, by); err != nil || cp[0].PID != first {
 			t.Errorf("%s: %v %v", by, cp, err)

@@ -55,6 +55,11 @@ function fmtRate(v) {
 	return v.toFixed(2).replace(/\.?0+$/, '');
 }
 
+// share is a rate of busy_seconds held to 1: the browser's clock and the
+// node's differ. fmtPct prints a share, with a decimal below 10%.
+const share = (v) => (v == null ? v : Math.min(1, v));
+const fmtPct = (v) => (v == null || !isFinite(v) ? '' : `${(share(v) * 100).toFixed(v < 0.1 && v > 0 ? 1 : 0)}%`);
+
 function fmtBytes(n) {
 	if (n == null || !isFinite(n)) return '';
 	const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
@@ -602,6 +607,7 @@ function processesPage(node, params) {
 	const cMsgs = new Chart('Messages / s', [['in', '--c1'], ['out', '--c2']]);
 	const cBox = new Chart('Waiting in mailboxes', [['all', '--c2'], ['deepest', '--c5']], { fmt: fmtInt });
 	const cState = new Chart('Processes by state', [['running', '--c3'], ['waiting reply', '--c2'], ['idle', '--c1']], { fmt: fmtInt });
+	const cBusy = new Chart('Busy, in processes', [['all', '--c3']]);
 	const list = h('div');
 	const pr = rates();
 	let rows = [], r = new Map();
@@ -615,6 +621,7 @@ function processesPage(node, params) {
 		{ key: 'oldest', t: 'Oldest', num: true, get: (x) => x.oldest_wait, sort: (x) => parseDur(x.oldest_wait) },
 		{ key: 'in', t: 'In / s', num: true, get: (x) => fmtRate(r.get(x.pid)?.received), sort: (x) => r.get(x.pid)?.received || 0 },
 		{ key: 'out', t: 'Out / s', num: true, get: (x) => fmtRate(r.get(x.pid)?.sent), sort: (x) => r.get(x.pid)?.sent || 0 },
+		{ key: 'busy', t: 'Busy', num: true, get: (x) => fmtPct(r.get(x.pid)?.busy_seconds), sort: (x) => share(r.get(x.pid)?.busy_seconds) || 0 },
 		{ key: 'received', t: 'Received', num: true, get: (x) => fmtInt(x.received), sort: (x) => x.received },
 		{ key: 'sent', t: 'Sent', num: true, get: (x) => fmtInt(x.sent), sort: (x) => x.sent },
 		{ key: 'calls', t: 'Calls', num: true, get: (x) => (x.calls_in_flight ? fmtInt(x.calls_in_flight) : ''), sort: (x) => x.calls_in_flight || 0 },
@@ -646,7 +653,7 @@ function processesPage(node, params) {
 			null,
 			head(['Processes ', h('span', { class: 'mono' }, node || '(inspector)')], 'Every process on the node. The node applies the scope; the search and the order apply here, to what it sent.'),
 			b.el,
-			h('div', { class: 'charts' }, cMsgs.el, cBox.el, cState.el),
+			h('div', { class: 'charts' }, cMsgs.el, cBox.el, cState.el, cBusy.el),
 			h(
 				'div',
 				{ class: 'scope' },
@@ -675,7 +682,7 @@ function processesPage(node, params) {
 			const got = await api('/api/processes', { node, name: p.name, label: p.label, state: p.state, min_mailbox: p.min });
 			if (stale()) return;
 			rows = got;
-			r = pr(rows, (x) => x.pid, ['received', 'sent']);
+			r = pr(rows, (x) => x.pid, ['received', 'sent', 'busy_seconds']);
 			for (const x of rows) {
 				if (!known.has(x.label)) {
 					known.add(x.label);
@@ -687,6 +694,7 @@ function processesPage(node, params) {
 			cBox.push(sum(rows, (x) => x.mailbox), Math.max(0, ...rows.map((x) => x.mailbox)));
 			const by = (st) => rows.filter((x) => x.state === st).length;
 			cState.push(by('running'), by('waiting-reply'), by('idle'));
+			cBusy.push(ready ? sum(rows, (x) => share(r.get(x.pid)?.busy_seconds)) : null);
 			render();
 		},
 	};
@@ -1229,6 +1237,7 @@ function procDrawer(pid) {
 	const cards = h('div', { class: 'cards' });
 	const cMsgs = new Chart('Messages / s', [['in', '--c1'], ['out', '--c2']]);
 	const cBox = new Chart('Mailbox', [['waiting', '--c2']], { fmt: fmtInt });
+	const cBusy = new Chart('Busy', [['busy', '--c3']], { fmt: fmtPct });
 	const facts = h('div', { class: 'kv' });
 	const said = h('div', { class: 'kv' });
 	const saidNote = h('span', { class: 'muted' });
@@ -1285,7 +1294,7 @@ function procDrawer(pid) {
 		h('div', { class: 'dhead' }, h('div', null, h('div', { class: 'row' }, title, state), sub), h('span', { class: 'spacer' }), h('button', { type: 'button', class: 'icon-button', title: 'Close (Esc)', 'aria-label': 'Close', onclick: closeDrawer }, icon(XMARK))),
 		b.el,
 		cards,
-		h('div', { class: 'charts' }, cMsgs.el, cBox.el),
+		h('div', { class: 'charts' }, cMsgs.el, cBox.el, cBusy.el),
 		h('h3', null, 'What it says about itself'),
 		h('div', { class: 'row' }, h('button', { type: 'button', onclick: ask }, 'Ask'), h('label', null, autoBox, 'keep asking'), select(everySel), saidNote),
 		h('p', { class: 'muted' }, 'Asking takes the process a turn: it answers between messages, so a busy one keeps you waiting.'),
@@ -1315,7 +1324,7 @@ function procDrawer(pid) {
 			}
 			if (!last) level.value = LEVELS.find((l) => l === v.log_level.toLowerCase()) || 'info';
 			last = v;
-			const d = pr([v], (x) => x.pid, ['received', 'sent']).get(pid);
+			const d = pr([v], (x) => x.pid, ['received', 'sent', 'busy_seconds']).get(pid);
 			title.textContent = v.name || v.label;
 			sub.replaceChildren(h('span', { class: 'mono' }, pid), v.name ? ` · ${v.label}` : '', ' · ', h('span', { class: 'mono' }, v.type));
 			state.replaceChildren(pill(v.state));
@@ -1324,10 +1333,12 @@ function procDrawer(pid) {
 				card('Received', fmtInt(v.received), d ? `${fmtRate(d.received)}/s` : ''),
 				card('Sent', fmtInt(v.sent), d ? `${fmtRate(d.sent)}/s` : ''),
 				card('Calls out', fmtInt(v.calls_in_flight || 0), v.state === 'waiting-reply' ? 'waiting on a reply' : ''),
+				card('Busy', d ? fmtPct(d.busy_seconds) : '–', v.busy_for ? `on this for ${v.busy_for}` : 'waiting for a message', d && d.busy_seconds >= 0.95 && 'warn'),
 				card('Uptime', v.uptime, `log level ${v.log_level}`),
 			);
 			cMsgs.push(d?.received, d?.sent);
 			cBox.push(v.mailbox);
+			cBusy.push(share(d?.busy_seconds));
 			const kv = [
 				['parent', pidLink(v.parent) || h('span', { class: 'muted' }, 'none: spawned by the node')],
 				['global names', v.globals?.length ? h('span', { class: 'mono' }, v.globals.join(', ')) : h('span', { class: 'muted' }, 'none')],
