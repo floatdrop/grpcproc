@@ -804,6 +804,19 @@ answer, with `inspect_error` saying so. Access control is the application's
 refuses `SetLogLevel`, `Send`, `Call` and `Exit` with `PermissionDenied`, for
 an Inspector that should only be looked at.
 
+`GetNode` lists a node's links and the members its `Membership` reports,
+which is what a tool needs of one node and too much of a large cluster:
+every node lists every member, and a node linked to most of its data
+center lists each of its peers. At a thousand nodes, walking the cluster
+one `GetNode` at a time took a minute at 50ms a request and answered 59
+MB, 93% of it the same member list again. So a request may leave the
+links and members out (`exclude_links`, `exclude_members`), and every
+answer adds the links up (`link_totals`): peers up and down, the first
+16 down by name, queued envelopes, traffic each way, by a key of the
+peers' metadata (`link_totals_by`) such as a data center, from the node's
+own `Membership`. A node of an earlier release ignores the request and
+answers in full, and a tool adds the totals up itself.
+
 `Query` is how such an Inspector still lets a tool ask a process something
 that `WithInspect` cannot answer, because it takes a question or reads
 outside the process: a saga engine's runs are in its store. The Inspector
