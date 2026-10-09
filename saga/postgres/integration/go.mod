@@ -11,7 +11,7 @@ replace github.com/floatdrop/grpcproc/saga/postgres => ../
 
 require (
 	github.com/fergusstrange/embedded-postgres v1.34.0
-	github.com/floatdrop/grpcproc v0.11.0
+	github.com/floatdrop/grpcproc v0.12.0
 	github.com/floatdrop/grpcproc/saga/postgres v0.0.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/lib/pq v1.10.9

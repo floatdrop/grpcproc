@@ -8,7 +8,7 @@ go 1.27.1
 
 require (
 	github.com/floatdrop/fsm v0.8.0
-	github.com/floatdrop/grpcproc v0.11.1-0.20261009140629-f4113490300f
+	github.com/floatdrop/grpcproc v0.12.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
