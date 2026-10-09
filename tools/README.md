@@ -141,9 +141,11 @@ b     billing  paused  0 * * * *   UTC   disabled                    0
 b     billing  yearly  @yearly     UTC   disabled                    0
 ```
 
-`cron` finds every cron process, on one node or all of them, by the type of
-message it takes, whatever it is named or labelled, and lists its jobs as it
-publishes them: when each runs next and last ran, how many runs are going,
+`cron` finds every cron process on one node by the type of message it
+takes, whatever it is named or labelled, and across all of them by that
+type and its label, `cron`, so that each node lists only those (one
+spawned with a label of its own is found with `--node`). It lists the
+jobs as each process publishes them: when each runs next and last ran, how many runs are going,
 why the last one that failed did. `enable`, `disable` and `remove` go to the
 cron process through the Inspector's `Call`, then list it again. Its runs are
 processes of their own: `grpcprocctl ps --label cron:yearly` shows those
@@ -191,11 +193,18 @@ through the same Inspector and refreshes every second:
 </picture>
 
 - **Cluster**: every node, with its peers up and down, dead letters and
-  queues, and up to 32 nodes a map of the links between them with messages
-  per second on each. Pages share a walk over the cluster, which asks 32
-  nodes at a time: a large cluster is walked again once five times as long
-  as the last walk took has passed, and at most 15 seconds.
-- **Node**: its counters and links, with the last minute charted.
+  queues, those in trouble first, a hundred at a time, and up to 32 nodes a
+  map of the links between them with messages per second on each. Grouped
+  by a key of the nodes' metadata, a data center or a shard, it adds each
+  group up and maps what goes between groups, up to 24; a group, or a
+  filter by name or `key=value`, lists its nodes. Pages share a walk over
+  the cluster, which asks 32 nodes at a time: a large cluster is walked
+  again once five times as long as the last walk took has passed, and at
+  most 15 seconds. The node picker at the top filters as you type.
+- **Node**: its counters and links, with the last minute charted; the
+  links down or queued first, a hundred at a time, filtered by peer or
+  grouped by a key of the peers' metadata as the node's `Membership`
+  reports it.
 - **Processes**: the table `ps` prints, with messages in and out per
   second and the share of each second each process was busy; the scope
   (name, label, state, mailbox) goes to the node, the search and the order
@@ -205,8 +214,10 @@ through the same Inspector and refreshes every second:
 - **Events**: spawns, exits with reasons, links and dead letters, streamed
   as they happen.
 - **Cron** and **Elections**: every grpcproc/cron job and grpcproc/leader
-  election reachable from here, found by what they run and how their
-  electors are named.
+  election on the nodes of the shared walk, found by their label (`cron`)
+  and how electors are named, asking 32 nodes at a time; a node that
+  cannot be asked is listed with why. A cron process spawned with a label
+  of its own is shown by `grpcprocctl cron --node`, not here.
 - **Sagas**: the grpcproc/saga engines reachable from here and the sagas
   each runs, and a saga's runs a page at a time, by status, as
   `grpcprocctl saga runs` lists them. A run opens beside them, as `saga

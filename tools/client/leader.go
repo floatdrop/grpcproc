@@ -3,9 +3,11 @@ package client
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -36,19 +38,48 @@ type ElectorView struct {
 }
 
 // Election describes the election called cluster on every node Cluster
-// finds that takes part in it, in Cluster's order. A node that runs no
-// elector for it is left out; one that cannot be asked is listed with its
-// Error.
+// finds that takes part in it, in Cluster's order, asking them at once. A
+// node that runs no elector for it is left out; one that cannot be asked is
+// listed with its Error.
 func (c *Client) Election(ctx context.Context, cluster string) ([]ElectorView, error) {
 	nodes, err := c.walkFor(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := c.election(ctx, nodes, cluster)
+	timeout := quarter(ctx)
+	asked := each(ctx, nodes, timeout, func(ctx context.Context, n NodeView) *ElectorView {
+		if !n.Reached() {
+			return &ElectorView{Node: n.Name, Error: n.Problem()}
+		}
+		return c.elector(ctx, n.Name, cluster)
+	})
+	out := []ElectorView{}
+	for _, v := range asked {
+		if v != nil {
+			out = append(out, *v)
+		}
+	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("no node runs an election called %q", cluster)
 	}
 	return out, nil
+}
+
+// elector describes node's elector of cluster: nil when it runs none.
+func (c *Client) elector(ctx context.Context, node, cluster string) *ElectorView {
+	resp, err := c.rpc.GetProcess(ctx, &inspectv1.GetProcessRequest{Node: node, Target: electorOf(cluster), Inspect: true})
+	var v ElectorView
+	switch {
+	case status.Code(err) == codes.NotFound:
+		return nil
+	case err != nil:
+		v = ElectorView{Node: node, Error: status.Convert(err).Message()}
+	case resp.GetInspectError() != "":
+		v = ElectorView{Node: node, Error: resp.GetInspectError()}
+	default:
+		v = electorView(node, resp.GetInspect())
+	}
+	return &v
 }
 
 // ElectionView is one grpcproc/leader election, as each node that takes
@@ -59,61 +90,84 @@ type ElectionView struct {
 	Electors []ElectorView `json:"electors"`
 }
 
-// Elections finds every grpcproc/leader election that a node Cluster finds
-// takes part in, by the names its electors are registered under,
-// and describes each as Election does, in order of name. An election whose
-// electors all exit while it is asked is listed with none.
+// Elections is ElectionsOf the nodes Cluster finds.
 func (c *Client) Elections(ctx context.Context) ([]ElectionView, error) {
 	nodes, err := c.walkFor(ctx)
 	if err != nil {
 		return nil, err
 	}
+	return c.ElectionsOf(ctx, nodes, quarter(ctx))
+}
+
+// ElectionsOf finds every grpcproc/leader election that one of nodes takes
+// part in, by the names its electors are registered under, and describes
+// each, in order of name, as the nodes that run it see it, in nodes'
+// order. It asks each node at once, each within timeout (0: ctx alone). A
+// node that cannot be asked is listed in each election with its Error; an
+// election whose electors all exit while it is asked, with none. When no
+// election is found and a node could not be asked, which may run one, that
+// is the error.
+func (c *Client) ElectionsOf(ctx context.Context, nodes []NodeView, timeout time.Duration) ([]ElectionView, error) {
 	prefix := leader.ElectorName("")
-	var names []string
-	for _, n := range nodes {
+	type listed struct {
+		elections []string
+		err       string
+		cause     error
+	}
+	lists := each(ctx, nodes, timeout, func(ctx context.Context, n NodeView) listed {
 		if !n.Reached() {
-			continue
+			return listed{err: n.Problem()}
 		}
 		ps, err := c.Processes(ctx, n.Name, Filter{Name: prefix})
 		if err != nil {
-			return nil, err
+			return listed{err: message(err), cause: err}
 		}
+		var l listed
 		for _, p := range ps {
 			// The filter matches a substring: "myleader/x" is not an elector.
-			if cluster, ok := strings.CutPrefix(p.Name, prefix); ok && !slices.Contains(names, cluster) {
-				names = append(names, cluster)
+			if cluster, ok := strings.CutPrefix(p.Name, prefix); ok {
+				l.elections = append(l.elections, cluster)
 			}
 		}
+		return l
+	})
+	type part struct{ node, cluster string }
+	var parts []part
+	for i, l := range lists {
+		for _, e := range l.elections {
+			parts = append(parts, part{nodes[i].Name, e})
+		}
 	}
-	slices.Sort(names)
+	views := each(ctx, parts, timeout, func(ctx context.Context, p part) *ElectorView { return c.elector(ctx, p.node, p.cluster) })
+	byPart := map[part]*ElectorView{}
+	names := map[string]bool{}
+	for i, p := range parts {
+		byPart[p] = views[i]
+		names[p.cluster] = true
+	}
+	if len(names) == 0 {
+		if i := slices.IndexFunc(lists, func(l listed) bool { return l.err != "" }); i >= 0 {
+			if lists[i].cause != nil {
+				return nil, lists[i].cause
+			}
+			return nil, fmt.Errorf("%s: %s", nodes[i].Name, lists[i].err)
+		}
+	}
 	out := make([]ElectionView, 0, len(names))
-	for _, name := range names {
-		views := c.election(ctx, nodes, name)
-		out = append(out, ElectionView{Cluster: name, Leading: Leading(views), Electors: views})
+	for _, name := range slices.Sorted(maps.Keys(names)) {
+		e := ElectionView{Cluster: name, Electors: []ElectorView{}}
+		for i, n := range nodes {
+			switch v := byPart[part{n.Name, name}]; {
+			case lists[i].err != "":
+				e.Electors = append(e.Electors, ElectorView{Node: n.Name, Error: lists[i].err})
+			case v != nil:
+				e.Electors = append(e.Electors, *v)
+			}
+		}
+		e.Leading = Leading(e.Electors)
+		out = append(out, e)
 	}
 	return out, nil
-}
-
-// election asks each of nodes for its elector of cluster.
-func (c *Client) election(ctx context.Context, nodes []NodeView, cluster string) []ElectorView {
-	out := []ElectorView{}
-	for _, n := range nodes {
-		if !n.Reached() {
-			out = append(out, ElectorView{Node: n.Name, Error: n.Problem()})
-			continue
-		}
-		resp, err := c.rpc.GetProcess(ctx, &inspectv1.GetProcessRequest{Node: n.Name, Target: electorOf(cluster), Inspect: true})
-		switch {
-		case status.Code(err) == codes.NotFound:
-		case err != nil:
-			out = append(out, ElectorView{Node: n.Name, Error: status.Convert(err).Message()})
-		case resp.GetInspectError() != "":
-			out = append(out, ElectorView{Node: n.Name, Error: resp.GetInspectError()})
-		default:
-			out = append(out, electorView(n.Name, resp.GetInspect()))
-		}
-	}
-	return out
 }
 
 // Leading is the node views say leads: the leader of the highest term, or

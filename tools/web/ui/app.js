@@ -253,7 +253,7 @@ function pidLink(pid, text) {
 // linkify turns the pids in a line a process says about itself into links.
 const linkify = (s) => s.split(/(<[^<>\s]+\.\d+\.\d+>)/).map((part, i) => (i % 2 ? pidLink(part) : part));
 
-// table draws rows under cols: {key, t (title), num, wrap, get(row), sort(row)}.
+// table draws rows under cols: {key, t (title), num, desc, wrap, get(row), sort(row)}.
 function table(cols, rows, opt = {}) {
 	const { onRow, rowClass, sort, onSort, limit } = opt;
 	const head = cols.map((c) =>
@@ -293,12 +293,12 @@ function sorter(cols, params) {
 	};
 }
 
-// A click on a column sorts by it: numbers largest first, text A to Z; a
-// second click turns it round.
+// A click on a column sorts by it: numbers, and columns marked desc,
+// largest first, text A to Z; a second click turns it round.
 function sortBy(params) {
 	return (c) => {
 		const same = params().sort === c.key;
-		const dir = same ? (params().dir === 'asc' ? 'desc' : 'asc') : c.num ? 'desc' : 'asc';
+		const dir = same ? (params().dir === 'asc' ? 'desc' : 'asc') : c.num || c.desc ? 'desc' : 'asc';
 		set({ sort: c.key, dir });
 	};
 }
@@ -406,67 +406,261 @@ function redrawCharts() {
 
 // ---- pages --------------------------------------------------------------
 
-function clusterPage() {
+function clusterPage(_node, params) {
+	let p = params, data = null, nr = new Map(), lr = new Map(), tr = new Map();
 	const b = banner();
 	const cards = h('div', { class: 'cards' });
 	const map = h('div', { class: 'map' });
+	const groupsEl = h('div');
 	const list = h('div');
-	const nodeRates = rates(), linkRates = rates();
-	const el = h('div', null, head('Cluster', 'Every node this Inspector reaches, and what goes between them.'), b.el, cards, map, h('h2', null, 'Nodes'), list);
+	const count = h('span', { class: 'muted' });
+	const groupSel = h('select', { 'aria-label': 'Group by', onchange: (e) => set({ group: e.target.value, q: '', page: '' }) });
+	const filter = h('input', { type: 'search', placeholder: 'name, or key=value', value: p.q || '', oninput: debounce((e) => set({ q: e.target.value, page: '' }), 300) });
+	const nodeRates = rates(), linkRates = rates(), totalRates = rates();
+	const el = h(
+		'div',
+		null,
+		head('Cluster', 'Every node this Inspector knows of, and what goes between them.'),
+		b.el,
+		cards,
+		map,
+		h('div', { class: 'scope' }, h('b', null, 'Group by'), select(groupSel), h('span', { class: 'sep' }), h('label', null, filter), h('span', { class: 'spacer' }), count),
+		groupsEl,
+		h('h2', null, 'Nodes'),
+		list,
+	);
 	const linkKey = (l) => `${l.from}>${l.peer}>${l.direction}`;
+	const totalKey = (t) => `${t.from}>${t.group || ''}`;
 
-	return {
-		el,
-		banner: b.set,
-		async tick() {
-			const { nodes, taken_at: at } = await api('/api/nodes');
-			setNodes(nodes);
-			for (const n of nodes) Object.assign(n, linkSums(n));
-			const nr = nodeRates(nodes, (n) => n.name, ['spawned', 'exited', 'dead_letters', 'sent', 'sent_bytes'], at);
-			const links = nodes.flatMap((n) => (n.links || []).map((l) => ({ ...l, from: n.name })));
-			const lr = linkRates(links, linkKey, ['messages', 'bytes'], at);
-			const up = nodes.filter((n) => !n.error && !n.unanswered);
-			const unreachable = nodes.filter((n) => n.error).length, unanswered = nodes.filter((n) => n.unanswered).length;
-			const out = sum(up, (n) => n.outbound), outUp = sum(up, (n) => n.outbound_up);
-			const queued = sum(up, (n) => n.queued);
-			const deadRate = sum(up, (n) => nr.get(n.name)?.dead_letters);
-			cards.replaceChildren(
-				card('Nodes', up.length, [unreachable && `${unreachable} unreachable`, unanswered && `${unanswered} not answered in time`].filter(Boolean).join(', ') || 'all reachable', unreachable ? 'bad' : unanswered && 'warn'),
-				card('Processes', fmtInt(sum(up, (n) => n.processes)), `${fmtInt(sum(up, (n) => n.spawned))} spawned in all`),
-				card('Spawns / s', fmtRate(sum(up, (n) => nr.get(n.name)?.spawned)), `exits ${fmtRate(sum(up, (n) => nr.get(n.name)?.exited))}/s`),
-				card('Dead letters', fmtInt(sum(up, (n) => n.dead_letters)), deadRate > 0 ? `+${fmtRate(deadRate)}/s` : 'none lately', deadRate > 0 && 'warn'),
-				card('Links out', `${outUp} / ${out} up`, queued ? `${fmtInt(queued)} queued` : 'nothing queued', outUp < out && 'warn'),
-				card('Messages / s', fmtRate(sum(up, (n) => nr.get(n.name)?.sent)), `${fmtBytes(sum(up, (n) => nr.get(n.name)?.sent_bytes))}/s between nodes`),
+	const cols = [
+		{ key: 'node', t: 'Node', get: (n) => [h('b', null, n.name), n === data.nodes[0] ? ' ' : null, n === data.nodes[0] ? pill('inspector', 'info') : null], sort: (n) => n.name },
+		{ key: 'advertise', t: 'Advertise', get: (n) => h('span', { class: 'mono' }, n.advertise), sort: (n) => n.advertise || '' },
+		{ key: 'metadata', t: 'Metadata', get: (n) => h('span', { class: 'mono' }, metadata(n.metadata)), sort: (n) => metadata(n.metadata) },
+		{ key: 'uptime', t: 'Uptime', num: true, get: (n) => n.uptime, sort: (n) => parseDur(n.uptime) },
+		{ key: 'processes', t: 'Processes', num: true, get: (n) => fmtInt(n.error ? null : n.processes), sort: (n) => n.processes || 0 },
+		{ key: 'spawns', t: 'Spawns / s', num: true, get: (n) => fmtRate(nr.get(n.name)?.spawned), sort: (n) => nr.get(n.name)?.spawned || 0 },
+		{ key: 'exits', t: 'Exits / s', num: true, get: (n) => fmtRate(nr.get(n.name)?.exited), sort: (n) => nr.get(n.name)?.exited || 0 },
+		{ key: 'dead', t: 'Dead letters', num: true, get: (n) => [fmtInt(n.error ? null : n.dead_letters), delta(nr.get(n.name)?.dead_letters)], sort: (n) => nr.get(n.name)?.dead_letters || 0 },
+		{ key: 'peers', t: 'Peers', get: (n) => peers(n), sort: (n) => n.peers_down || 0, desc: true },
+		{ key: 'error', t: 'Error', wrap: true, get: (n) => (n.error ? pill(n.error, 'bad') : n.unanswered ? pill('not answered in time', 'warn') : ''), sort: (n) => trouble(n, nr), desc: true },
+	];
+
+	function render() {
+		const nodes = data.nodes, key = p.group || '';
+		const up = nodes.filter((n) => !n.error && !n.unanswered);
+		const unreachable = nodes.filter((n) => n.error).length, unanswered = nodes.filter((n) => n.unanswered).length;
+		const out = sum(up, (n) => n.outbound), outUp = sum(up, (n) => n.outbound_up);
+		const queued = sum(up, (n) => n.queued);
+		const deadRate = sum(up, (n) => nr.get(n.name)?.dead_letters);
+		cards.replaceChildren(
+			card('Nodes', up.length, [unreachable && `${unreachable} unreachable`, unanswered && `${unanswered} not answered in time`].filter(Boolean).join(', ') || 'all reachable', unreachable ? 'bad' : unanswered && 'warn'),
+			card('Processes', fmtInt(sum(up, (n) => n.processes)), `${fmtInt(sum(up, (n) => n.spawned))} spawned in all`),
+			card('Spawns / s', fmtRate(sum(up, (n) => nr.get(n.name)?.spawned)), `exits ${fmtRate(sum(up, (n) => nr.get(n.name)?.exited))}/s`),
+			card('Dead letters', fmtInt(sum(up, (n) => n.dead_letters)), deadRate > 0 ? `+${fmtRate(deadRate)}/s` : 'none lately', deadRate > 0 && 'warn'),
+			card('Links out', `${outUp} / ${out} up`, queued ? `${fmtInt(queued)} queued` : 'nothing queued', outUp < out && 'warn'),
+			card('Messages / s', fmtRate(sum(up, (n) => nr.get(n.name)?.sent)), `${fmtBytes(sum(up, (n) => nr.get(n.name)?.sent_bytes))}/s between nodes`),
+		);
+
+		const keys = [...new Set(nodes.flatMap((n) => Object.keys(n.metadata || {})))].sort();
+		setKeys(groupSel, keys, key);
+
+		const groups = key ? groupsOf(nodes, key, nr, tr) : [];
+		const pick = (g) => set({ q: filterOf(key, g), page: '' });
+		if (key && groups.length <= MAP_GROUPS) {
+			map.replaceChildren(
+				h('div', { class: 'caption' }, `groups by ${key}, and what goes between them`),
+				drawMap(groupNodes(groups), (l) => ({ messages: l.rate }), { open: (g) => pick(g.group), here: nodes[0]?.metadata?.[key] ?? '' }),
+				h('div', { class: 'legend' }, h('span', null, 'An arrow is a group sending to another; its width grows with messages per second.'), h('span', null, 'Dashed: a link of it is down. Click a group to list its nodes.')),
 			);
+		} else if (!key && up.every((n) => n.links)) {
 			map.replaceChildren(
 				h('div', { class: 'caption' }, 'nodes and links'),
-				...(up.every((n) => n.links)
-					? [
-							drawMap(nodes, (l) => lr.get(linkKey(l))),
-							h('div', { class: 'legend' }, h('span', null, 'An arrow is a node sending to a peer; its width grows with messages per second.'), h('span', null, 'Dashed: connecting or down. Click a node to open it.')),
-						]
-					: [h('div', { class: 'empty' }, `${fmtInt(nodes.length)} nodes are too many to draw: the table below adds each one's links up.`)]),
+				drawMap(nodes, (l) => lr.get(linkKey(l))),
+				h('div', { class: 'legend' }, h('span', null, 'An arrow is a node sending to a peer; its width grows with messages per second.'), h('span', null, 'Dashed: connecting or down. Click a node to open it.')),
 			);
-			list.replaceChildren(
-				table(
-					[
-						{ t: 'Node', get: (n) => [h('b', null, n.name), n === nodes[0] ? ' ' : null, n === nodes[0] ? pill('inspector', 'info') : null] },
-						{ t: 'Advertise', get: (n) => h('span', { class: 'mono' }, n.advertise) },
-						{ t: 'Metadata', get: (n) => h('span', { class: 'mono' }, metadata(n.metadata)) },
-						{ t: 'Uptime', get: (n) => n.uptime },
-						{ t: 'Processes', num: true, get: (n) => fmtInt(n.error ? null : n.processes) },
-						{ t: 'Spawns / s', num: true, get: (n) => fmtRate(nr.get(n.name)?.spawned) },
-						{ t: 'Exits / s', num: true, get: (n) => fmtRate(nr.get(n.name)?.exited) },
-						{ t: 'Dead letters', num: true, get: (n) => [fmtInt(n.error ? null : n.dead_letters), delta(nr.get(n.name)?.dead_letters)] },
-						{ t: 'Peers', get: (n) => peers(n) },
-						{ t: 'Error', wrap: true, get: (n) => (n.error ? pill(n.error, 'bad') : n.unanswered ? pill('not answered in time', 'warn') : '') },
-					],
-					nodes,
-					{ onRow: (n) => go('node', { node: n.name }) },
-				),
-			);
+		} else {
+			const why = key
+				? `${fmtInt(groups.length)} groups are too many to draw: the table below lists them.`
+				: `${fmtInt(nodes.length)} nodes are too many to draw: ${keys.length ? 'group them by a key of their metadata to see what goes between the groups.' : "the table below adds each one's links up."}`;
+			map.replaceChildren(h('div', { class: 'caption' }, 'nodes and links'), h('div', { class: 'empty' }, why));
+		}
+
+		groupsEl.replaceChildren(
+			...(key
+				? [
+						h('h2', null, `Groups by ${key}`),
+						table(
+							[
+								{ t: key, get: (g) => (g.name === '' ? h('span', { class: 'muted' }, 'none') : h('b', null, g.name)) },
+								{ t: 'Nodes', get: (g) => [`${fmtInt(g.up)} / ${fmtInt(g.nodes)}`, g.unreachable ? [' ', pill(`${g.unreachable} unreachable`, 'bad')] : null, g.unanswered ? [' ', pill(`${g.unanswered} not answered`, 'warn')] : null] },
+								{ t: 'Processes', num: true, get: (g) => fmtInt(g.processes) },
+								{ t: 'Spawns / s', num: true, get: (g) => fmtRate(g.spawnRate) },
+								{ t: 'Dead letters', num: true, get: (g) => [fmtInt(g.dead), delta(g.deadRate)] },
+								{ t: 'Peers down', num: true, get: (g) => (g.peersDown ? pill(fmtInt(g.peersDown), 'down') : '') },
+								{ t: 'Queued', num: true, get: (g) => (g.queued ? fmtInt(g.queued) : '') },
+								{ t: 'Messages / s', num: true, get: (g) => fmtRate(g.sentRate) },
+								{ t: 'Within', num: true, get: (g) => fmtRate(g.out.get(g.name)?.rate) },
+							],
+							groups,
+							{ onRow: (g) => pick(g.name), rowClass: (g) => cls((g.unreachable || g.peersDown || g.queued) && 'backlog', p.q === filterOf(key, g.name) && 'sel') },
+						),
+					]
+				: []),
+		);
+
+		const hits = p.q ? nodes.filter((n) => matches(n, p.q)) : nodes;
+		const s = sorter(cols, p);
+		const ordered = s.sort ? s.apply(hits) : [...hits].sort((a, b) => trouble(b, nr) - trouble(a, nr) || (a === nodes[0] ? -1 : b === nodes[0] ? 1 : natural(a.name, b.name)));
+		const pg = pager(ordered, p);
+		count.textContent = p.q ? `${fmtInt(hits.length)} of ${fmtInt(nodes.length)} nodes` : `${fmtInt(nodes.length)} nodes`;
+		list.replaceChildren(table(cols, pg.rows, { sort: s.sort, onSort: sortBy(() => p), onRow: (n) => go('node', { node: n.name }), empty: nodes.length ? 'No node matches.' : 'No nodes.' }), ...pg.el);
+	}
+
+	const page = {
+		el,
+		banner: b.set,
+		update(np) {
+			const regroup = (np.group || '') !== (p.group || '');
+			p = np;
+			if (document.activeElement !== filter) filter.value = p.q || '';
+			if (regroup) run(page);
+			else if (data) render();
+		},
+		async tick(stale) {
+			const got = await api('/api/nodes', { group: p.group });
+			if (stale()) return; // a walk grouped otherwise
+			data = got;
+			setNodes(data.nodes);
+			const at = data.taken_at;
+			for (const n of data.nodes) Object.assign(n, linkSums(n));
+			nr = nodeRates(data.nodes, (n) => n.name, ['spawned', 'exited', 'dead_letters', 'sent', 'sent_bytes'], at);
+			lr = linkRates(data.nodes.flatMap((n) => (n.links || []).map((l) => ({ ...l, from: n.name }))), linkKey, ['messages', 'bytes'], at);
+			tr = totalRates(data.nodes.flatMap((n) => (n.link_totals || []).map((t) => ({ ...t, from: n.name }))), totalKey, ['messages_sent', 'bytes_sent'], at);
+			render();
 		},
 	};
+	return page;
+}
+
+// setKeys offers keys to group by in sel, and key, chosen. The options are
+// replaced only when they change: replacing them closes a list being read.
+function setKeys(sel, keys, key) {
+	keys = keys.filter(Boolean); // '' is no grouping
+	const want = ['', ...keys, ...(key && !keys.includes(key) ? [key] : [])];
+	if (sel.options.length !== want.length || [...sel.options].some((o, i) => o.value !== want[i])) {
+		sel.replaceChildren(...want.map((k) => h('option', { value: k }, k || 'nothing')));
+	}
+	sel.value = key;
+}
+
+// MAP_GROUPS is the most groups the cluster map draws.
+const MAP_GROUPS = 24;
+
+// PAGE is how many rows a paged table shows at once.
+const PAGE = 100;
+
+// pager shows rows a page at a time, the one params name from 1.
+function pager(rows, params) {
+	const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+	const n = Math.min(pages, Math.max(1, Math.floor(Number(params.page)) || 1));
+	const from = (n - 1) * PAGE;
+	return {
+		rows: rows.slice(from, from + PAGE),
+		// none, or the one element: spread into replaceChildren, which would
+		// show a null as text
+		el:
+			pages < 2
+				? []
+				: [h(
+						'div',
+						{ class: 'pager' },
+						h('button', { type: 'button', disabled: n === 1, onclick: () => set({ page: n - 1 }) }, '‹ Previous'),
+						h('span', { class: 'muted' }, `${fmtInt(from + 1)}–${fmtInt(Math.min(rows.length, from + PAGE))} of ${fmtInt(rows.length)}`),
+						h('button', { type: 'button', disabled: n === pages, onclick: () => set({ page: n + 1 }) }, 'Next ›'),
+					)],
+	};
+}
+
+// trouble ranks what is wrong with a node, worst first: down, not
+// answered, peers down, a queue, dead letters lately.
+function trouble(n, nr) {
+	if (n.error) return 5;
+	if (n.unanswered) return 4;
+	return n.peers_down ? 3 : n.queued ? 2 : nr.get(n.name)?.dead_letters > 0 ? 1 : 0;
+}
+
+// matches says whether node n matches every word of q: a word with = in it
+// is a key of its metadata and the value it must have, in double quotes if
+// it holds a space, any other a part of its name. Values are compared
+// without their own double quotes, which a filter cannot hold.
+function matches(n, q) {
+	const unquoted = (v) => v.replaceAll('"', '');
+	return (q.match(/(?:[^\s"]+|"[^"]*")+/g) || []).every((w) => {
+		const i = w.indexOf('=');
+		if (i < 0) return n.name.toLowerCase().includes(w.toLowerCase());
+		return unquoted(n.metadata?.[w.slice(0, i)] ?? '') === unquoted(w.slice(i + 1));
+	});
+}
+
+// filterOf is the filter that matches key's value v, as matches reads it.
+const filterOf = (key, v) => `${key}=${/[\s"]/.test(v) || v === '' ? `"${v.replaceAll('"', '')}"` : v}`;
+
+// groupsOf adds nodes up by their value of key, ordered by it; out holds
+// what each group's nodes send to each group, by the peers' value.
+function groupsOf(nodes, key, nr, tr) {
+	const by = new Map();
+	for (const n of nodes) {
+		const name = n.metadata?.[key] ?? '';
+		let g = by.get(name);
+		if (!g) by.set(name, (g = { name, nodes: 0, up: 0, unreachable: 0, unanswered: 0, processes: 0, dead: 0, deadRate: 0, spawnRate: 0, peersDown: 0, queued: 0, sentRate: 0, out: new Map() }));
+		g.nodes++;
+		if (n.error) g.unreachable++;
+		else if (n.unanswered) g.unanswered++;
+		else {
+			const r = nr.get(n.name);
+			g.up++;
+			g.processes += n.processes || 0;
+			g.dead += n.dead_letters || 0;
+			g.deadRate += r?.dead_letters || 0;
+			g.spawnRate += r?.spawned || 0;
+			g.peersDown += n.peers_down || 0;
+			g.queued += n.queued || 0;
+			g.sentRate += r?.sent || 0;
+			for (const t of n.link_totals || []) {
+				const to = t.group || '', e = g.out.get(to) || { messages: 0, bytes: 0, rate: 0, down: 0, queued: 0 };
+				e.messages += t.messages_sent || 0;
+				e.bytes += t.bytes_sent || 0;
+				e.rate += tr.get(`${n.name}>${to}`)?.messages_sent || 0;
+				e.down += t.outbound_down || 0;
+				e.queued += t.queued || 0;
+				g.out.set(to, e);
+			}
+		}
+	}
+	return [...by.values()].sort((a, b) => natural(a.name, b.name));
+}
+
+// natural orders text with the numbers in it by value: s2 before s10.
+const natural = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+
+// groupNodes draws groups as drawMap draws nodes: each group a node, and a
+// link what it sends to another group, where something goes or is wrong.
+function groupNodes(groups) {
+	const names = new Set(groups.map((g) => g.name));
+	// The group of nodes without the key is drawn as none, but named apart
+	// from a group whose value is "none".
+	const id = (name) => (name === '' ? '\u0000' : name);
+	return groups.map((g) => ({
+		name: id(g.name),
+		label: g.name || 'none',
+		group: g.name,
+		processes: g.processes,
+		error: g.up ? '' : 'down',
+		title: `${g.name || 'none'}: ${fmtInt(g.up)} of ${fmtInt(g.nodes)} nodes up, ${fmtInt(g.processes)} processes`,
+		links: [...g.out]
+			.filter(([to, e]) => to !== g.name && names.has(to) && (e.rate > 0 || e.down || e.queued))
+			.map(([to, e]) => ({ peer: id(to), direction: 'out', state: e.down ? 'down' : 'up', messages: e.messages, bytes: e.bytes, queued: e.queued, rate: e.rate })),
+	}));
 }
 
 // peers are a node's peers, each once, with the state of its link to it;
@@ -496,13 +690,18 @@ function linkSums(n) {
 
 // drawMap lays the nodes out on an ellipse, the inspector's node first,
 // and draws each out link as an arrow bent to its right, so the two
-// directions between a pair of nodes stay apart.
-function drawMap(nodes, rateOf) {
+// directions between a pair of nodes stay apart. A click on a node opens
+// it, or does what opt.open says; opt.here names the node to mark, the
+// first by default.
+function drawMap(nodes, rateOf, opt = {}) {
+	const open = opt.open || ((node) => go('node', { node: node.name }));
+	const here = opt.here ?? nodes[0]?.name;
 	const W = 800, H = 340, cx = W / 2, cy = H / 2, R = 30;
 	const n = nodes.length;
 	const rx = n < 2 ? 0 : Math.min(300, 90 + n * 40), ry = n < 3 ? 0 : 118;
 	const a0 = n === 2 ? Math.PI : -Math.PI / 2;
 	const pos = new Map(nodes.map((node, i) => [node.name, { x: cx + rx * Math.cos(a0 + (i * 2 * Math.PI) / n), y: cy + ry * Math.sin(a0 + (i * 2 * Math.PI) / n) }]));
+	const labelOf = new Map(nodes.map((node) => [node.name, node.label ?? node.name]));
 	const edges = [], labels = [];
 	for (const node of nodes) {
 		for (const l of node.links || []) {
@@ -513,7 +712,7 @@ function drawMap(nodes, rateOf) {
 			const mx = (p.x + q.x) / 2 + nx * 30, my = (p.y + q.y) / 2 + ny * 30;
 			const r = rateOf({ ...l, from: node.name });
 			const width = 1.5 + Math.min(5, Math.log10(1 + (r?.messages || 0)) * 1.4);
-			const tip = `${node.name} → ${l.peer}: ${l.state}, ${fmtInt(l.messages)} messages, ${fmtBytes(l.bytes)}` + (l.queued ? `, ${l.queued} queued` : '') + (l.last_error ? `\nlast error: ${l.last_error}` : '');
+			const tip = `${labelOf.get(node.name)} → ${labelOf.get(l.peer)}: ${l.state}, ${fmtInt(l.messages)} messages, ${fmtBytes(l.bytes)}` + (l.queued ? `, ${l.queued} queued` : '') + (l.last_error ? `\nlast error: ${l.last_error}` : '');
 			edges.push(svg('path', { class: cls('link', l.state), d: `M${sx},${sy} Q${mx},${my} ${ex},${ey}`, 'stroke-width': width, 'marker-end': 'url(#arrow)' }, svg('title', null, tip)));
 			if (r?.messages > 0 || l.queued) {
 				const lx = 0.25 * sx + 0.5 * mx + 0.25 * ex + nx * 8, ly = 0.25 * sy + 0.5 * my + 0.25 * ey + ny * 8;
@@ -521,14 +720,15 @@ function drawMap(nodes, rateOf) {
 			}
 		}
 	}
-	const circles = nodes.map((node, i) => {
+	const circles = nodes.map((node) => {
 		const p = pos.get(node.name);
 		const queued = (node.links || []).some((l) => l.queued > 0);
-		const name = node.name.length > 11 ? node.name.slice(0, 10) + '…' : node.name;
+		const label = node.label ?? node.name;
+		const name = label.length > 11 ? label.slice(0, 10) + '…' : label;
 		return svg(
 			'g',
-			{ class: cls('node', node.error && 'bad', queued && 'warn', i === 0 && 'here'), transform: `translate(${p.x},${p.y})`, onclick: () => go('node', { node: node.name }) },
-			svg('title', null, node.error ? `${node.name}: ${node.error}` : `${node.name}: ${node.processes} processes, up ${node.uptime}`),
+			{ class: cls('node', node.error && 'bad', queued && 'warn', (node.group ?? node.name) === here && 'here'), transform: `translate(${p.x},${p.y})`, onclick: () => open(node) },
+			svg('title', null, node.title || (node.error ? `${node.name}: ${node.error}` : `${node.name}: ${node.processes} processes, up ${node.uptime}`)),
 			svg('circle', { r: R }),
 			svg('text', { y: -1 }, name),
 			svg('text', { class: 'sub', y: 12 }, node.error ? 'down' : fmtInt(node.processes)),
@@ -544,10 +744,15 @@ function drawMap(nodes, rateOf) {
 	);
 }
 
-function nodePage(node) {
+function nodePage(node, params) {
+	let p = params, n = null, ld = new Map();
 	const b = banner();
 	const cards = h('div', { class: 'cards' });
 	const links = h('div');
+	const groupsEl = h('div', { class: 'groups' });
+	const count = h('span', { class: 'muted' });
+	const groupSel = h('select', { 'aria-label': 'Group links by', onchange: (e) => set({ group: e.target.value, q: '', page: '' }) });
+	const filter = h('input', { type: 'search', placeholder: 'peer, or key=value', value: p.q || '', oninput: debounce((e) => set({ q: e.target.value, page: '' }), 300) });
 	const cProc = new Chart('Processes', [['running', '--c1']], { fmt: fmtInt });
 	const cLife = new Chart('Spawns and exits / s', [['spawns', '--c3'], ['exits', '--c2']]);
 	const cDead = new Chart('Dead letters / s', [['dead letters', '--c5']]);
@@ -562,19 +767,95 @@ function nodePage(node) {
 		cards,
 		h('div', { class: 'charts' }, cProc.el, cLife.el, cDead.el, cMsgs.el, cBytes.el),
 		h('h2', null, 'Links'),
+		h('div', { class: 'scope' }, h('b', null, 'Group by'), select(groupSel), h('span', { class: 'sep' }), h('label', null, filter), h('span', { class: 'spacer' }), count),
+		groupsEl,
 		links,
 		h('p', null, h('a', { href: href('processes', { node }) }, 'Processes on this node →'), '   ', h('a', { href: href('events', { node }) }, 'Events →')),
 	);
 	const linkKey = (l) => `${l.peer}>${l.direction}`;
+	const cols = [
+		{ key: 'peer', t: 'Peer', get: (l) => [h('a', { href: href('node', { node: l.peer }), onclick: (e) => e.stopPropagation() }, l.peer), l.incarnation ? null : h('span', { class: 'muted' }, ' never reached')], sort: (l) => l.peer },
+		{ key: 'dir', t: 'Dir', get: (l) => (l.direction === 'out' ? '→ out' : '← in'), sort: (l) => l.direction },
+		{ key: 'state', t: 'State', get: (l) => pill(l.state), sort: (l) => l.state },
+		{ key: 'age', t: 'Age', num: true, get: (l) => l.age, sort: (l) => parseDur(l.age) },
+		{ key: 'queued', t: 'Queued', num: true, get: (l) => (l.direction === 'out' ? [fmtInt(l.queued), l.queued ? h('span', { class: 'muted' }, ` ${fmtBytes(l.queued_bytes)}`) : null] : ''), sort: (l) => l.queued || 0 },
+		{ key: 'messages', t: 'Messages', num: true, get: (l) => [fmtInt(l.messages), delta(ld.get(linkKey(l))?.messages)], sort: (l) => ld.get(linkKey(l))?.messages || 0 },
+		{ key: 'bytes', t: 'Bytes', num: true, get: (l) => [fmtBytes(l.bytes), delta(ld.get(linkKey(l))?.bytes, fmtBytes)], sort: (l) => ld.get(linkKey(l))?.bytes || 0 },
+		{ key: 'reconnects', t: 'Reconnects', num: true, get: (l) => fmtInt(l.reconnects), sort: (l) => l.reconnects || 0 },
+		{ key: 'retry', t: 'Retry in', get: (l) => l.retry_in },
+		{ key: 'error', t: 'Last error', wrap: true, get: (l) => l.last_error, sort: (l) => l.last_error || '' },
+	];
 
-	return {
+	// renderLinks lists the node's links: grouped by a key of the peers'
+	// metadata, as the node's Membership reports it, filtered, down and
+	// queued ones first, a page at a time.
+	function renderLinks() {
+		const ls = n.links || [], key = p.group || '';
+		const meta = new Map((n.members || []).map((m) => [m.name, m.metadata || {}]));
+		setKeys(groupSel, [...new Set((n.members || []).flatMap((m) => Object.keys(m.metadata || {})))].sort(), key);
+		const peerOf = (l) => ({ name: l.peer, metadata: meta.get(l.peer) });
+		if (key) {
+			const by = new Map();
+			for (const l of ls) {
+				const name = meta.get(l.peer)?.[key] ?? '';
+				let g = by.get(name);
+				if (!g) by.set(name, (g = { name, peers: new Set(), out: 0, outUp: 0, in: 0, queued: 0, messages: 0, bytes: 0 }));
+				g.peers.add(l.peer);
+				if (l.direction === 'out') {
+					g.out++;
+					g.outUp += l.state === 'up' ? 1 : 0;
+					g.queued += l.queued || 0;
+				} else g.in++;
+				g.messages += ld.get(linkKey(l))?.messages || 0;
+				g.bytes += ld.get(linkKey(l))?.bytes || 0;
+			}
+			const groups = [...by.values()].sort((a, b) => natural(a.name, b.name));
+			groupsEl.replaceChildren(
+				table(
+					[
+						{ t: key, get: (g) => (g.name === '' ? h('span', { class: 'muted' }, 'none') : h('b', null, g.name)) },
+						{ t: 'Peers', num: true, get: (g) => fmtInt(g.peers.size) },
+						{ t: 'Out', get: (g) => [`${fmtInt(g.outUp)} / ${fmtInt(g.out)} up`, g.outUp < g.out ? [' ', pill(`${g.out - g.outUp} down`, 'down')] : null] },
+						{ t: 'In', num: true, get: (g) => fmtInt(g.in) },
+						{ t: 'Queued', num: true, get: (g) => (g.queued ? fmtInt(g.queued) : '') },
+						{ t: 'Messages / s', num: true, get: (g) => fmtRate(g.messages) },
+						{ t: 'Bytes / s', num: true, get: (g) => fmtBytes(g.bytes) },
+					],
+					groups,
+					{ onRow: (g) => set({ q: filterOf(key, g.name), page: '' }), rowClass: (g) => cls((g.outUp < g.out || g.queued) && 'backlog', p.q === filterOf(key, g.name) && 'sel') },
+				),
+			);
+		} else groupsEl.replaceChildren();
+		const hits = p.q ? ls.filter((l) => matches(peerOf(l), p.q)) : ls;
+		const s = sorter(cols, p);
+		const worst = (l) => (l.state === 'down' ? 2 : l.queued ? 1 : 0);
+		const ordered = s.sort ? s.apply(hits) : [...hits].sort((a, b) => worst(b) - worst(a) || natural(a.peer, b.peer) || a.direction.localeCompare(b.direction));
+		const pg = pager(ordered, p);
+		count.textContent = p.q ? `${fmtInt(hits.length)} of ${fmtInt(ls.length)} links` : `${fmtInt(ls.length)} links`;
+		links.replaceChildren(
+			table(cols, pg.rows, {
+				sort: s.sort,
+				onSort: sortBy(() => p),
+				empty: ls.length ? 'No link matches.' : 'No links: this node has not talked to another yet.',
+				rowClass: (l) => l.queued > 0 && 'backlog',
+			}),
+			...pg.el,
+		);
+	}
+
+	const page = {
 		el,
 		banner: b.set,
+		update(np) {
+			p = np;
+			if (document.activeElement !== filter) filter.value = p.q || '';
+			if (n) renderLinks();
+		},
 		async tick() {
-			const n = await api('/api/node', { node });
+			n = await api('/api/node', { node });
 			const d = nr([n], (x) => x.name, ['spawned', 'exited', 'dead_letters']).get(n.name);
 			const ls = n.links || [];
-			const ld = lr(ls, linkKey, ['messages', 'bytes']);
+			ld = lr(ls, linkKey, ['messages', 'bytes']);
 			const total = (dir, f) => (d ? sum(ls.filter((l) => l.direction === dir), (l) => ld.get(linkKey(l))?.[f]) : null);
 			const queued = sum(ls, (l) => l.queued);
 			cards.replaceChildren(
@@ -591,26 +872,10 @@ function nodePage(node) {
 			cDead.push(d?.dead_letters);
 			cMsgs.push(total('out', 'messages'), total('in', 'messages'));
 			cBytes.push(total('out', 'bytes'), total('in', 'bytes'));
-			links.replaceChildren(
-				table(
-					[
-						{ t: 'Peer', get: (l) => [h('a', { href: href('node', { node: l.peer }), onclick: (e) => e.stopPropagation() }, l.peer), l.incarnation ? null : h('span', { class: 'muted' }, ' never reached')] },
-						{ t: 'Dir', get: (l) => (l.direction === 'out' ? '→ out' : '← in') },
-						{ t: 'State', get: (l) => pill(l.state) },
-						{ t: 'Age', get: (l) => l.age },
-						{ t: 'Queued', num: true, get: (l) => (l.direction === 'out' ? [fmtInt(l.queued), l.queued ? h('span', { class: 'muted' }, ` ${fmtBytes(l.queued_bytes)}`) : null] : '') },
-						{ t: 'Messages', num: true, get: (l) => [fmtInt(l.messages), delta(ld.get(linkKey(l))?.messages)] },
-						{ t: 'Bytes', num: true, get: (l) => [fmtBytes(l.bytes), delta(ld.get(linkKey(l))?.bytes, fmtBytes)] },
-						{ t: 'Reconnects', num: true, get: (l) => fmtInt(l.reconnects) },
-						{ t: 'Retry in', get: (l) => l.retry_in },
-						{ t: 'Last error', wrap: true, get: (l) => l.last_error },
-					],
-					ls,
-					{ empty: 'No links: this node has not talked to another yet.', rowClass: (l) => l.queued > 0 && 'backlog' },
-				),
-			);
+			renderLinks();
 		},
 	};
+	return page;
 }
 
 const STATES = ['idle', 'running', 'waiting-reply', 'exiting'];
@@ -1605,19 +1870,30 @@ function setNodes(nodes) {
 	selectNode(app.params.node || home());
 }
 
+// selectNode shows node in the picker, which offers every node the
+// cluster's walk found, as the browser filters them by what is typed.
 function selectNode(node) {
-	const sel = $('#node');
+	const input = $('#node'), list = $('#node-list');
 	const names = app.nodes.map((n) => n.name);
 	if (!names.includes(node) && node) names.push(node);
-	if (sel.options.length !== names.length || [...sel.options].some((o, i) => o.value !== names[i])) {
-		sel.replaceChildren(
+	if (list.options.length !== names.length || [...list.options].some((o, i) => o.value !== names[i])) {
+		const byName = new Map(app.nodes.map((x) => [x.name, x]));
+		list.replaceChildren(
 			...names.map((n) => {
-				const x = app.nodes.find((x) => x.name === n);
-				return h('option', { value: n }, n + (x?.error ? ' (unreachable)' : x?.unanswered ? ' (not answered)' : ''));
+				const x = byName.get(n);
+				return h('option', { value: n, label: x?.error ? 'unreachable' : x?.unanswered ? 'not answered' : null });
 			}),
 		);
 	}
-	sel.value = node;
+	if (document.activeElement !== input) input.value = node;
+}
+
+// pickNode opens the node typed or picked, if it is one; anything else is
+// put back.
+function pickNode(e) {
+	const name = e.target.value;
+	if (app.nodes.some((n) => n.name === name)) set({ node: name }, false);
+	else e.target.value = app.params.node || home();
 }
 
 // The theme follows the site's: a g-root_theme_* class on the root, the one
@@ -1664,7 +1940,7 @@ async function boot() {
 	} catch (e) {
 		live(false, e.message);
 	}
-	$('#node').addEventListener('change', (e) => set({ node: e.target.value }, false));
+	$('#node').addEventListener('change', pickNode);
 	$('#interval').addEventListener('change', (e) => {
 		app.interval = Number(e.target.value);
 		startTimer();

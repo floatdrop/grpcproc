@@ -184,6 +184,11 @@ input[type='number'] {
 	width: 80px;
 }
 
+/* The node picker: names as long as a pod's. */
+#node {
+	width: 220px;
+}
+
 input[type='checkbox'] {
 	accent-color: var(--g-color-base-brand);
 }
@@ -715,6 +720,19 @@ td.wrap {
 	padding: var(--g-spacing-2) var(--g-spacing-3);
 	border-top: 1px solid var(--g-color-line-generic);
 	color: var(--g-color-text-secondary);
+}
+
+/* Groups added up above the table of what is in them. */
+.groups:not(:empty) {
+	margin-bottom: var(--g-spacing-4);
+}
+
+/* Previous and next under a table shown a page at a time. */
+.pager {
+	display: flex;
+	align-items: center;
+	gap: var(--g-spacing-3);
+	padding: var(--g-spacing-2) var(--g-spacing-3);
 }
 
 /* ---- the cluster map: the site's diagrams -------------------------------- */

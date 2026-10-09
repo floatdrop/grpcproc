@@ -23,6 +23,8 @@ type NodeView struct {
 	Members     []MemberView      `json:"members,omitempty" jsonschema:"the nodes its Config.Membership reports up, by name: the cluster as its discovery sees it, linked or not; none without a Membership"`
 	Error       string            `json:"error,omitempty" jsonschema:"why the node could not be inspected"`
 	Unanswered  bool              `json:"unanswered,omitzero" jsonschema:"the time to describe the cluster ran out before this node was asked, or answered: not known to be down"`
+
+	raw []grpcproc.LinkInfo // Links, for Cluster to add up again
 }
 
 // NotAnswered is what to show for an Unanswered node where an error goes.

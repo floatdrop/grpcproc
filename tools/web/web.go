@@ -55,24 +55,29 @@ const maxWait = 10 * time.Second
 type server struct {
 	c     *client.Client
 	o     Options
-	nodes *walks
+	nodes *groupings
 }
 
 // New returns the page and its API over c.
 func New(c *client.Client, o Options) http.Handler {
 	o.Timeout = cmp.Or(max(o.Timeout, 0), 5*time.Second)
 	s := &server{c: c, o: o}
-	s.nodes = &walks{walk: func(ctx context.Context) ([]client.NodeView, error) {
+	s.nodes = &groupings{walk: func(ctx context.Context, key string) ([]client.NodeView, error) {
 		ctx, cancel := context.WithTimeout(ctx, max(client.WalkTime, o.Timeout))
 		defer cancel()
-		return c.Cluster(ctx, client.ClusterOptions{LinksUpTo: client.LinksUpTo, NodeTimeout: o.Timeout})
+		return c.Cluster(ctx, client.ClusterOptions{LinksUpTo: client.LinksUpTo, GroupLinksBy: key, NodeTimeout: o.Timeout})
 	}}
 	ui, _ := fs.Sub(files, "ui") // ui is a directory of files: Sub cannot fail
 	mux := http.NewServeMux()
 	mux.Handle("GET /", http.FileServerFS(ui))
 	mux.HandleFunc("GET /api/info", s.read(s.info))
 	mux.HandleFunc("GET /api/nodes", func(w http.ResponseWriter, r *http.Request) {
-		v, err := s.nodes.get(r.Context())
+		key := r.URL.Query().Get("group")
+		if len(key) > maxKey {
+			reply(w, nil, badRequest{fmt.Sprintf("group: a metadata key of at most %d bytes", maxKey)})
+			return
+		}
+		v, err := s.nodes.get(r.Context(), key)
 		reply(w, v, err)
 	})
 	mux.HandleFunc("GET /api/node", s.read(func(ctx context.Context, q url.Values) (any, error) { return s.c.Node(ctx, q.Get("node")) }))
@@ -82,9 +87,20 @@ func New(c *client.Client, o Options) http.Handler {
 		limit, _ := strconv.Atoi(q.Get("limit")) // 0, the node's default, unless a number
 		return s.c.Names(ctx, q.Get("node"), q.Get("prefix"), limit)
 	}))
-	mux.HandleFunc("GET /api/crons", s.read(func(ctx context.Context, q url.Values) (any, error) { return s.c.Crons(ctx, q.Get("node")) }))
-	mux.HandleFunc("GET /api/elections", s.read(func(ctx context.Context, _ url.Values) (any, error) { return s.c.Elections(ctx) }))
-	mux.HandleFunc("GET /api/sagas", s.read(func(ctx context.Context, q url.Values) (any, error) { return s.c.SagaEngines(ctx, q.Get("node")) }))
+	mux.HandleFunc("GET /api/crons", s.across(
+		func(ctx context.Context, node string) (any, error) { return s.c.Crons(ctx, node) },
+		func(ctx context.Context, nodes []client.NodeView) (any, error) {
+			return s.c.CronsOf(ctx, nodes, o.Timeout), nil
+		}))
+	mux.HandleFunc("GET /api/elections", s.across(nil,
+		func(ctx context.Context, nodes []client.NodeView) (any, error) {
+			return s.c.ElectionsOf(ctx, nodes, o.Timeout)
+		}))
+	mux.HandleFunc("GET /api/sagas", s.across(
+		func(ctx context.Context, node string) (any, error) { return s.c.SagaEngines(ctx, node) },
+		func(ctx context.Context, nodes []client.NodeView) (any, error) {
+			return s.c.SagaEnginesOf(ctx, nodes, o.Timeout), nil
+		}))
 	mux.HandleFunc("GET /api/saga/runs", s.read(s.sagaRuns))
 	mux.HandleFunc("GET /api/saga/run", s.read(func(ctx context.Context, q url.Values) (any, error) {
 		req := SagaRequest{Node: q.Get("node"), Saga: q.Get("saga"), ID: q.Get("id")}
@@ -146,6 +162,34 @@ func (s *server) read(fn func(context.Context, url.Values) (any, error)) http.Ha
 		ctx, cancel := context.WithTimeout(r.Context(), s.o.Timeout+wait)
 		defer cancel()
 		v, err := fn(ctx, q)
+		reply(w, v, err)
+	}
+}
+
+// across serves a GET about the node the request names, with one, or with
+// all about every node of the shared walk; waiting for the walk and all
+// each have the time a walk has, and all asks each node within
+// Options.Timeout. Without one, a node named is ignored.
+func (s *server) across(one func(context.Context, string) (any, error), all func(context.Context, []client.NodeView) (any, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if node := r.URL.Query().Get("node"); node != "" && one != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), s.o.Timeout)
+			defer cancel()
+			v, err := one(ctx, node)
+			reply(w, v, err)
+			return
+		}
+		limit := max(client.WalkTime, s.o.Timeout)
+		wctx, cancel := context.WithTimeout(r.Context(), limit)
+		ns, err := s.nodes.get(wctx, "")
+		cancel()
+		if err != nil {
+			reply(w, nil, err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), limit)
+		defer cancel()
+		v, err := all(ctx, ns.Nodes)
 		reply(w, v, err)
 	}
 }

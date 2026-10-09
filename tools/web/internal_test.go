@@ -3,7 +3,10 @@ package web
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -112,5 +115,65 @@ func TestWalksShared(t *testing.T) {
 		if _, _ = get(t.Context()); walked != 6 {
 			t.Fatalf("walked %d times", walked)
 		}
+	})
+}
+
+// Each grouping has a walk of its own, and past maxGroupings one other
+// than the pages' node list is let go.
+func TestGroupings(t *testing.T) {
+	var asked []string
+	g := &groupings{walk: func(_ context.Context, key string) ([]client.NodeView, error) {
+		asked = append(asked, key)
+		return []client.NodeView{{Name: "a"}}, nil
+	}}
+	for i := range maxGroupings + 1 {
+		if _, err := g.get(t.Context(), strings.Repeat("k", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok := g.by[""]; len(g.by) != maxGroupings || !ok || len(asked) != maxGroupings+1 {
+		t.Fatalf("%d groupings kept, the node list's %v; walked %q", len(g.by), ok, asked)
+	}
+}
+
+// A page across the cluster fails with the walk it needs.
+func TestAcrossAFailedWalk(t *testing.T) {
+	s := &server{o: Options{Timeout: time.Second}, nodes: &groupings{walk: func(context.Context, string) ([]client.NodeView, error) {
+		return nil, status.Error(codes.Unavailable, "down")
+	}}}
+	w := httptest.NewRecorder()
+	s.across(nil, func(context.Context, []client.NodeView) (any, error) { return nil, nil })(w, httptest.NewRequest(http.MethodGet, "/api/elections", nil))
+	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "down") {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+}
+
+// The pages' node list takes the newest walk of any grouping, and a
+// grouping more than maxGroupings is refused while every other is walked.
+func TestGroupingsShared(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		g := &groupings{walk: func(_ context.Context, key string) ([]client.NodeView, error) {
+			if strings.HasPrefix(key, "busy") {
+				<-release
+			}
+			return []client.NodeView{{Name: key}}, nil
+		}}
+		_, _ = g.get(t.Context(), "x")
+		time.Sleep(100 * time.Millisecond)
+		_, _ = g.get(t.Context(), "y")
+		if v, err := g.get(t.Context(), ""); err != nil || v.Nodes[0].Name != "y" {
+			t.Fatalf("%+v %v", v, err)
+		}
+		time.Sleep(time.Second) // past sharing x and y
+		_, _ = g.get(t.Context(), "")
+		for i := range maxGroupings - 1 {
+			go func() { _, _ = g.get(t.Context(), fmt.Sprint("busy", i)) }()
+		}
+		synctest.Wait()
+		if _, err := g.get(t.Context(), "z"); status.Code(err) != codes.Unavailable {
+			t.Fatal(err)
+		}
+		close(release)
 	})
 }

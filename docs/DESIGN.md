@@ -825,7 +825,11 @@ for the whole walk ran out on is unanswered, not down. 2,700 nodes in
 three data centers take 3 seconds and 1 MB (`TestScale` in
 `tools/client`). The web UI's pages share one walk, and walk again once
 five times as long as the last took has passed, at least half a second
-and at most fifteen.
+and at most fifteen; its Cluster page groups the nodes by a key of their
+metadata, and maps the traffic between groups from the totals grouped by
+the same key. Elections, crons and saga engines are found across the
+shared walk's nodes, 32 at a time, and an election is asked only of the
+nodes that list an elector for it.
 
 `Query` is how such an Inspector still lets a tool ask a process something
 that `WithInspect` cannot answer, because it takes a question or reads

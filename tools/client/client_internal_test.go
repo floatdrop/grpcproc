@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,7 +15,9 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/floatdrop/grpcproc/leader"
 	inspectv1 "github.com/floatdrop/grpcproc/proto/grpcproc/inspect/v1"
+	grpcprocv1 "github.com/floatdrop/grpcproc/proto/grpcproc/v1"
 )
 
 // fake answers GetNode for "a" (linked to "b", and failing to dial "c"
@@ -110,12 +113,18 @@ func TestFailuresAndOddities(t *testing.T) {
 	if _, err := c.Processes(ctx, "", Filter{}); !errors.Is(err, errFake) {
 		t.Fatal(err)
 	}
+	// When no node can say which elections it runs, that is the error.
 	if _, err := c.Elections(ctx); !errors.Is(err, errFake) {
 		t.Fatal(err)
 	}
-	// Nodes that cannot be reached are not searched for electors.
+	// A node the walk could not ask may run it: that is the error.
+	if _, _, err := c.engine(ctx, "", "orders"); err == nil || !strings.Contains(err.Error(), "b: ") {
+		t.Fatal(err)
+	}
+	// Nodes that cannot be reached are not searched for electors, but may
+	// run one: with none found elsewhere, that is the error.
 	c.rpc = noProcesses{&fake{}}
-	if all, err := c.Elections(ctx); err != nil || len(all) != 0 {
+	if all, err := c.Elections(ctx); err == nil || !strings.Contains(err.Error(), "b: ") {
 		t.Fatal(all, err)
 	}
 	c.rpc = &fake{}
@@ -175,7 +184,7 @@ func (f members) GetNode(ctx context.Context, req *inspectv1.GetNodeRequest, _ .
 			Members: []*inspectv1.Member{member("a", "west"), member("b", "west"), member("c", "east"), member("d", "east")},
 		}
 		if f.none {
-			info.Members = nil
+			info.Members, info.Metadata = nil, map[string]string{"dc": "west"}
 		}
 		return &inspectv1.GetNodeResponse{Node: info}, nil
 	case "b":
@@ -233,17 +242,15 @@ func TestClusterOfMembers(t *testing.T) {
 			t.Fatalf("%+v", n)
 		}
 	}
-	if es := c.election(t.Context(), nodes[2:3], "x"); len(es) != 1 || es[0].Error != NotAnswered {
-		t.Fatalf("%+v", es)
-	}
-	// Without a Membership, a walk: b's peer e is found, and asked, and b's
-	// links are grouped by b's own members.
+	// Without a Membership, a walk: b's peer e is found, and asked, and the
+	// links are grouped by what each node walked says of itself: a's dc,
+	// and nothing for e, which did not answer.
 	c.rpc = members{none: true}
 	nodes, err = c.Cluster(t.Context(), ClusterOptions{GroupLinksBy: "dc", NodeTimeout: time.Millisecond, Parallel: -1})
 	if err != nil || len(nodes) != 3 || nodes[2].Name != "e" || nodes[2].Error == "" {
 		t.Fatalf("%+v %v", nodes, err)
 	}
-	if ts := nodes[1].LinkTotals; len(ts) != 2 || ts[1].Group != "east" || ts[1].MessagesSent != 5 {
+	if ts := nodes[1].LinkTotals; len(ts) != 2 || ts[0].Group != "" || ts[0].MessagesSent != 5 || ts[1].Group != "west" || ts[1].MessagesReceived != 2 {
 		t.Fatalf("%+v", ts)
 	}
 }
@@ -286,5 +293,85 @@ func TestDeadlinePassed(t *testing.T) {
 		if got := deadlinePassed(tc.ctx, tc.err); got != tc.want {
 			t.Errorf("case %d (%v): got %v", i, tc.err, got)
 		}
+	}
+}
+
+// halfDown answers for a cluster of a, which cannot list its processes, and
+// b, which runs an elector of "x" (leading it), a cron and a saga engine.
+type halfDown struct{ inspectv1.InspectorClient }
+
+func (halfDown) GetNode(_ context.Context, req *inspectv1.GetNodeRequest, _ ...grpc.CallOption) (*inspectv1.GetNodeResponse, error) {
+	if req.GetNode() == "" {
+		return &inspectv1.GetNodeResponse{Node: &inspectv1.NodeInfo{
+			Id:    &inspectv1.NodeID{Name: "a"},
+			Links: []*inspectv1.Link{{Peer: &inspectv1.NodeID{Name: "b"}, Outbound: true, State: inspectv1.LinkState_LINK_STATE_UP}},
+		}}, nil
+	}
+	return &inspectv1.GetNodeResponse{Node: &inspectv1.NodeInfo{Id: &inspectv1.NodeID{Name: req.GetNode()}}}, nil
+}
+
+func (halfDown) ListProcesses(_ context.Context, req *inspectv1.ListProcessesRequest, _ ...grpc.CallOption) (*inspectv1.ListProcessesResponse, error) {
+	if req.GetNode() != "b" {
+		return nil, errFake
+	}
+	pid := func(id uint64) *grpcprocv1.PID { return &grpcprocv1.PID{Node: "b", Incarnation: 1, Id: id} }
+	var ps []*inspectv1.ProcessInfo
+	switch {
+	case req.GetName() != "":
+		ps = append(ps, &inspectv1.ProcessInfo{Pid: pid(1), Name: leader.ElectorName("x")})
+	case req.GetLabel() == cronLabel:
+		ps = append(ps, &inspectv1.ProcessInfo{Pid: pid(2), Type: cronType})
+	case req.GetLabel() == sagaLabel:
+		ps = append(ps, &inspectv1.ProcessInfo{Pid: pid(3)})
+	}
+	return &inspectv1.ListProcessesResponse{Processes: ps}, nil
+}
+
+func (halfDown) GetProcess(_ context.Context, req *inspectv1.GetProcessRequest, _ ...grpc.CallOption) (*inspectv1.GetProcessResponse, error) {
+	resp := &inspectv1.GetProcessResponse{Process: &inspectv1.ProcessInfo{Pid: &grpcprocv1.PID{Node: "b", Incarnation: 1, Id: 9}}}
+	if req.GetTarget().GetName() == leader.ElectorName("x") {
+		resp.Inspect = map[string]string{"role": "leader", "term": "2"}
+	}
+	return resp, nil
+}
+
+// A node that cannot be asked fails only itself: it is listed in each
+// election with why, and the others' crons and saga engines are found.
+func TestOneNodeFailing(t *testing.T) {
+	c := &Client{rpc: halfDown{}, now: time.Now}
+	ctx := t.Context()
+	all, err := c.Elections(ctx)
+	if err != nil || len(all) != 1 || all[0].Leading != "b" || len(all[0].Electors) != 2 || all[0].Electors[0].Error != errFake.Error() {
+		t.Fatalf("%+v %v", all, err)
+	}
+	if crons, err := c.Crons(ctx, ""); err != nil || len(crons) != 2 || crons[0].Node != "a" || crons[0].Error == "" || crons[1].Node != "b" {
+		t.Fatalf("%+v %v", crons, err)
+	}
+	if engines, err := c.SagaEngines(ctx, ""); err != nil || len(engines) != 2 || engines[0].Node != "a" || engines[0].Error == "" || engines[1].Node != "b" {
+		t.Fatalf("%+v %v", engines, err)
+	}
+	if engines, err := c.SagaEngines(ctx, "b"); err != nil || len(engines) != 1 {
+		t.Fatalf("%+v %v", engines, err)
+	}
+	if _, err := c.SagaEngines(ctx, "a"); !errors.Is(err, errFake) {
+		t.Fatal(err)
+	}
+	if _, node, err := c.engine(ctx, "", ""); err != nil || node != "b" {
+		t.Fatal(node, err)
+	}
+	if got := (NodeView{Unanswered: true}).Problem(); got != NotAnswered {
+		t.Fatal(got)
+	}
+	// Nodes the walk could not ask: why is the first's, and they are listed
+	// with it.
+	gone := []NodeView{{Name: "x", Unanswered: true}}
+	if _, err := c.ElectionsOf(ctx, gone, 0); err == nil || err.Error() != "x: "+NotAnswered {
+		t.Fatal(err)
+	}
+	if crons := c.CronsOf(ctx, gone, 0); len(crons) != 1 || crons[0].Error != NotAnswered {
+		t.Fatalf("%+v", crons)
+	}
+	if engines := c.SagaEnginesOf(ctx, gone, 0); len(engines) != 1 || engines[0].Error != NotAnswered {
+		t.Fatalf("%+v", engines)
 	}
 }
