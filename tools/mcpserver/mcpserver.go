@@ -39,7 +39,8 @@ const instructions = `These tools inspect a grpcproc cluster: Go processes (goro
 - A grpcproc/leader election (a cluster name) has an elector process on each node that takes part, registered as leader/<cluster>; election shows what each believes: its role, term, the leader it follows, the nodes cordoned (kept from leading) and those it cannot reach. Nodes that name different leaders, or a node with an old term, point at a partition.
 - A grpcproc/cron process runs jobs on crontab schedules; cron_jobs lists each, when it runs next and last ran, how many runs are going, and why its last failed run failed. Each run is a process of its own, labelled cron:<job>.
 - A grpcproc/saga engine runs sagas: work across services kept as runs in a store, each a state of a machine and its data. saga_runs lists runs by saga and status; a stuck run is one whose effect failed for good with nothing to fire, and waits for a resume; saga_run shows one with its error and the signals waiting for a state that takes them, and its data only if the engine's InspectData is on. An engine answers only for the sagas it runs.
-- node_info and cluster_nodes list each node's links. queued on an out link is what waits to be written to that peer: a growing queue means the peer or the network cannot keep up. A down out link with retry_in means dials to that peer failed, and sends to it fail at once until then; such a peer shows incarnation 0, and cluster_nodes lists it with an error if it cannot be reached.
+- node_info lists a node's links. queued on an out link is what waits to be written to that peer: a growing queue means the peer or the network cannot keep up. A down out link with retry_in means dials to that peer failed, and sends to it fail at once until then; such a peer shows incarnation 0, and cluster_nodes lists it with an error if it cannot be reached.
+- cluster_nodes adds each node's links up (link_totals), and lists them too only in a cluster of up to 32 nodes: peers up and down, with the first down ones named, queued messages, traffic. group_links_by totals them by a key of the peers' metadata, such as a data center, to see which part of the cluster a node cannot reach. A node marked unanswered was not asked or did not answer before the time ran out: it is not known to be down.
 
 Start with cluster_nodes, then list_processes sorted by mailbox to find backlogs, then get_process on the suspects.`
 
@@ -61,7 +62,7 @@ func New(c *client.Client, o Options) *mcp.Server {
 	})
 	t := tools{c: c, timeout: o.Timeout}
 	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
-	mcp.AddTool(s, &mcp.Tool{Name: "cluster_nodes", Description: "Every node reachable from the one serving the Inspector, by links and by the members a node's Membership reports, if it has one: counters, links, members, and which could not be reached.", Annotations: readOnly}, t.clusterNodes)
+	mcp.AddTool(s, &mcp.Tool{Name: "cluster_nodes", Description: "Every node the one serving the Inspector knows of, by the members its Membership reports and by links: counters, links added up, its members, and which could not be reached.", Annotations: readOnly}, t.clusterNodes)
 	mcp.AddTool(s, &mcp.Tool{Name: "node_info", Description: "One node: process counts, dead letters, each link with its traffic, queue, and last error, and the members its Membership reports.", Annotations: readOnly}, t.nodeInfo)
 	mcp.AddTool(s, &mcp.Tool{Name: "list_processes", Description: "Processes of a node, filtered and sorted. Sort by mailbox to find backlogs.", Annotations: readOnly}, t.listProcesses)
 	mcp.AddTool(s, &mcp.Tool{Name: "get_process", Description: "One process by pid or name, with what it says about itself.", Annotations: readOnly}, t.getProcess)
@@ -98,10 +99,14 @@ type nodesOut struct {
 	Nodes []client.NodeView `json:"nodes"`
 }
 
-func (t tools) clusterNodes(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, nodesOut, error) {
-	ctx, cancel := t.ctx(ctx)
+type clusterIn struct {
+	GroupLinksBy string `json:"group_links_by,omitempty" jsonschema:"add each node's links up by this key of its peers' metadata, such as dc; empty adds them up together"`
+}
+
+func (t tools) clusterNodes(ctx context.Context, _ *mcp.CallToolRequest, in clusterIn) (*mcp.CallToolResult, nodesOut, error) {
+	ctx, cancel := context.WithTimeout(ctx, max(client.WalkTime, t.timeout))
 	defer cancel()
-	nodes, err := t.c.Cluster(ctx)
+	nodes, err := t.c.Cluster(ctx, client.ClusterOptions{LinksUpTo: client.LinksUpTo, GroupLinksBy: in.GroupLinksBy, NodeTimeout: t.timeout})
 	return nil, nodesOut{Nodes: nodes}, err
 }
 

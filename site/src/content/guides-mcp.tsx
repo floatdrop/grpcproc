@@ -48,7 +48,7 @@ export const guidesMcp: Doc = {
 					<Table
 						head={['Tool', 'What it answers']}
 						rows={[
-							[<C>cluster_nodes</C>, "Every node reachable from the one serving the Inspector, by links and the members a node's Membership reports, and which could not be reached."],
+							[<C>cluster_nodes</C>, "Every node the one serving the Inspector knows of, by the members its Membership reports and by links, with each one's links added up (by a metadata key, with group_links_by), and which could not be reached."],
 							[<C>node_info</C>, 'One node: counts, dead letters, and each link with its traffic, queue and last error.'],
 							[
 								<C>list_processes</C>,

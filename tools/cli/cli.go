@@ -80,7 +80,7 @@ Usage: grpcprocctl [flags] <command> [command flags] [args]
 
 Commands:
   node [name]                 a node: counters and links
-  nodes                       every node reachable from this one
+  nodes                       every node this one knows of
   ps                          processes (--node, --name, --label, --state, --min-mailbox, --sort, --limit)
   inspect <pid|name>          one process, and what it says about itself (--node, --wait)
   names [name]                global names: who holds one, or a list (--node, --prefix, --limit)
@@ -337,9 +337,13 @@ func cmdNodes(ctx context.Context, a *app, args []string) error {
 	if _, err := a.flags("nodes", args, func(*flag.FlagSet) {}); err != nil {
 		return err
 	}
-	ctx, cancel := a.request(ctx)
+	ctx, cancel := context.WithTimeout(ctx, max(client.WalkTime, a.timeout))
 	defer cancel()
-	nodes, err := a.client.Cluster(ctx)
+	o := client.ClusterOptions{NodeTimeout: a.timeout}
+	if a.json {
+		o.LinksUpTo = client.LinksUpTo
+	}
+	nodes, err := a.client.Cluster(ctx, o)
 	if err != nil {
 		return err
 	}
@@ -348,23 +352,30 @@ func cmdNodes(ctx context.Context, a *app, args []string) error {
 	}
 	rows := make([][]string, 0, len(nodes))
 	for _, n := range nodes {
-		peers := make([]string, 0, len(n.Links))
-		down := map[string]bool{} // every link with the peer is down
-		for _, l := range n.Links {
-			if !slices.Contains(peers, l.Peer) {
-				peers = append(peers, l.Peer)
-				down[l.Peer] = true
-			}
-			down[l.Peer] = down[l.Peer] && l.State == "down"
-		}
-		for i, peer := range peers {
-			if down[peer] {
-				peers[i] = peer + "(down)"
-			}
-		}
-		rows = append(rows, []string{n.Name, n.Advertise, n.Uptime, strconv.Itoa(n.Processes), u(n.DeadLetters), strings.Join(peers, ","), metadata(n.Metadata), n.Error})
+		rows = append(rows, []string{n.Name, n.Advertise, n.Uptime, strconv.Itoa(n.Processes), u(n.DeadLetters), peers(n), metadata(n.Metadata), n.Problem()})
 	}
 	return a.table("NODE\tADVERTISE\tUPTIME\tPROCESSES\tDEAD LETTERS\tPEERS\tMETADATA\tERROR", rows)
+}
+
+// peers counts a node's peers that are up, and names those down, whose
+// every link is.
+func peers(n client.NodeView) string {
+	var up, down int
+	var names []string
+	for _, t := range n.LinkTotals {
+		up += t.Peers - t.PeersDown
+		down += t.PeersDown
+		names = append(names, t.Down...)
+	}
+	switch {
+	case up+down == 0:
+		return ""
+	case down == 0:
+		return fmt.Sprintf("%d up", up)
+	case down > len(names):
+		names = append(names, "…")
+	}
+	return fmt.Sprintf("%d up, %d down: %s", up, down, strings.Join(names, ","))
 }
 
 // metadata renders a node's metadata as key=value pairs, ordered by key.
@@ -889,26 +900,27 @@ func cmdDot(ctx context.Context, a *app, args []string) error {
 	var cluster bool
 	if _, err := a.flags("dot", args, func(fs *flag.FlagSet) {
 		fs.StringVar(&node, "node", "", "node to draw")
-		fs.BoolVar(&cluster, "cluster", false, "draw every node reachable from this one")
+		fs.BoolVar(&cluster, "cluster", false, "draw every node this one knows of")
 	}); err != nil {
 		return err
 	}
 	// Each request has its own time limit: a walk that a dead peer holds to
 	// its limit leaves the others theirs.
 	var names []string
-	rctx, cancel := a.request(ctx)
 	if cluster {
-		nodes, err := a.client.Cluster(rctx)
+		wctx, cancel := context.WithTimeout(ctx, max(client.WalkTime, a.timeout))
+		nodes, err := a.client.Cluster(wctx, client.ClusterOptions{NodeTimeout: a.timeout})
 		cancel()
 		if err != nil {
 			return err
 		}
 		for _, n := range nodes {
-			if n.Error == "" {
+			if n.Reached() {
 				names = append(names, n.Name)
 			}
 		}
 	} else {
+		rctx, cancel := a.request(ctx)
 		n, err := a.client.Node(rctx, node)
 		cancel()
 		if err != nil {

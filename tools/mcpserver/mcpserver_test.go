@@ -98,7 +98,7 @@ func TestReadTools(t *testing.T) {
 	var nodes struct {
 		Nodes []client.NodeView `json:"nodes"`
 	}
-	if msg := call(t, cs, "cluster_nodes", nil, &nodes); msg != "" || len(nodes.Nodes) != 2 {
+	if msg := call(t, cs, "cluster_nodes", map[string]any{"group_links_by": "dc"}, &nodes); msg != "" || len(nodes.Nodes) != 2 || len(nodes.Nodes[1].LinkTotals) != 1 {
 		t.Fatalf("%v %s", nodes, msg)
 	}
 	var n client.NodeView

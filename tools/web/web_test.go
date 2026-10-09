@@ -101,8 +101,8 @@ func TestRead(t *testing.T) {
 	if get(t, s, "/api/info", &info) != http.StatusOK || info != (web.Info{Version: "v1.2.3", Target: "a:9000"}) {
 		t.Errorf("%+v", info)
 	}
-	var nodes []client.NodeView
-	if get(t, s, "/api/nodes", &nodes); len(nodes) != 3 || nodes[0].Name != "a" {
+	var nodes web.Nodes
+	if get(t, s, "/api/nodes", &nodes); len(nodes.Nodes) != 3 || nodes.Nodes[0].Name != "a" || nodes.TakenAt <= 0 || len(nodes.Nodes[1].Links) == 0 {
 		t.Errorf("%+v", nodes)
 	}
 	var node client.NodeView

@@ -68,7 +68,7 @@ monitors:              2
 | Command | |
 | --- | --- |
 | `node [name]` | counters and links of a node |
-| `nodes` | every node reachable from this one, following links and the members a node's `Membership` reports |
+| `nodes` | every node this one knows of, by the members its `Membership` reports and by links, with its peers up and down; `--json` also lists each node's links, up to 32 nodes |
 | `ps` | processes: `--node`, `--name`, `--label`, `--state`, `--min-mailbox`, `--sort pid\|mailbox\|received\|sent\|busy`, `--limit` |
 | `inspect <pid\|name>` | one process, with what it says about itself: `--node`, `--wait` |
 | `names [name]` | [global names](https://floatdrop.github.io/grpcproc/concepts/addressing/#global): who holds one, or a list: `--node`, `--prefix`, `--limit` |
@@ -190,8 +190,11 @@ through the same Inspector and refreshes every second:
   <img alt="grpcprocctl web: the Processes view sorted by mailbox, with ledger, whose mailbox climbs, open beside it" src="../site/public/screenshots/grpcprocctl-web-processes-light.webp">
 </picture>
 
-- **Cluster**: every node, a map of the links between them with messages
-  per second on each, dead letters and queues.
+- **Cluster**: every node, with its peers up and down, dead letters and
+  queues, and up to 32 nodes a map of the links between them with messages
+  per second on each. Pages share a walk over the cluster, which asks 32
+  nodes at a time: a large cluster is walked again once five times as long
+  as the last walk took has passed, and at most 15 seconds.
 - **Node**: its counters and links, with the last minute charted.
 - **Processes**: the table `ps` prints, with messages in and out per
   second and the share of each second each process was busy; the scope
@@ -228,7 +231,7 @@ listens on localhost by default and then answers only to a localhost Host,
 so a page elsewhere cannot reach it through the browser; a change must come
 from the page itself. On any other address, put it behind something that
 authenticates. The API behind the page returns the objects `--json`
-prints: `/api/nodes`, `/api/node`, `/api/processes`, `/api/process`,
+prints, `/api/nodes` with when the walk ended: `/api/nodes`, `/api/node`, `/api/processes`, `/api/process`,
 `/api/crons`, `/api/elections`, `/api/sagas`, `/api/saga/runs`,
 `/api/saga/run`, and `/api/events` as server-sent events.
 
@@ -243,7 +246,7 @@ or a busy process means) and offers:
 
 | Tool | |
 | --- | --- |
-| `cluster_nodes` | every reachable node, and which could not be reached |
+| `cluster_nodes` | every node known, its links added up (by a metadata key with `group_links_by`), and which could not be reached |
 | `node_info` | one node: counts, dead letters, link traffic and errors |
 | `list_processes` | filter and sort, e.g. by mailbox to find backlogs |
 | `get_process` | one process, with what it says about itself |

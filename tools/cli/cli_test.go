@@ -434,6 +434,6 @@ func TestADownPeer(t *testing.T) {
 		t.Fatal("sent to a killed node")
 	}
 	has(t, ok(t, run(t, f, "node")), "c#0", "out", "down", "m", "connection refused")
-	has(t, ok(t, run(t, f, "nodes")), "b,c(down)", "c ")
+	has(t, ok(t, run(t, f, "nodes")), "1 up, 1 down: c", "c ")
 	has(t, ok(t, run(t, f, "dot", "--cluster")), "digraph", `"a"`, `"b"`)
 }

@@ -42,9 +42,8 @@ type CronJobView struct {
 	Failure  string `json:"failure,omitempty" jsonschema:"why its last failed run failed: the error it returned, a panic, timeout or replaced"`
 }
 
-// Crons describes the cron processes of node, or of every node reachable
-// from this one when node is empty, in the order Cluster finds the nodes
-// and by PID on each. A node that cannot be asked is left out; so is one
+// Crons describes the cron processes of node, or of every node Cluster
+// finds when node is empty, in Cluster's order and by PID on each. A node that cannot be asked is left out; so is one
 // with no cron process.
 func (c *Client) Crons(ctx context.Context, node string) ([]CronView, error) {
 	nodes, err := c.nodesOf(ctx, node)
