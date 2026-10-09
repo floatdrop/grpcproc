@@ -32,7 +32,7 @@ type SagaEngineView struct {
 	PID     string   `json:"pid"`
 	Sagas   []string `json:"sagas" jsonschema:"the sagas it runs, each as name vN, its version"`
 	Working int      `json:"working" jsonschema:"runs it works on now"`
-	Error   string   `json:"error,omitempty" jsonschema:"why it could not be read: it is busy, or gone"`
+	Error   string   `json:"error,omitempty" jsonschema:"why it could not be read: it is busy, or gone, or its node could not be asked"`
 }
 
 // SagaRunView is a run of a saga, as its store keeps it.
@@ -84,44 +84,50 @@ type SagaQuery struct {
 	AfterSaga, AfterID string
 }
 
-// SagaEngines describes the saga engines of node, or of every node Cluster
-// finds that answers when node is empty, in Cluster's order and by PID on
-// each.
+// SagaEngines describes the saga engines of node, by PID, or when node is
+// empty SagaEnginesOf the nodes Cluster finds.
 func (c *Client) SagaEngines(ctx context.Context, node string) ([]SagaEngineView, error) {
-	nodes, err := c.nodesOf(ctx, node)
+	if node == "" {
+		nodes, err := c.walkFor(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return c.SagaEnginesOf(ctx, nodes, quarter(ctx)), nil
+	}
+	ps, err := c.Processes(ctx, node, Filter{Label: sagaLabel})
 	if err != nil {
 		return nil, err
 	}
 	out := []SagaEngineView{}
-	for _, n := range nodes {
-		ps, err := c.Processes(ctx, n, Filter{Label: sagaLabel})
-		if err != nil {
-			return nil, err
-		}
-		for _, p := range ps {
-			out = append(out, c.sagaEngine(ctx, n, p.PID))
-		}
+	for _, p := range ps {
+		out = append(out, c.sagaEngine(ctx, node, p.PID))
 	}
 	return out, nil
 }
 
-// nodesOf is node, or when it is empty every node Cluster finds that
-// answers.
-func (c *Client) nodesOf(ctx context.Context, node string) ([]string, error) {
-	if node != "" {
-		return []string{node}, nil
-	}
-	all, err := c.walkFor(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var nodes []string
-	for _, n := range all {
-		if n.Reached() {
-			nodes = append(nodes, n.Name)
+// SagaEnginesOf describes the saga engines of nodes, in nodes' order and by
+// PID on each, asking the nodes at once, each within timeout (0: ctx
+// alone). A node that cannot be asked is listed with its Error.
+func (c *Client) SagaEnginesOf(ctx context.Context, nodes []NodeView, timeout time.Duration) []SagaEngineView {
+	found := each(ctx, nodes, timeout, func(ctx context.Context, n NodeView) []SagaEngineView {
+		if !n.Reached() {
+			return []SagaEngineView{{Node: n.Name, Sagas: []string{}, Error: n.Problem()}}
 		}
+		ps, err := c.Processes(ctx, n.Name, Filter{Label: sagaLabel})
+		if err != nil {
+			return []SagaEngineView{{Node: n.Name, Sagas: []string{}, Error: message(err)}}
+		}
+		var out []SagaEngineView
+		for _, p := range ps {
+			out = append(out, c.sagaEngine(ctx, n.Name, p.PID))
+		}
+		return out
+	})
+	out := []SagaEngineView{}
+	for _, f := range found {
+		out = append(out, f...)
 	}
-	return nodes, nil
+	return out
 }
 
 func (c *Client) sagaEngine(ctx context.Context, node, pid string) SagaEngineView {
@@ -146,18 +152,41 @@ func (c *Client) sagaEngine(ctx context.Context, node, pid string) SagaEngineVie
 // says so: a query does not wait for what keeps it busy. With no saga named,
 // the first engine found is asked, for the sagas it runs.
 func (c *Client) engine(ctx context.Context, node, saga string) (*inspectv1.Target, string, error) {
-	nodes, err := c.nodesOf(ctx, node)
-	if err != nil {
-		return nil, "", err
-	}
-	var busy, busyNode string
-	found := false
-	for _, n := range nodes {
-		ps, err := c.Processes(ctx, n, Filter{Label: sagaLabel})
+	nodes := []string{node}
+	var failed error // the first node's that could not say: it may run saga
+	if node == "" {
+		all, err := c.walkFor(ctx)
 		if err != nil {
 			return nil, "", err
 		}
-		for _, p := range ps {
+		nodes = Reached(all)
+		if i := slices.IndexFunc(all, func(n NodeView) bool { return !n.Reached() }); i >= 0 {
+			failed = fmt.Errorf("%s: %s", all[i].Name, all[i].Problem())
+		}
+	}
+	type listed struct {
+		ps  []ProcessView
+		err error
+	}
+	timeout := time.Duration(0) // one node, named: no walk to leave time for
+	if node == "" {
+		timeout = quarter(ctx)
+	}
+	lists := each(ctx, nodes, timeout, func(ctx context.Context, n string) listed {
+		ps, err := c.Processes(ctx, n, Filter{Label: sagaLabel})
+		return listed{ps, err}
+	})
+	var busy, busyNode string
+	found := false
+	for i, n := range nodes {
+		switch {
+		case lists[i].err != nil && node != "":
+			return nil, "", lists[i].err
+		case lists[i].err != nil: // one of the cluster's: the others may run it
+			failed = cmp.Or(failed, lists[i].err)
+			continue
+		}
+		for _, p := range lists[i].ps {
 			found = true
 			if saga == "" {
 				t, _ := parseTarget(p.PID) // as the Inspector wrote it
@@ -180,6 +209,8 @@ func (c *Client) engine(ctx context.Context, node, saga string) (*inspectv1.Targ
 		return t, busyNode, nil
 	case found && node != "":
 		return nil, "", fmt.Errorf("no saga engine on node %s runs saga %q", node, saga)
+	case failed != nil: // it may run there
+		return nil, "", failed
 	case found:
 		return nil, "", fmt.Errorf("no saga engine runs saga %q", saga)
 	case node == "":

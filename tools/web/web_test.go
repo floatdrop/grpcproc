@@ -129,6 +129,17 @@ func TestRead(t *testing.T) {
 		t.Errorf("%+v", elections)
 	}
 	var engines []client.SagaEngineView
+	if get(t, s, "/api/sagas?node=b", &engines); len(engines) != 1 || engines[0].Node != "b" {
+		t.Errorf("%+v", engines)
+	}
+	// Grouped by a key of the peers' metadata: none, here.
+	var grouped web.Nodes
+	if get(t, s, "/api/nodes?group=dc", &grouped); len(grouped.Nodes) != 3 || len(grouped.Nodes[0].LinkTotals) != 1 || grouped.Nodes[0].LinkTotals[0].Group != "" {
+		t.Errorf("%+v", grouped)
+	}
+	if code := get(t, s, "/api/nodes?group="+strings.Repeat("k", 257), nil); code != http.StatusBadRequest {
+		t.Errorf("a key too long: %d", code)
+	}
 	if get(t, s, "/api/sagas", &engines); len(engines) != 1 || engines[0].Node != "b" || !slices.Equal(engines[0].Sagas, []string{"orders v2"}) {
 		t.Errorf("%+v", engines)
 	}

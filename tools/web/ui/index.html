@@ -13,7 +13,8 @@
 <body>
 <header class="top">
 	<a class="brand" href="#/cluster"><img src="favicon.svg" alt="" width="24" height="24">grpcprocctl web</a>
-	<span class="select"><select id="node" aria-label="Node"></select></span>
+	<input id="node" type="search" list="node-list" aria-label="Node" placeholder="node" autocomplete="off" spellcheck="false">
+	<datalist id="node-list"></datalist>
 	<span class="spacer"></span>
 	<span class="select"><select id="interval" aria-label="Refresh">
 		<option value="1000">every 1s</option>

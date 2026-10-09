@@ -181,7 +181,9 @@ b     billing  leap    0 0 29 2 *  UTC   2028-02-29T00:00:00Z        0
 b     billing  paused  0 * * * *   UTC   disabled                    0
 b     billing  yearly  @yearly     UTC   disabled                    0`}</Output>
 					<p>
-						A cron process is known by the message it takes, whatever it is named. Its runs are
+						A cron process is known by the message it takes, whatever it is named; across every
+						node also by its label, <C>cron</C>, so one spawned with a label of its own is found
+						with <C>--node</C>. Its runs are
 						processes of their own, labelled <C>cron:&lt;job&gt;</C>:{' '}
 						<C>grpcprocctl ps --label cron:yearly</C> shows those going.
 					</p>

@@ -109,6 +109,7 @@ var kinds = func() []string {
 // Node describes one node; "" is the node serving the Inspector.
 func (c *Client) Node(ctx context.Context, node string) (NodeView, error) {
 	v, _, err := c.node(ctx, &inspectv1.GetNodeRequest{Node: node}, nil)
+	v.raw = nil
 	return v, err
 }
 
@@ -123,6 +124,7 @@ func (c *Client) node(ctx context.Context, req *inspectv1.GetNodeRequest, member
 	}
 	info := inspect.NodeInfo(resp.GetNode())
 	v := c.nodeView(info)
+	v.raw = info.Links
 	var peers []string
 	for _, l := range info.Links {
 		peers = append(peers, l.Peer.Name)
@@ -231,7 +233,7 @@ func (c *Client) Cluster(ctx context.Context, o ClusterOptions) ([]NodeView, err
 			var more []string
 			select {
 			case slots <- struct{}{}:
-				v, more = c.ask(ctx, peer, o, links, groupBy)
+				v, more = c.ask(ctx, peer, o, links, walk, groupBy)
 				<-slots
 			case <-ctx.Done():
 			}
@@ -260,12 +262,35 @@ func (c *Client) Cluster(ctx context.Context, o ClusterOptions) ([]NodeView, err
 	wg.Wait()
 	slices.SortFunc(found, func(a, b NodeView) int { return cmp.Compare(a.Name, b.Name) })
 	all := append([]NodeView{first}, found...)
-	if len(all) > o.LinksUpTo {
+	if walk && o.GroupLinksBy != "" {
+		// No Membership grouped the peers: group them by the metadata each
+		// node walked says of itself.
+		group := map[string]string{}
+		for _, v := range all {
+			group[v.Name] = v.Metadata[o.GroupLinksBy]
+		}
 		for i := range all {
+			if all[i].Reached() {
+				all[i].LinkTotals = nil
+				for _, t := range inspect.SumLinks(all[i].raw, func(peer string) string { return group[peer] }) {
+					all[i].LinkTotals = append(all[i].LinkTotals, linkTotalsView(t))
+				}
+			}
+		}
+	}
+	for i := range all {
+		all[i].raw = nil
+		if len(all) > o.LinksUpTo {
 			all[i].Links = nil
 		}
 	}
 	return all, nil
+}
+
+// message is what err says: a status's message, or its code when it has
+// none.
+func message(err error) string {
+	return cmp.Or(status.Convert(err).Message(), status.Code(err).String())
 }
 
 // withTimeout bounds ctx by d, unless d is 0.
@@ -280,22 +305,67 @@ func withTimeout(ctx context.Context, d time.Duration) (context.Context, context
 // node, so that nodes that hang leave the rest to what the caller asks the
 // others next.
 func (c *Client) walkFor(ctx context.Context) ([]NodeView, error) {
-	var o ClusterOptions
+	o := ClusterOptions{NodeTimeout: quarter(ctx)}
 	if d, ok := ctx.Deadline(); ok {
-		left := time.Until(d)
-		o.NodeTimeout = max(left/4, time.Nanosecond)
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, left/2)
+		ctx, cancel = context.WithTimeout(ctx, time.Until(d)/2)
 		defer cancel()
 	}
 	return c.Cluster(ctx, o)
 }
 
+// quarter is a quarter of the time ctx has left: what a node gets of a call
+// across the cluster, so that a batch of them that hang leaves time to
+// others. 0 without a deadline.
+func quarter(ctx context.Context) time.Duration {
+	if d, ok := ctx.Deadline(); ok {
+		return max(time.Until(d)/4, time.Nanosecond)
+	}
+	return 0
+}
+
+// Reached names the nodes that answered.
+func Reached(nodes []NodeView) []string {
+	var out []string
+	for _, n := range nodes {
+		if n.Reached() {
+			out = append(out, n.Name)
+		}
+	}
+	return out
+}
+
+// each calls fn for each of items, 32 at a time and each within timeout
+// (0: ctx alone), and returns what it returned, in items' order. One whose
+// turn comes after ctx ended is called with ctx, to fail as it would.
+func each[T, R any](ctx context.Context, items []T, timeout time.Duration, fn func(context.Context, T) R) []R {
+	out := make([]R, len(items))
+	slots := make(chan struct{}, 32)
+	var wg sync.WaitGroup
+	for i, it := range items {
+		wg.Go(func() {
+			select {
+			case slots <- struct{}{}:
+				defer func() { <-slots }()
+			case <-ctx.Done():
+			}
+			rctx, cancel := withTimeout(ctx, timeout)
+			defer cancel()
+			out[i] = fn(rctx, it)
+		})
+	}
+	wg.Wait()
+	return out
+}
+
 // ask describes peer for Cluster: Unanswered when ctx ended first.
-func (c *Client) ask(ctx context.Context, peer string, o ClusterOptions, links bool, members map[string]MemberView) (NodeView, []string) {
+func (c *Client) ask(ctx context.Context, peer string, o ClusterOptions, links, walk bool, members map[string]MemberView) (NodeView, []string) {
 	rctx, cancel := withTimeout(ctx, o.NodeTimeout)
 	defer cancel()
-	req := &inspectv1.GetNodeRequest{Node: peer, ExcludeLinks: !links, ExcludeMembers: true, LinkTotalsBy: o.GroupLinksBy}
+	req := &inspectv1.GetNodeRequest{Node: peer, ExcludeLinks: !links, ExcludeMembers: true}
+	if !walk { // a walk adds them up by the metadata it finds
+		req.LinkTotalsBy = o.GroupLinksBy
+	}
 	v, more, err := c.node(rctx, req, members)
 	switch code := status.Code(err); {
 	case (code == codes.DeadlineExceeded || code == codes.Canceled) && ctx.Err() != nil:
@@ -304,6 +374,9 @@ func (c *Client) ask(ctx context.Context, peer string, o ClusterOptions, links b
 		return NodeView{Name: peer, Error: err.Error()}, nil
 	}
 	v.Members = nil
+	if !walk || o.GroupLinksBy == "" {
+		v.raw = nil
+	}
 	return v, more
 }
 

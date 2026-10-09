@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -20,6 +21,10 @@ import (
 // its label.
 const cronType = "*cronv1.Control"
 
+// cronLabel is a grpcproc/cron process's label, unless it was spawned with
+// another.
+const cronLabel = "cron"
+
 // CronView is a grpcproc/cron process and its jobs.
 type CronView struct {
 	Node string `json:"node"`
@@ -27,7 +32,7 @@ type CronView struct {
 	Process string        `json:"process"`
 	PID     string        `json:"pid"`
 	Jobs    []CronJobView `json:"jobs"`
-	Error   string        `json:"error,omitempty" jsonschema:"why its jobs could not be read: it is busy, or gone"`
+	Error   string        `json:"error,omitempty" jsonschema:"why its jobs could not be read: it is busy, or gone, or its node could not be asked"`
 }
 
 // CronJobView is one job of a cron process, as the process publishes it.
@@ -42,27 +47,55 @@ type CronJobView struct {
 	Failure  string `json:"failure,omitempty" jsonschema:"why its last failed run failed: the error it returned, a panic, timeout or replaced"`
 }
 
-// Crons describes the cron processes of node, or of every node Cluster
-// finds when node is empty, in Cluster's order and by PID on each. A node that cannot be asked is left out; so is one
-// with no cron process.
+// Crons describes the cron processes of node, by PID, or when node is empty
+// CronsOf the nodes Cluster finds.
 func (c *Client) Crons(ctx context.Context, node string) ([]CronView, error) {
-	nodes, err := c.nodesOf(ctx, node)
+	if node == "" {
+		nodes, err := c.walkFor(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return c.CronsOf(ctx, nodes, quarter(ctx)), nil
+	}
+	ps, err := c.Processes(ctx, node, Filter{})
 	if err != nil {
 		return nil, err
 	}
 	out := []CronView{}
-	for _, n := range nodes {
-		ps, err := c.Processes(ctx, n, Filter{})
-		if err != nil {
-			return nil, err
-		}
-		for _, p := range ps {
-			if p.Type == cronType {
-				out = append(out, c.cron(ctx, n, p.PID))
-			}
+	for _, p := range ps {
+		if p.Type == cronType {
+			out = append(out, c.cron(ctx, node, p.PID))
 		}
 	}
 	return out, nil
+}
+
+// CronsOf describes the cron processes of nodes, found by their label,
+// cron, in nodes' order and by PID on each, asking the nodes at once, each
+// within timeout (0: ctx alone). A node that cannot be asked is listed
+// with its Error.
+func (c *Client) CronsOf(ctx context.Context, nodes []NodeView, timeout time.Duration) []CronView {
+	found := each(ctx, nodes, timeout, func(ctx context.Context, n NodeView) []CronView {
+		if !n.Reached() {
+			return []CronView{{Node: n.Name, Jobs: []CronJobView{}, Error: n.Problem()}}
+		}
+		ps, err := c.Processes(ctx, n.Name, Filter{Label: cronLabel})
+		if err != nil {
+			return []CronView{{Node: n.Name, Jobs: []CronJobView{}, Error: message(err)}}
+		}
+		var out []CronView
+		for _, p := range ps {
+			if p.Type == cronType {
+				out = append(out, c.cron(ctx, n.Name, p.PID))
+			}
+		}
+		return out
+	})
+	out := []CronView{}
+	for _, f := range found {
+		out = append(out, f...)
+	}
+	return out
 }
 
 // Cron describes one cron process, found as Process finds one.
