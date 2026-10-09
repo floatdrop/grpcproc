@@ -149,7 +149,8 @@ for m in "${modules[@]}"; do
 	(cd "$m" && run go mod tidy && run go build ./...)
 done
 for m in "${unreleased[@]}"; do
-	(cd "$m" && run go mod edit -require="$core@$version")
+	# tidy: one that takes the core from the proxy needs its sums
+	(cd "$m" && run go mod edit -require="$core@$version" && run go mod tidy)
 done
 if ! $dry; then
 	for m in "${modules[@]}"; do

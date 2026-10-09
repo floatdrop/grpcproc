@@ -5,8 +5,8 @@ github.com/fergusstrange/embedded-postgres v1.34.0 h1:c6RKhPKFsLVU+Tdxsx8q0UxCHs
 github.com/fergusstrange/embedded-postgres v1.34.0/go.mod h1:w0YvnCgf19o6tskInrOOACtnqfVlOvluz3hlNLY7tRk=
 github.com/floatdrop/fsm v0.8.0 h1:jzK/vv5BYLrlT2/UJ7Hr8SsCxEtOOvVv/CzOoCwclUE=
 github.com/floatdrop/fsm v0.8.0/go.mod h1:omx7JkDDk097D1d1WkBuafEi8sDEJq+15cR++gnuyS4=
-github.com/floatdrop/grpcproc v0.11.0 h1:LIdI9hGsxGsgkty9Nt1wek8iSuKozRmtikfHhXM5yw0=
-github.com/floatdrop/grpcproc v0.11.0/go.mod h1:BERDv3Ikxz+R+UB1x+1Yiu52u3WIcigwhNensEufiuQ=
+github.com/floatdrop/grpcproc v0.12.0 h1:NzQAU+iQ1fTmopr45KiwHfH11UshNgdscylm2zEpP+A=
+github.com/floatdrop/grpcproc v0.12.0/go.mod h1:BERDv3Ikxz+R+UB1x+1Yiu52u3WIcigwhNensEufiuQ=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
 github.com/golang/protobuf v1.5.4/go.mod h1:lnTiLA8Wa4RWRcIUkrtSVa5nRhsEGBg48fD6rSs7xps=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
