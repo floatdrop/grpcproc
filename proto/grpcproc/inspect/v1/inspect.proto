@@ -195,10 +195,51 @@ message ListNamesResponse {
 
 message GetNodeRequest {
   string node = 1;
+  // Leave NodeInfo.links out, which lists each peer of a node linked to
+  // many; link_totals adds them up all the same.
+  bool exclude_links = 2;
+  // Leave NodeInfo.members out, which every node of a cluster lists alike.
+  bool exclude_members = 3;
+  // Add the links up in link_totals by this key of each peer's metadata,
+  // as the node's Membership reports it; empty adds them all up together.
+  string link_totals_by = 4;
 }
 
 message GetNodeResponse {
   NodeInfo node = 1;
+  // The node's links added up, one entry per group of peers that has any,
+  // ordered by group. A node of an earlier release leaves it empty, and
+  // lists its links whatever the request said.
+  repeated LinkTotals link_totals = 2;
+}
+
+// Links of a node with a group of its peers, added up.
+message LinkTotals {
+  // The peers' value of the metadata key GetNodeRequest.link_totals_by
+  // names. Empty for every peer when it names none, and for peers whose
+  // metadata lacks it or that the Membership does not report.
+  string group = 1;
+  // Peers with a link either way.
+  uint32 peers = 2;
+  // Peers whose every link is down.
+  uint32 peers_down = 3;
+  uint32 outbound = 4;
+  uint32 outbound_up = 5;
+  uint32 outbound_down = 6;
+  uint32 inbound = 7;
+  // Envelopes and their bodies' bytes this node sent, over its outbound
+  // links, and received, over its inbound ones.
+  uint64 messages_sent = 8;
+  uint64 bytes_sent = 9;
+  uint64 messages_received = 10;
+  uint64 bytes_received = 11;
+  // Outbound: envelopes waiting to be written, and their bodies' bytes.
+  uint32 queued = 12;
+  uint64 queued_bytes = 13;
+  // Outbound: the links' Link.reconnects, added up.
+  uint64 reconnects = 14;
+  // The first of the peers_down peers by name, at most 16.
+  repeated string down = 15;
 }
 
 // ListProcessesRequest filters are ANDed; empty fields match everything.

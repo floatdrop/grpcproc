@@ -154,6 +154,84 @@ func TestGetNodeMembers(t *testing.T) {
 	})
 }
 
+// GetNode adds a node's links up by a key of its peers' metadata, and leaves
+// the links and members out when asked, here or forwarded.
+func TestGetNodeLinkTotals(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ms := members{{Name: "a"}, {Name: "b", Metadata: map[string]string{"dc": "west"}}, {Name: "c", Metadata: map[string]string{"dc": "west"}}}
+		conns := map[string]*grpc.ClientConn{}
+		peers := func(_ context.Context, node string) (inspectv1.InspectorClient, error) {
+			return inspectv1.NewInspectorClient(conns[node]), nil
+		}
+		c := grpcproctest.NewWith(t, []grpcproctest.Option{
+			grpcproctest.WithConfig(func(name string, cfg *grpcproc.Config) {
+				cfg.Membership = ms
+				if name == "a" {
+					cfg.DialBackoff = time.Hour
+				}
+			}),
+			grpcproctest.WithServices(func(n *grpcproc.Node, s *grpc.Server) { inspect.New(n, inspect.WithPeers(peers)).Register(s) }),
+		}, "a", "b", "c", "d")
+		for _, name := range []string{"a", "b"} {
+			conns[name] = c.Conn(name)
+		}
+		a := c.Node("a")
+		for _, peer := range []string{"b", "c", "d"} {
+			echo, _ := c.Node(peer).Spawn(func(p *grpcproc.Process[*testpb.Ping]) error {
+				for {
+					m, err := p.Receive()
+					if err != nil {
+						return err
+					}
+					_ = m.Reply(&testpb.Pong{N: 1}, nil)
+				}
+			})
+			if _, err := echo.Call[*testpb.Pong](t.Context(), a, &testpb.Ping{N: 1}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// c is cut off, and a's next send to it finds its dial refused.
+		c.Partition("a", "c")
+		synctest.Wait()
+		_ = grpcproc.Named[*testpb.Ping]("c", "x").Send(t.Context(), a, &testpb.Ping{})
+		synctest.Wait()
+
+		req := &inspectv1.GetNodeRequest{ExcludeLinks: true, ExcludeMembers: true, LinkTotalsBy: "dc"}
+		resp, err := client(c, "a").GetNode(t.Context(), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(resp.GetNode().GetLinks()) != 0 || len(resp.GetNode().GetMembers()) != 0 {
+			t.Fatalf("links or members left in: %v", resp.GetNode())
+		}
+		totals := inspect.Totals(resp)
+		var got []string
+		for _, tl := range totals {
+			got = append(got, fmt.Sprintf("%q: peers %d, %d down %v; out %d, %d up, %d down, %d reconnects; in %d; queued %d",
+				tl.Group, tl.Peers, tl.PeersDown, tl.Down, tl.Outbound, tl.OutboundUp, tl.OutboundDown, tl.Reconnects, tl.Inbound, tl.Queued))
+			if tl.MessagesSent == 0 || tl.BytesSent == 0 || tl.MessagesReceived == 0 || tl.BytesReceived == 0 {
+				t.Errorf("%q: %+v", tl.Group, tl)
+			}
+		}
+		// d is in no group: the Membership does not report it.
+		want := `"": peers 1, 0 down []; out 1, 1 up, 0 down, 0 reconnects; in 1; queued 0, "west": peers 2, 1 down [c]; out 2, 1 up, 1 down, 1 reconnects; in 1; queued 0`
+		if strings.Join(got, ", ") != want {
+			t.Fatalf("totals:\n%s\nwant\n%s", strings.Join(got, ", "), want)
+		}
+
+		// Forwarded with what it asks; without a key, every link adds up together.
+		resp, err = client(c, "a").GetNode(t.Context(), &inspectv1.GetNodeRequest{Node: "b", ExcludeLinks: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		totals = inspect.Totals(resp)
+		if resp.GetNode().GetId().GetName() != "b" || len(resp.GetNode().GetLinks()) != 0 || len(resp.GetNode().GetMembers()) != 3 ||
+			len(totals) != 1 || totals[0].Group != "" || totals[0].Peers != 1 || totals[0].Outbound != 1 || totals[0].Inbound != 1 {
+			t.Fatalf("%v %+v", resp.GetNode(), totals)
+		}
+	})
+}
+
 func TestListProcessesFilters(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := cluster(t, nil, "a")

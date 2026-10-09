@@ -1140,8 +1140,16 @@ func (x *ListNamesResponse) GetNames() []*GlobalName {
 }
 
 type GetNodeRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Node          string                 `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Node  string                 `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	// Leave NodeInfo.links out, which lists each peer of a node linked to
+	// many; link_totals adds them up all the same.
+	ExcludeLinks bool `protobuf:"varint,2,opt,name=exclude_links,json=excludeLinks,proto3" json:"exclude_links,omitempty"`
+	// Leave NodeInfo.members out, which every node of a cluster lists alike.
+	ExcludeMembers bool `protobuf:"varint,3,opt,name=exclude_members,json=excludeMembers,proto3" json:"exclude_members,omitempty"`
+	// Add the links up in link_totals by this key of each peer's metadata,
+	// as the node's Membership reports it; empty adds them all up together.
+	LinkTotalsBy  string `protobuf:"bytes,4,opt,name=link_totals_by,json=linkTotalsBy,proto3" json:"link_totals_by,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1183,9 +1191,34 @@ func (x *GetNodeRequest) GetNode() string {
 	return ""
 }
 
+func (x *GetNodeRequest) GetExcludeLinks() bool {
+	if x != nil {
+		return x.ExcludeLinks
+	}
+	return false
+}
+
+func (x *GetNodeRequest) GetExcludeMembers() bool {
+	if x != nil {
+		return x.ExcludeMembers
+	}
+	return false
+}
+
+func (x *GetNodeRequest) GetLinkTotalsBy() string {
+	if x != nil {
+		return x.LinkTotalsBy
+	}
+	return ""
+}
+
 type GetNodeResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Node          *NodeInfo              `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Node  *NodeInfo              `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	// The node's links added up, one entry per group of peers that has any,
+	// ordered by group. A node of an earlier release leaves it empty, and
+	// lists its links whatever the request said.
+	LinkTotals    []*LinkTotals `protobuf:"bytes,2,rep,name=link_totals,json=linkTotals,proto3" json:"link_totals,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1227,6 +1260,180 @@ func (x *GetNodeResponse) GetNode() *NodeInfo {
 	return nil
 }
 
+func (x *GetNodeResponse) GetLinkTotals() []*LinkTotals {
+	if x != nil {
+		return x.LinkTotals
+	}
+	return nil
+}
+
+// Links of a node with a group of its peers, added up.
+type LinkTotals struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The peers' value of the metadata key GetNodeRequest.link_totals_by
+	// names. Empty for every peer when it names none, and for peers whose
+	// metadata lacks it or that the Membership does not report.
+	Group string `protobuf:"bytes,1,opt,name=group,proto3" json:"group,omitempty"`
+	// Peers with a link either way.
+	Peers uint32 `protobuf:"varint,2,opt,name=peers,proto3" json:"peers,omitempty"`
+	// Peers whose every link is down.
+	PeersDown    uint32 `protobuf:"varint,3,opt,name=peers_down,json=peersDown,proto3" json:"peers_down,omitempty"`
+	Outbound     uint32 `protobuf:"varint,4,opt,name=outbound,proto3" json:"outbound,omitempty"`
+	OutboundUp   uint32 `protobuf:"varint,5,opt,name=outbound_up,json=outboundUp,proto3" json:"outbound_up,omitempty"`
+	OutboundDown uint32 `protobuf:"varint,6,opt,name=outbound_down,json=outboundDown,proto3" json:"outbound_down,omitempty"`
+	Inbound      uint32 `protobuf:"varint,7,opt,name=inbound,proto3" json:"inbound,omitempty"`
+	// Envelopes and their bodies' bytes this node sent, over its outbound
+	// links, and received, over its inbound ones.
+	MessagesSent     uint64 `protobuf:"varint,8,opt,name=messages_sent,json=messagesSent,proto3" json:"messages_sent,omitempty"`
+	BytesSent        uint64 `protobuf:"varint,9,opt,name=bytes_sent,json=bytesSent,proto3" json:"bytes_sent,omitempty"`
+	MessagesReceived uint64 `protobuf:"varint,10,opt,name=messages_received,json=messagesReceived,proto3" json:"messages_received,omitempty"`
+	BytesReceived    uint64 `protobuf:"varint,11,opt,name=bytes_received,json=bytesReceived,proto3" json:"bytes_received,omitempty"`
+	// Outbound: envelopes waiting to be written, and their bodies' bytes.
+	Queued      uint32 `protobuf:"varint,12,opt,name=queued,proto3" json:"queued,omitempty"`
+	QueuedBytes uint64 `protobuf:"varint,13,opt,name=queued_bytes,json=queuedBytes,proto3" json:"queued_bytes,omitempty"`
+	// Outbound: the links' Link.reconnects, added up.
+	Reconnects uint64 `protobuf:"varint,14,opt,name=reconnects,proto3" json:"reconnects,omitempty"`
+	// The first of the peers_down peers by name, at most 16.
+	Down          []string `protobuf:"bytes,15,rep,name=down,proto3" json:"down,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LinkTotals) Reset() {
+	*x = LinkTotals{}
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LinkTotals) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LinkTotals) ProtoMessage() {}
+
+func (x *LinkTotals) ProtoReflect() protoreflect.Message {
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LinkTotals.ProtoReflect.Descriptor instead.
+func (*LinkTotals) Descriptor() ([]byte, []int) {
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *LinkTotals) GetGroup() string {
+	if x != nil {
+		return x.Group
+	}
+	return ""
+}
+
+func (x *LinkTotals) GetPeers() uint32 {
+	if x != nil {
+		return x.Peers
+	}
+	return 0
+}
+
+func (x *LinkTotals) GetPeersDown() uint32 {
+	if x != nil {
+		return x.PeersDown
+	}
+	return 0
+}
+
+func (x *LinkTotals) GetOutbound() uint32 {
+	if x != nil {
+		return x.Outbound
+	}
+	return 0
+}
+
+func (x *LinkTotals) GetOutboundUp() uint32 {
+	if x != nil {
+		return x.OutboundUp
+	}
+	return 0
+}
+
+func (x *LinkTotals) GetOutboundDown() uint32 {
+	if x != nil {
+		return x.OutboundDown
+	}
+	return 0
+}
+
+func (x *LinkTotals) GetInbound() uint32 {
+	if x != nil {
+		return x.Inbound
+	}
+	return 0
+}
+
+func (x *LinkTotals) GetMessagesSent() uint64 {
+	if x != nil {
+		return x.MessagesSent
+	}
+	return 0
+}
+
+func (x *LinkTotals) GetBytesSent() uint64 {
+	if x != nil {
+		return x.BytesSent
+	}
+	return 0
+}
+
+func (x *LinkTotals) GetMessagesReceived() uint64 {
+	if x != nil {
+		return x.MessagesReceived
+	}
+	return 0
+}
+
+func (x *LinkTotals) GetBytesReceived() uint64 {
+	if x != nil {
+		return x.BytesReceived
+	}
+	return 0
+}
+
+func (x *LinkTotals) GetQueued() uint32 {
+	if x != nil {
+		return x.Queued
+	}
+	return 0
+}
+
+func (x *LinkTotals) GetQueuedBytes() uint64 {
+	if x != nil {
+		return x.QueuedBytes
+	}
+	return 0
+}
+
+func (x *LinkTotals) GetReconnects() uint64 {
+	if x != nil {
+		return x.Reconnects
+	}
+	return 0
+}
+
+func (x *LinkTotals) GetDown() []string {
+	if x != nil {
+		return x.Down
+	}
+	return nil
+}
+
 // ListProcessesRequest filters are ANDed; empty fields match everything.
 type ListProcessesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1245,7 +1452,7 @@ type ListProcessesRequest struct {
 
 func (x *ListProcessesRequest) Reset() {
 	*x = ListProcessesRequest{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[14]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1257,7 +1464,7 @@ func (x *ListProcessesRequest) String() string {
 func (*ListProcessesRequest) ProtoMessage() {}
 
 func (x *ListProcessesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[14]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1270,7 +1477,7 @@ func (x *ListProcessesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProcessesRequest.ProtoReflect.Descriptor instead.
 func (*ListProcessesRequest) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{14}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListProcessesRequest) GetNode() string {
@@ -1317,7 +1524,7 @@ type ListProcessesResponse struct {
 
 func (x *ListProcessesResponse) Reset() {
 	*x = ListProcessesResponse{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[15]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1329,7 +1536,7 @@ func (x *ListProcessesResponse) String() string {
 func (*ListProcessesResponse) ProtoMessage() {}
 
 func (x *ListProcessesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[15]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1342,7 +1549,7 @@ func (x *ListProcessesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProcessesResponse.ProtoReflect.Descriptor instead.
 func (*ListProcessesResponse) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{15}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListProcessesResponse) GetProcesses() []*ProcessInfo {
@@ -1366,7 +1573,7 @@ type GetProcessRequest struct {
 
 func (x *GetProcessRequest) Reset() {
 	*x = GetProcessRequest{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[16]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1378,7 +1585,7 @@ func (x *GetProcessRequest) String() string {
 func (*GetProcessRequest) ProtoMessage() {}
 
 func (x *GetProcessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[16]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1391,7 +1598,7 @@ func (x *GetProcessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProcessRequest.ProtoReflect.Descriptor instead.
 func (*GetProcessRequest) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{16}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GetProcessRequest) GetNode() string {
@@ -1435,7 +1642,7 @@ type GetProcessResponse struct {
 
 func (x *GetProcessResponse) Reset() {
 	*x = GetProcessResponse{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[17]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1447,7 +1654,7 @@ func (x *GetProcessResponse) String() string {
 func (*GetProcessResponse) ProtoMessage() {}
 
 func (x *GetProcessResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[17]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1460,7 +1667,7 @@ func (x *GetProcessResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProcessResponse.ProtoReflect.Descriptor instead.
 func (*GetProcessResponse) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{17}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *GetProcessResponse) GetProcess() *ProcessInfo {
@@ -1495,7 +1702,7 @@ type SetLogLevelRequest struct {
 
 func (x *SetLogLevelRequest) Reset() {
 	*x = SetLogLevelRequest{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[18]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1507,7 +1714,7 @@ func (x *SetLogLevelRequest) String() string {
 func (*SetLogLevelRequest) ProtoMessage() {}
 
 func (x *SetLogLevelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[18]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1520,7 +1727,7 @@ func (x *SetLogLevelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetLogLevelRequest.ProtoReflect.Descriptor instead.
 func (*SetLogLevelRequest) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{18}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SetLogLevelRequest) GetNode() string {
@@ -1552,7 +1759,7 @@ type SetLogLevelResponse struct {
 
 func (x *SetLogLevelResponse) Reset() {
 	*x = SetLogLevelResponse{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[19]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1564,7 +1771,7 @@ func (x *SetLogLevelResponse) String() string {
 func (*SetLogLevelResponse) ProtoMessage() {}
 
 func (x *SetLogLevelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[19]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1577,7 +1784,7 @@ func (x *SetLogLevelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetLogLevelResponse.ProtoReflect.Descriptor instead.
 func (*SetLogLevelResponse) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{19}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{20}
 }
 
 type SendRequest struct {
@@ -1591,7 +1798,7 @@ type SendRequest struct {
 
 func (x *SendRequest) Reset() {
 	*x = SendRequest{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[20]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1603,7 +1810,7 @@ func (x *SendRequest) String() string {
 func (*SendRequest) ProtoMessage() {}
 
 func (x *SendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[20]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1616,7 +1823,7 @@ func (x *SendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendRequest.ProtoReflect.Descriptor instead.
 func (*SendRequest) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{20}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *SendRequest) GetNode() string {
@@ -1648,7 +1855,7 @@ type SendResponse struct {
 
 func (x *SendResponse) Reset() {
 	*x = SendResponse{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[21]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1660,7 +1867,7 @@ func (x *SendResponse) String() string {
 func (*SendResponse) ProtoMessage() {}
 
 func (x *SendResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[21]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1673,7 +1880,7 @@ func (x *SendResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendResponse.ProtoReflect.Descriptor instead.
 func (*SendResponse) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{21}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{22}
 }
 
 type CallRequest struct {
@@ -1687,7 +1894,7 @@ type CallRequest struct {
 
 func (x *CallRequest) Reset() {
 	*x = CallRequest{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[22]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1699,7 +1906,7 @@ func (x *CallRequest) String() string {
 func (*CallRequest) ProtoMessage() {}
 
 func (x *CallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[22]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1712,7 +1919,7 @@ func (x *CallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallRequest.ProtoReflect.Descriptor instead.
 func (*CallRequest) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{22}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *CallRequest) GetNode() string {
@@ -1745,7 +1952,7 @@ type CallResponse struct {
 
 func (x *CallResponse) Reset() {
 	*x = CallResponse{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[23]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1757,7 +1964,7 @@ func (x *CallResponse) String() string {
 func (*CallResponse) ProtoMessage() {}
 
 func (x *CallResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[23]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1770,7 +1977,7 @@ func (x *CallResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallResponse.ProtoReflect.Descriptor instead.
 func (*CallResponse) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{23}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *CallResponse) GetBody() *anypb.Any {
@@ -1791,7 +1998,7 @@ type QueryRequest struct {
 
 func (x *QueryRequest) Reset() {
 	*x = QueryRequest{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[24]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1803,7 +2010,7 @@ func (x *QueryRequest) String() string {
 func (*QueryRequest) ProtoMessage() {}
 
 func (x *QueryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[24]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1816,7 +2023,7 @@ func (x *QueryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryRequest.ProtoReflect.Descriptor instead.
 func (*QueryRequest) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{24}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *QueryRequest) GetNode() string {
@@ -1849,7 +2056,7 @@ type QueryResponse struct {
 
 func (x *QueryResponse) Reset() {
 	*x = QueryResponse{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[25]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1861,7 +2068,7 @@ func (x *QueryResponse) String() string {
 func (*QueryResponse) ProtoMessage() {}
 
 func (x *QueryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[25]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1874,7 +2081,7 @@ func (x *QueryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryResponse.ProtoReflect.Descriptor instead.
 func (*QueryResponse) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{25}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *QueryResponse) GetBody() *anypb.Any {
@@ -1895,7 +2102,7 @@ type ExitRequest struct {
 
 func (x *ExitRequest) Reset() {
 	*x = ExitRequest{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[26]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1907,7 +2114,7 @@ func (x *ExitRequest) String() string {
 func (*ExitRequest) ProtoMessage() {}
 
 func (x *ExitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[26]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1920,7 +2127,7 @@ func (x *ExitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExitRequest.ProtoReflect.Descriptor instead.
 func (*ExitRequest) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{26}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ExitRequest) GetNode() string {
@@ -1952,7 +2159,7 @@ type ExitResponse struct {
 
 func (x *ExitResponse) Reset() {
 	*x = ExitResponse{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[27]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1964,7 +2171,7 @@ func (x *ExitResponse) String() string {
 func (*ExitResponse) ProtoMessage() {}
 
 func (x *ExitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[27]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1977,7 +2184,7 @@ func (x *ExitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExitResponse.ProtoReflect.Descriptor instead.
 func (*ExitResponse) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{27}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{28}
 }
 
 type WatchRequest struct {
@@ -1992,7 +2199,7 @@ type WatchRequest struct {
 
 func (x *WatchRequest) Reset() {
 	*x = WatchRequest{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[28]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2004,7 +2211,7 @@ func (x *WatchRequest) String() string {
 func (*WatchRequest) ProtoMessage() {}
 
 func (x *WatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[28]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2017,7 +2224,7 @@ func (x *WatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchRequest.ProtoReflect.Descriptor instead.
 func (*WatchRequest) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{28}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *WatchRequest) GetNode() string {
@@ -2043,7 +2250,7 @@ type WatchResponse struct {
 
 func (x *WatchResponse) Reset() {
 	*x = WatchResponse{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[29]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2055,7 +2262,7 @@ func (x *WatchResponse) String() string {
 func (*WatchResponse) ProtoMessage() {}
 
 func (x *WatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[29]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2068,7 +2275,7 @@ func (x *WatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchResponse.ProtoReflect.Descriptor instead.
 func (*WatchResponse) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{29}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *WatchResponse) GetEvent() *Event {
@@ -2097,7 +2304,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[30]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2109,7 +2316,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[30]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2122,7 +2329,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{30}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *Event) GetTime() *timestamppb.Timestamp {
@@ -2235,7 +2442,7 @@ type Exited struct {
 
 func (x *Exited) Reset() {
 	*x = Exited{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[31]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2247,7 +2454,7 @@ func (x *Exited) String() string {
 func (*Exited) ProtoMessage() {}
 
 func (x *Exited) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[31]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2260,7 +2467,7 @@ func (x *Exited) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Exited.ProtoReflect.Descriptor instead.
 func (*Exited) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{31}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *Exited) GetProcess() *ProcessInfo {
@@ -2287,7 +2494,7 @@ type LinkDown struct {
 
 func (x *LinkDown) Reset() {
 	*x = LinkDown{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[32]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2299,7 +2506,7 @@ func (x *LinkDown) String() string {
 func (*LinkDown) ProtoMessage() {}
 
 func (x *LinkDown) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[32]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2312,7 +2519,7 @@ func (x *LinkDown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LinkDown.ProtoReflect.Descriptor instead.
 func (*LinkDown) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{32}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *LinkDown) GetPeer() *NodeID {
@@ -2342,7 +2549,7 @@ type DeadLetter struct {
 
 func (x *DeadLetter) Reset() {
 	*x = DeadLetter{}
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[33]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2354,7 +2561,7 @@ func (x *DeadLetter) String() string {
 func (*DeadLetter) ProtoMessage() {}
 
 func (x *DeadLetter) ProtoReflect() protoreflect.Message {
-	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[33]
+	mi := &file_grpcproc_inspect_v1_inspect_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2367,7 +2574,7 @@ func (x *DeadLetter) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeadLetter.ProtoReflect.Descriptor instead.
 func (*DeadLetter) Descriptor() ([]byte, []int) {
-	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{33}
+	return file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *DeadLetter) GetFrom() *v1.PID {
@@ -2495,11 +2702,39 @@ const file_grpcproc_inspect_v1_inspect_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\"\n" +
 	"\x03pid\x18\x02 \x01(\v2\x10.grpcproc.v1.PIDR\x03pid\"J\n" +
 	"\x11ListNamesResponse\x125\n" +
-	"\x05names\x18\x01 \x03(\v2\x1f.grpcproc.inspect.v1.GlobalNameR\x05names\"$\n" +
+	"\x05names\x18\x01 \x03(\v2\x1f.grpcproc.inspect.v1.GlobalNameR\x05names\"\x98\x01\n" +
 	"\x0eGetNodeRequest\x12\x12\n" +
-	"\x04node\x18\x01 \x01(\tR\x04node\"D\n" +
+	"\x04node\x18\x01 \x01(\tR\x04node\x12#\n" +
+	"\rexclude_links\x18\x02 \x01(\bR\fexcludeLinks\x12'\n" +
+	"\x0fexclude_members\x18\x03 \x01(\bR\x0eexcludeMembers\x12$\n" +
+	"\x0elink_totals_by\x18\x04 \x01(\tR\flinkTotalsBy\"\x86\x01\n" +
 	"\x0fGetNodeResponse\x121\n" +
-	"\x04node\x18\x01 \x01(\v2\x1d.grpcproc.inspect.v1.NodeInfoR\x04node\"\xae\x01\n" +
+	"\x04node\x18\x01 \x01(\v2\x1d.grpcproc.inspect.v1.NodeInfoR\x04node\x12@\n" +
+	"\vlink_totals\x18\x02 \x03(\v2\x1f.grpcproc.inspect.v1.LinkTotalsR\n" +
+	"linkTotals\"\xda\x03\n" +
+	"\n" +
+	"LinkTotals\x12\x14\n" +
+	"\x05group\x18\x01 \x01(\tR\x05group\x12\x14\n" +
+	"\x05peers\x18\x02 \x01(\rR\x05peers\x12\x1d\n" +
+	"\n" +
+	"peers_down\x18\x03 \x01(\rR\tpeersDown\x12\x1a\n" +
+	"\boutbound\x18\x04 \x01(\rR\boutbound\x12\x1f\n" +
+	"\voutbound_up\x18\x05 \x01(\rR\n" +
+	"outboundUp\x12#\n" +
+	"\routbound_down\x18\x06 \x01(\rR\foutboundDown\x12\x18\n" +
+	"\ainbound\x18\a \x01(\rR\ainbound\x12#\n" +
+	"\rmessages_sent\x18\b \x01(\x04R\fmessagesSent\x12\x1d\n" +
+	"\n" +
+	"bytes_sent\x18\t \x01(\x04R\tbytesSent\x12+\n" +
+	"\x11messages_received\x18\n" +
+	" \x01(\x04R\x10messagesReceived\x12%\n" +
+	"\x0ebytes_received\x18\v \x01(\x04R\rbytesReceived\x12\x16\n" +
+	"\x06queued\x18\f \x01(\rR\x06queued\x12!\n" +
+	"\fqueued_bytes\x18\r \x01(\x04R\vqueuedBytes\x12\x1e\n" +
+	"\n" +
+	"reconnects\x18\x0e \x01(\x04R\n" +
+	"reconnects\x12\x12\n" +
+	"\x04down\x18\x0f \x03(\tR\x04down\"\xae\x01\n" +
 	"\x14ListProcessesRequest\x12\x12\n" +
 	"\x04node\x18\x01 \x01(\tR\x04node\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -2614,7 +2849,7 @@ func file_grpcproc_inspect_v1_inspect_proto_rawDescGZIP() []byte {
 }
 
 var file_grpcproc_inspect_v1_inspect_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_grpcproc_inspect_v1_inspect_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
+var file_grpcproc_inspect_v1_inspect_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_grpcproc_inspect_v1_inspect_proto_goTypes = []any{
 	(LinkState)(0),                // 0: grpcproc.inspect.v1.LinkState
 	(ProcessState)(0),             // 1: grpcproc.inspect.v1.ProcessState
@@ -2632,113 +2867,115 @@ var file_grpcproc_inspect_v1_inspect_proto_goTypes = []any{
 	(*ListNamesResponse)(nil),     // 13: grpcproc.inspect.v1.ListNamesResponse
 	(*GetNodeRequest)(nil),        // 14: grpcproc.inspect.v1.GetNodeRequest
 	(*GetNodeResponse)(nil),       // 15: grpcproc.inspect.v1.GetNodeResponse
-	(*ListProcessesRequest)(nil),  // 16: grpcproc.inspect.v1.ListProcessesRequest
-	(*ListProcessesResponse)(nil), // 17: grpcproc.inspect.v1.ListProcessesResponse
-	(*GetProcessRequest)(nil),     // 18: grpcproc.inspect.v1.GetProcessRequest
-	(*GetProcessResponse)(nil),    // 19: grpcproc.inspect.v1.GetProcessResponse
-	(*SetLogLevelRequest)(nil),    // 20: grpcproc.inspect.v1.SetLogLevelRequest
-	(*SetLogLevelResponse)(nil),   // 21: grpcproc.inspect.v1.SetLogLevelResponse
-	(*SendRequest)(nil),           // 22: grpcproc.inspect.v1.SendRequest
-	(*SendResponse)(nil),          // 23: grpcproc.inspect.v1.SendResponse
-	(*CallRequest)(nil),           // 24: grpcproc.inspect.v1.CallRequest
-	(*CallResponse)(nil),          // 25: grpcproc.inspect.v1.CallResponse
-	(*QueryRequest)(nil),          // 26: grpcproc.inspect.v1.QueryRequest
-	(*QueryResponse)(nil),         // 27: grpcproc.inspect.v1.QueryResponse
-	(*ExitRequest)(nil),           // 28: grpcproc.inspect.v1.ExitRequest
-	(*ExitResponse)(nil),          // 29: grpcproc.inspect.v1.ExitResponse
-	(*WatchRequest)(nil),          // 30: grpcproc.inspect.v1.WatchRequest
-	(*WatchResponse)(nil),         // 31: grpcproc.inspect.v1.WatchResponse
-	(*Event)(nil),                 // 32: grpcproc.inspect.v1.Event
-	(*Exited)(nil),                // 33: grpcproc.inspect.v1.Exited
-	(*LinkDown)(nil),              // 34: grpcproc.inspect.v1.LinkDown
-	(*DeadLetter)(nil),            // 35: grpcproc.inspect.v1.DeadLetter
-	nil,                           // 36: grpcproc.inspect.v1.NodeInfo.MetadataEntry
-	nil,                           // 37: grpcproc.inspect.v1.Member.MetadataEntry
-	nil,                           // 38: grpcproc.inspect.v1.GetProcessResponse.InspectEntry
-	(*timestamppb.Timestamp)(nil), // 39: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 40: google.protobuf.Duration
-	(*v1.PID)(nil),                // 41: grpcproc.v1.PID
-	(*anypb.Any)(nil),             // 42: google.protobuf.Any
+	(*LinkTotals)(nil),            // 16: grpcproc.inspect.v1.LinkTotals
+	(*ListProcessesRequest)(nil),  // 17: grpcproc.inspect.v1.ListProcessesRequest
+	(*ListProcessesResponse)(nil), // 18: grpcproc.inspect.v1.ListProcessesResponse
+	(*GetProcessRequest)(nil),     // 19: grpcproc.inspect.v1.GetProcessRequest
+	(*GetProcessResponse)(nil),    // 20: grpcproc.inspect.v1.GetProcessResponse
+	(*SetLogLevelRequest)(nil),    // 21: grpcproc.inspect.v1.SetLogLevelRequest
+	(*SetLogLevelResponse)(nil),   // 22: grpcproc.inspect.v1.SetLogLevelResponse
+	(*SendRequest)(nil),           // 23: grpcproc.inspect.v1.SendRequest
+	(*SendResponse)(nil),          // 24: grpcproc.inspect.v1.SendResponse
+	(*CallRequest)(nil),           // 25: grpcproc.inspect.v1.CallRequest
+	(*CallResponse)(nil),          // 26: grpcproc.inspect.v1.CallResponse
+	(*QueryRequest)(nil),          // 27: grpcproc.inspect.v1.QueryRequest
+	(*QueryResponse)(nil),         // 28: grpcproc.inspect.v1.QueryResponse
+	(*ExitRequest)(nil),           // 29: grpcproc.inspect.v1.ExitRequest
+	(*ExitResponse)(nil),          // 30: grpcproc.inspect.v1.ExitResponse
+	(*WatchRequest)(nil),          // 31: grpcproc.inspect.v1.WatchRequest
+	(*WatchResponse)(nil),         // 32: grpcproc.inspect.v1.WatchResponse
+	(*Event)(nil),                 // 33: grpcproc.inspect.v1.Event
+	(*Exited)(nil),                // 34: grpcproc.inspect.v1.Exited
+	(*LinkDown)(nil),              // 35: grpcproc.inspect.v1.LinkDown
+	(*DeadLetter)(nil),            // 36: grpcproc.inspect.v1.DeadLetter
+	nil,                           // 37: grpcproc.inspect.v1.NodeInfo.MetadataEntry
+	nil,                           // 38: grpcproc.inspect.v1.Member.MetadataEntry
+	nil,                           // 39: grpcproc.inspect.v1.GetProcessResponse.InspectEntry
+	(*timestamppb.Timestamp)(nil), // 40: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 41: google.protobuf.Duration
+	(*v1.PID)(nil),                // 42: grpcproc.v1.PID
+	(*anypb.Any)(nil),             // 43: google.protobuf.Any
 }
 var file_grpcproc_inspect_v1_inspect_proto_depIdxs = []int32{
 	2,  // 0: grpcproc.inspect.v1.Link.peer:type_name -> grpcproc.inspect.v1.NodeID
 	0,  // 1: grpcproc.inspect.v1.Link.state:type_name -> grpcproc.inspect.v1.LinkState
-	39, // 2: grpcproc.inspect.v1.Link.established_at:type_name -> google.protobuf.Timestamp
-	39, // 3: grpcproc.inspect.v1.Link.retry_at:type_name -> google.protobuf.Timestamp
+	40, // 2: grpcproc.inspect.v1.Link.established_at:type_name -> google.protobuf.Timestamp
+	40, // 3: grpcproc.inspect.v1.Link.retry_at:type_name -> google.protobuf.Timestamp
 	2,  // 4: grpcproc.inspect.v1.NodeInfo.id:type_name -> grpcproc.inspect.v1.NodeID
-	39, // 5: grpcproc.inspect.v1.NodeInfo.started_at:type_name -> google.protobuf.Timestamp
+	40, // 5: grpcproc.inspect.v1.NodeInfo.started_at:type_name -> google.protobuf.Timestamp
 	3,  // 6: grpcproc.inspect.v1.NodeInfo.links:type_name -> grpcproc.inspect.v1.Link
-	36, // 7: grpcproc.inspect.v1.NodeInfo.metadata:type_name -> grpcproc.inspect.v1.NodeInfo.MetadataEntry
+	37, // 7: grpcproc.inspect.v1.NodeInfo.metadata:type_name -> grpcproc.inspect.v1.NodeInfo.MetadataEntry
 	5,  // 8: grpcproc.inspect.v1.NodeInfo.members:type_name -> grpcproc.inspect.v1.Member
 	2,  // 9: grpcproc.inspect.v1.Member.id:type_name -> grpcproc.inspect.v1.NodeID
-	37, // 10: grpcproc.inspect.v1.Member.metadata:type_name -> grpcproc.inspect.v1.Member.MetadataEntry
-	40, // 11: grpcproc.inspect.v1.Mailbox.oldest_age:type_name -> google.protobuf.Duration
-	41, // 12: grpcproc.inspect.v1.ProcessInfo.pid:type_name -> grpcproc.v1.PID
-	41, // 13: grpcproc.inspect.v1.ProcessInfo.parent:type_name -> grpcproc.v1.PID
+	38, // 10: grpcproc.inspect.v1.Member.metadata:type_name -> grpcproc.inspect.v1.Member.MetadataEntry
+	41, // 11: grpcproc.inspect.v1.Mailbox.oldest_age:type_name -> google.protobuf.Duration
+	42, // 12: grpcproc.inspect.v1.ProcessInfo.pid:type_name -> grpcproc.v1.PID
+	42, // 13: grpcproc.inspect.v1.ProcessInfo.parent:type_name -> grpcproc.v1.PID
 	1,  // 14: grpcproc.inspect.v1.ProcessInfo.state:type_name -> grpcproc.inspect.v1.ProcessState
-	39, // 15: grpcproc.inspect.v1.ProcessInfo.started_at:type_name -> google.protobuf.Timestamp
+	40, // 15: grpcproc.inspect.v1.ProcessInfo.started_at:type_name -> google.protobuf.Timestamp
 	6,  // 16: grpcproc.inspect.v1.ProcessInfo.mailbox:type_name -> grpcproc.inspect.v1.Mailbox
-	40, // 17: grpcproc.inspect.v1.ProcessInfo.busy:type_name -> google.protobuf.Duration
-	40, // 18: grpcproc.inspect.v1.ProcessInfo.busy_for:type_name -> google.protobuf.Duration
-	41, // 19: grpcproc.inspect.v1.Target.pid:type_name -> grpcproc.v1.PID
-	41, // 20: grpcproc.inspect.v1.LookupNameResponse.pid:type_name -> grpcproc.v1.PID
-	41, // 21: grpcproc.inspect.v1.GlobalName.pid:type_name -> grpcproc.v1.PID
+	41, // 17: grpcproc.inspect.v1.ProcessInfo.busy:type_name -> google.protobuf.Duration
+	41, // 18: grpcproc.inspect.v1.ProcessInfo.busy_for:type_name -> google.protobuf.Duration
+	42, // 19: grpcproc.inspect.v1.Target.pid:type_name -> grpcproc.v1.PID
+	42, // 20: grpcproc.inspect.v1.LookupNameResponse.pid:type_name -> grpcproc.v1.PID
+	42, // 21: grpcproc.inspect.v1.GlobalName.pid:type_name -> grpcproc.v1.PID
 	12, // 22: grpcproc.inspect.v1.ListNamesResponse.names:type_name -> grpcproc.inspect.v1.GlobalName
 	4,  // 23: grpcproc.inspect.v1.GetNodeResponse.node:type_name -> grpcproc.inspect.v1.NodeInfo
-	1,  // 24: grpcproc.inspect.v1.ListProcessesRequest.state:type_name -> grpcproc.inspect.v1.ProcessState
-	7,  // 25: grpcproc.inspect.v1.ListProcessesResponse.processes:type_name -> grpcproc.inspect.v1.ProcessInfo
-	8,  // 26: grpcproc.inspect.v1.GetProcessRequest.target:type_name -> grpcproc.inspect.v1.Target
-	40, // 27: grpcproc.inspect.v1.GetProcessRequest.inspect_timeout:type_name -> google.protobuf.Duration
-	7,  // 28: grpcproc.inspect.v1.GetProcessResponse.process:type_name -> grpcproc.inspect.v1.ProcessInfo
-	38, // 29: grpcproc.inspect.v1.GetProcessResponse.inspect:type_name -> grpcproc.inspect.v1.GetProcessResponse.InspectEntry
-	8,  // 30: grpcproc.inspect.v1.SetLogLevelRequest.target:type_name -> grpcproc.inspect.v1.Target
-	8,  // 31: grpcproc.inspect.v1.SendRequest.target:type_name -> grpcproc.inspect.v1.Target
-	42, // 32: grpcproc.inspect.v1.SendRequest.body:type_name -> google.protobuf.Any
-	8,  // 33: grpcproc.inspect.v1.CallRequest.target:type_name -> grpcproc.inspect.v1.Target
-	42, // 34: grpcproc.inspect.v1.CallRequest.body:type_name -> google.protobuf.Any
-	42, // 35: grpcproc.inspect.v1.CallResponse.body:type_name -> google.protobuf.Any
-	8,  // 36: grpcproc.inspect.v1.QueryRequest.target:type_name -> grpcproc.inspect.v1.Target
-	42, // 37: grpcproc.inspect.v1.QueryRequest.body:type_name -> google.protobuf.Any
-	42, // 38: grpcproc.inspect.v1.QueryResponse.body:type_name -> google.protobuf.Any
-	8,  // 39: grpcproc.inspect.v1.ExitRequest.target:type_name -> grpcproc.inspect.v1.Target
-	32, // 40: grpcproc.inspect.v1.WatchResponse.event:type_name -> grpcproc.inspect.v1.Event
-	39, // 41: grpcproc.inspect.v1.Event.time:type_name -> google.protobuf.Timestamp
-	7,  // 42: grpcproc.inspect.v1.Event.spawned:type_name -> grpcproc.inspect.v1.ProcessInfo
-	33, // 43: grpcproc.inspect.v1.Event.exited:type_name -> grpcproc.inspect.v1.Exited
-	2,  // 44: grpcproc.inspect.v1.Event.link_up:type_name -> grpcproc.inspect.v1.NodeID
-	34, // 45: grpcproc.inspect.v1.Event.link_down:type_name -> grpcproc.inspect.v1.LinkDown
-	35, // 46: grpcproc.inspect.v1.Event.dead_letter:type_name -> grpcproc.inspect.v1.DeadLetter
-	7,  // 47: grpcproc.inspect.v1.Exited.process:type_name -> grpcproc.inspect.v1.ProcessInfo
-	2,  // 48: grpcproc.inspect.v1.LinkDown.peer:type_name -> grpcproc.inspect.v1.NodeID
-	41, // 49: grpcproc.inspect.v1.DeadLetter.from:type_name -> grpcproc.v1.PID
-	41, // 50: grpcproc.inspect.v1.DeadLetter.to:type_name -> grpcproc.v1.PID
-	14, // 51: grpcproc.inspect.v1.Inspector.GetNode:input_type -> grpcproc.inspect.v1.GetNodeRequest
-	16, // 52: grpcproc.inspect.v1.Inspector.ListProcesses:input_type -> grpcproc.inspect.v1.ListProcessesRequest
-	18, // 53: grpcproc.inspect.v1.Inspector.GetProcess:input_type -> grpcproc.inspect.v1.GetProcessRequest
-	20, // 54: grpcproc.inspect.v1.Inspector.SetLogLevel:input_type -> grpcproc.inspect.v1.SetLogLevelRequest
-	22, // 55: grpcproc.inspect.v1.Inspector.Send:input_type -> grpcproc.inspect.v1.SendRequest
-	24, // 56: grpcproc.inspect.v1.Inspector.Call:input_type -> grpcproc.inspect.v1.CallRequest
-	26, // 57: grpcproc.inspect.v1.Inspector.Query:input_type -> grpcproc.inspect.v1.QueryRequest
-	28, // 58: grpcproc.inspect.v1.Inspector.Exit:input_type -> grpcproc.inspect.v1.ExitRequest
-	30, // 59: grpcproc.inspect.v1.Inspector.Watch:input_type -> grpcproc.inspect.v1.WatchRequest
-	9,  // 60: grpcproc.inspect.v1.Inspector.LookupName:input_type -> grpcproc.inspect.v1.LookupNameRequest
-	11, // 61: grpcproc.inspect.v1.Inspector.ListNames:input_type -> grpcproc.inspect.v1.ListNamesRequest
-	15, // 62: grpcproc.inspect.v1.Inspector.GetNode:output_type -> grpcproc.inspect.v1.GetNodeResponse
-	17, // 63: grpcproc.inspect.v1.Inspector.ListProcesses:output_type -> grpcproc.inspect.v1.ListProcessesResponse
-	19, // 64: grpcproc.inspect.v1.Inspector.GetProcess:output_type -> grpcproc.inspect.v1.GetProcessResponse
-	21, // 65: grpcproc.inspect.v1.Inspector.SetLogLevel:output_type -> grpcproc.inspect.v1.SetLogLevelResponse
-	23, // 66: grpcproc.inspect.v1.Inspector.Send:output_type -> grpcproc.inspect.v1.SendResponse
-	25, // 67: grpcproc.inspect.v1.Inspector.Call:output_type -> grpcproc.inspect.v1.CallResponse
-	27, // 68: grpcproc.inspect.v1.Inspector.Query:output_type -> grpcproc.inspect.v1.QueryResponse
-	29, // 69: grpcproc.inspect.v1.Inspector.Exit:output_type -> grpcproc.inspect.v1.ExitResponse
-	31, // 70: grpcproc.inspect.v1.Inspector.Watch:output_type -> grpcproc.inspect.v1.WatchResponse
-	10, // 71: grpcproc.inspect.v1.Inspector.LookupName:output_type -> grpcproc.inspect.v1.LookupNameResponse
-	13, // 72: grpcproc.inspect.v1.Inspector.ListNames:output_type -> grpcproc.inspect.v1.ListNamesResponse
-	62, // [62:73] is the sub-list for method output_type
-	51, // [51:62] is the sub-list for method input_type
-	51, // [51:51] is the sub-list for extension type_name
-	51, // [51:51] is the sub-list for extension extendee
-	0,  // [0:51] is the sub-list for field type_name
+	16, // 24: grpcproc.inspect.v1.GetNodeResponse.link_totals:type_name -> grpcproc.inspect.v1.LinkTotals
+	1,  // 25: grpcproc.inspect.v1.ListProcessesRequest.state:type_name -> grpcproc.inspect.v1.ProcessState
+	7,  // 26: grpcproc.inspect.v1.ListProcessesResponse.processes:type_name -> grpcproc.inspect.v1.ProcessInfo
+	8,  // 27: grpcproc.inspect.v1.GetProcessRequest.target:type_name -> grpcproc.inspect.v1.Target
+	41, // 28: grpcproc.inspect.v1.GetProcessRequest.inspect_timeout:type_name -> google.protobuf.Duration
+	7,  // 29: grpcproc.inspect.v1.GetProcessResponse.process:type_name -> grpcproc.inspect.v1.ProcessInfo
+	39, // 30: grpcproc.inspect.v1.GetProcessResponse.inspect:type_name -> grpcproc.inspect.v1.GetProcessResponse.InspectEntry
+	8,  // 31: grpcproc.inspect.v1.SetLogLevelRequest.target:type_name -> grpcproc.inspect.v1.Target
+	8,  // 32: grpcproc.inspect.v1.SendRequest.target:type_name -> grpcproc.inspect.v1.Target
+	43, // 33: grpcproc.inspect.v1.SendRequest.body:type_name -> google.protobuf.Any
+	8,  // 34: grpcproc.inspect.v1.CallRequest.target:type_name -> grpcproc.inspect.v1.Target
+	43, // 35: grpcproc.inspect.v1.CallRequest.body:type_name -> google.protobuf.Any
+	43, // 36: grpcproc.inspect.v1.CallResponse.body:type_name -> google.protobuf.Any
+	8,  // 37: grpcproc.inspect.v1.QueryRequest.target:type_name -> grpcproc.inspect.v1.Target
+	43, // 38: grpcproc.inspect.v1.QueryRequest.body:type_name -> google.protobuf.Any
+	43, // 39: grpcproc.inspect.v1.QueryResponse.body:type_name -> google.protobuf.Any
+	8,  // 40: grpcproc.inspect.v1.ExitRequest.target:type_name -> grpcproc.inspect.v1.Target
+	33, // 41: grpcproc.inspect.v1.WatchResponse.event:type_name -> grpcproc.inspect.v1.Event
+	40, // 42: grpcproc.inspect.v1.Event.time:type_name -> google.protobuf.Timestamp
+	7,  // 43: grpcproc.inspect.v1.Event.spawned:type_name -> grpcproc.inspect.v1.ProcessInfo
+	34, // 44: grpcproc.inspect.v1.Event.exited:type_name -> grpcproc.inspect.v1.Exited
+	2,  // 45: grpcproc.inspect.v1.Event.link_up:type_name -> grpcproc.inspect.v1.NodeID
+	35, // 46: grpcproc.inspect.v1.Event.link_down:type_name -> grpcproc.inspect.v1.LinkDown
+	36, // 47: grpcproc.inspect.v1.Event.dead_letter:type_name -> grpcproc.inspect.v1.DeadLetter
+	7,  // 48: grpcproc.inspect.v1.Exited.process:type_name -> grpcproc.inspect.v1.ProcessInfo
+	2,  // 49: grpcproc.inspect.v1.LinkDown.peer:type_name -> grpcproc.inspect.v1.NodeID
+	42, // 50: grpcproc.inspect.v1.DeadLetter.from:type_name -> grpcproc.v1.PID
+	42, // 51: grpcproc.inspect.v1.DeadLetter.to:type_name -> grpcproc.v1.PID
+	14, // 52: grpcproc.inspect.v1.Inspector.GetNode:input_type -> grpcproc.inspect.v1.GetNodeRequest
+	17, // 53: grpcproc.inspect.v1.Inspector.ListProcesses:input_type -> grpcproc.inspect.v1.ListProcessesRequest
+	19, // 54: grpcproc.inspect.v1.Inspector.GetProcess:input_type -> grpcproc.inspect.v1.GetProcessRequest
+	21, // 55: grpcproc.inspect.v1.Inspector.SetLogLevel:input_type -> grpcproc.inspect.v1.SetLogLevelRequest
+	23, // 56: grpcproc.inspect.v1.Inspector.Send:input_type -> grpcproc.inspect.v1.SendRequest
+	25, // 57: grpcproc.inspect.v1.Inspector.Call:input_type -> grpcproc.inspect.v1.CallRequest
+	27, // 58: grpcproc.inspect.v1.Inspector.Query:input_type -> grpcproc.inspect.v1.QueryRequest
+	29, // 59: grpcproc.inspect.v1.Inspector.Exit:input_type -> grpcproc.inspect.v1.ExitRequest
+	31, // 60: grpcproc.inspect.v1.Inspector.Watch:input_type -> grpcproc.inspect.v1.WatchRequest
+	9,  // 61: grpcproc.inspect.v1.Inspector.LookupName:input_type -> grpcproc.inspect.v1.LookupNameRequest
+	11, // 62: grpcproc.inspect.v1.Inspector.ListNames:input_type -> grpcproc.inspect.v1.ListNamesRequest
+	15, // 63: grpcproc.inspect.v1.Inspector.GetNode:output_type -> grpcproc.inspect.v1.GetNodeResponse
+	18, // 64: grpcproc.inspect.v1.Inspector.ListProcesses:output_type -> grpcproc.inspect.v1.ListProcessesResponse
+	20, // 65: grpcproc.inspect.v1.Inspector.GetProcess:output_type -> grpcproc.inspect.v1.GetProcessResponse
+	22, // 66: grpcproc.inspect.v1.Inspector.SetLogLevel:output_type -> grpcproc.inspect.v1.SetLogLevelResponse
+	24, // 67: grpcproc.inspect.v1.Inspector.Send:output_type -> grpcproc.inspect.v1.SendResponse
+	26, // 68: grpcproc.inspect.v1.Inspector.Call:output_type -> grpcproc.inspect.v1.CallResponse
+	28, // 69: grpcproc.inspect.v1.Inspector.Query:output_type -> grpcproc.inspect.v1.QueryResponse
+	30, // 70: grpcproc.inspect.v1.Inspector.Exit:output_type -> grpcproc.inspect.v1.ExitResponse
+	32, // 71: grpcproc.inspect.v1.Inspector.Watch:output_type -> grpcproc.inspect.v1.WatchResponse
+	10, // 72: grpcproc.inspect.v1.Inspector.LookupName:output_type -> grpcproc.inspect.v1.LookupNameResponse
+	13, // 73: grpcproc.inspect.v1.Inspector.ListNames:output_type -> grpcproc.inspect.v1.ListNamesResponse
+	63, // [63:74] is the sub-list for method output_type
+	52, // [52:63] is the sub-list for method input_type
+	52, // [52:52] is the sub-list for extension type_name
+	52, // [52:52] is the sub-list for extension extendee
+	0,  // [0:52] is the sub-list for field type_name
 }
 
 func init() { file_grpcproc_inspect_v1_inspect_proto_init() }
@@ -2750,7 +2987,7 @@ func file_grpcproc_inspect_v1_inspect_proto_init() {
 		(*Target_Pid)(nil),
 		(*Target_Name)(nil),
 	}
-	file_grpcproc_inspect_v1_inspect_proto_msgTypes[30].OneofWrappers = []any{
+	file_grpcproc_inspect_v1_inspect_proto_msgTypes[31].OneofWrappers = []any{
 		(*Event_Spawned)(nil),
 		(*Event_Exited)(nil),
 		(*Event_LinkUp)(nil),
@@ -2763,7 +3000,7 @@ func file_grpcproc_inspect_v1_inspect_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_grpcproc_inspect_v1_inspect_proto_rawDesc), len(file_grpcproc_inspect_v1_inspect_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   37,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

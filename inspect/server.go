@@ -171,9 +171,28 @@ func (s *Server) GetNode(ctx context.Context, req *inspectv1.GetNodeRequest) (*i
 	if c, node, err := s.remote(ctx, req.GetNode(), nil); c != nil || err != nil {
 		return forward(node, err, func() (*inspectv1.GetNodeResponse, error) { return c.GetNode(ctx, req) })
 	}
-	info := nodeInfoTo(s.node.Info())
-	info.Members = membersTo(s.node.Members())
-	return &inspectv1.GetNodeResponse{Node: info}, nil
+	info := s.node.Info()
+	var members []grpcproc.Member
+	if key := req.GetLinkTotalsBy(); key != "" || !req.GetExcludeMembers() {
+		members = s.node.Members()
+	}
+	group := func(string) string { return "" }
+	if key := req.GetLinkTotalsBy(); key != "" {
+		groups := map[string]string{}
+		for _, m := range members {
+			groups[m.Name] = m.Metadata[key]
+		}
+		group = func(peer string) string { return groups[peer] }
+	}
+	resp := &inspectv1.GetNodeResponse{LinkTotals: totalsTo(SumLinks(info.Links, group))}
+	if req.GetExcludeLinks() {
+		info.Links = nil
+	}
+	resp.Node = nodeInfoTo(info)
+	if !req.GetExcludeMembers() {
+		resp.Node.Members = membersTo(members)
+	}
+	return resp, nil
 }
 
 // names is the node's Config.Names, or FailedPrecondition.
