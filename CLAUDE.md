@@ -348,7 +348,7 @@ works on a newer one's runs. A store must pass `sagatest.Store`.
   and `Process.CallTo[R]` do not compile on 1.26. They also satisfy no
   interface, which is why `Caller` has one unexported method and the address
   calls.
-- **golangci-lint v2** (CI pins v2.13.1) with `revive`'s `unused-receiver`
+- **golangci-lint v2** (CI pins v2.14.0) with `revive`'s `unused-receiver`
   and `unused-parameter` only, and `revive` excluded for `_test.go`, where
   hooks and process functions have fixed signatures. `tools` also excludes
   `fmt.Fprint*` from errcheck.
