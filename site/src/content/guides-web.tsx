@@ -37,7 +37,10 @@ grpcprocctl --plaintext --addr 10.0.0.5:9000 web   # http://localhost:9911`}</Co
 					<Table
 						head={['View', 'What it shows']}
 						rows={[
-							['Cluster', 'Every node, and a map of the links between them with messages per second on each, dead letters and queues.'],
+							[
+								'Cluster',
+								'Every node, with its peers up and down, dead letters and queues, and up to 32 nodes a map of the links between them with messages per second on each. Pages share a walk over the cluster, which asks 32 nodes at a time: a large cluster is walked again once five times as long as the last walk took has passed, and at most 15 seconds.'
+							],
 							['Node', "One node's counters and links, charted over the last minute."],
 							[
 								'Processes',
@@ -123,7 +126,8 @@ grpcprocctl --plaintext --addr 10.0.0.5:9000 web   # http://localhost:9911`}</Co
 						that authenticates.
 					</p>
 					<p>
-						The API behind the page returns the objects <C>grpcprocctl --json</C> prints:{' '}
+						The API behind the page returns the objects <C>grpcprocctl --json</C> prints,{' '}
+						<C>/api/nodes</C> with when the walk ended:{' '}
 						<C>/api/info</C>, <C>/api/nodes</C>, <C>/api/node</C>, <C>/api/processes</C>,{' '}
 						<C>/api/process</C>, <C>/api/names</C>, <C>/api/crons</C>, <C>/api/elections</C>,{' '}
 						<C>/api/sagas</C>, <C>/api/saga/runs</C>, <C>/api/saga/run</C>, and{' '}

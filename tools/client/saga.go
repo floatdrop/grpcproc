@@ -84,9 +84,9 @@ type SagaQuery struct {
 	AfterSaga, AfterID string
 }
 
-// SagaEngines describes the saga engines of node, or of every node
-// reachable from this one when node is empty, in the order Cluster finds
-// the nodes and by PID on each.
+// SagaEngines describes the saga engines of node, or of every node Cluster
+// finds that answers when node is empty, in Cluster's order and by PID on
+// each.
 func (c *Client) SagaEngines(ctx context.Context, node string) ([]SagaEngineView, error) {
 	nodes, err := c.nodesOf(ctx, node)
 	if err != nil {
@@ -105,19 +105,19 @@ func (c *Client) SagaEngines(ctx context.Context, node string) ([]SagaEngineView
 	return out, nil
 }
 
-// nodesOf is node, or when it is empty every node reachable from this one
-// that answered.
+// nodesOf is node, or when it is empty every node Cluster finds that
+// answers.
 func (c *Client) nodesOf(ctx context.Context, node string) ([]string, error) {
 	if node != "" {
 		return []string{node}, nil
 	}
-	all, err := c.Cluster(ctx)
+	all, err := c.walkFor(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var nodes []string
 	for _, n := range all {
-		if n.Error == "" {
+		if n.Reached() {
 			nodes = append(nodes, n.Name)
 		}
 	}

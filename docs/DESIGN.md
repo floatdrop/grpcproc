@@ -815,7 +815,17 @@ answer adds the links up (`link_totals`): peers up and down, the first
 16 down by name, queued envelopes, traffic each way, by a key of the
 peers' metadata (`link_totals_by`) such as a data center, from the node's
 own `Membership`. A node of an earlier release ignores the request and
-answers in full, and a tool adds the totals up itself.
+answers in full, and a tool adds the totals up itself. `tools/client`'s
+`Cluster` takes its nodes from the `Membership` the Inspector's node
+reports, and that node's links, and asks 32 at a time, each within its
+own time limit. It asks for links only when the caller wants them for so
+few nodes (the web UI's map, up to 32), or when that node reports no
+members, as without a `Membership`, and it walks them. A node the time
+for the whole walk ran out on is unanswered, not down. 2,700 nodes in
+three data centers take 3 seconds and 1 MB (`TestScale` in
+`tools/client`). The web UI's pages share one walk, and walk again once
+five times as long as the last took has passed, at least half a second
+and at most fifteen.
 
 `Query` is how such an Inspector still lets a tool ask a process something
 that `WithInspect` cannot answer, because it takes a question or reads

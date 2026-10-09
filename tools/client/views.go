@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/floatdrop/grpcproc"
+	"github.com/floatdrop/grpcproc/inspect"
 )
 
 // NodeView is a node as grpcprocctl shows it and its MCP tools return it.
@@ -17,9 +18,53 @@ type NodeView struct {
 	Spawned     uint64            `json:"spawned"`
 	Exited      uint64            `json:"exited"`
 	DeadLetters uint64            `json:"dead_letters" jsonschema:"messages that could not be delivered"`
-	Links       []LinkView        `json:"links,omitempty"`
+	Links       []LinkView        `json:"links,omitzero" jsonschema:"absent when only added up, in link_totals"`
+	LinkTotals  []LinkTotalsView  `json:"link_totals,omitempty" jsonschema:"its links added up, by a key of its peers' metadata or all together"`
 	Members     []MemberView      `json:"members,omitempty" jsonschema:"the nodes its Config.Membership reports up, by name: the cluster as its discovery sees it, linked or not; none without a Membership"`
 	Error       string            `json:"error,omitempty" jsonschema:"why the node could not be inspected"`
+	Unanswered  bool              `json:"unanswered,omitzero" jsonschema:"the time to describe the cluster ran out before this node was asked, or answered: not known to be down"`
+}
+
+// NotAnswered is what to show for an Unanswered node where an error goes.
+const NotAnswered = "not answered in time"
+
+// Problem says why the node is not described: its Error, or NotAnswered.
+func (v NodeView) Problem() string {
+	if v.Unanswered {
+		return NotAnswered
+	}
+	return v.Error
+}
+
+// Reached is whether the node answered.
+func (v NodeView) Reached() bool { return v.Error == "" && !v.Unanswered }
+
+// LinkTotalsView is a node's links with a group of its peers, added up.
+type LinkTotalsView struct {
+	Group            string   `json:"group,omitempty" jsonschema:"the peers' value of the metadata key the links are grouped by; empty for peers without it, and for all of them when not grouped"`
+	Peers            int      `json:"peers" jsonschema:"peers with a link either way"`
+	PeersDown        int      `json:"peers_down,omitzero" jsonschema:"peers whose every link is down"`
+	Outbound         int      `json:"outbound"`
+	OutboundUp       int      `json:"outbound_up"`
+	OutboundDown     int      `json:"outbound_down,omitzero"`
+	Inbound          int      `json:"inbound"`
+	MessagesSent     uint64   `json:"messages_sent"`
+	BytesSent        uint64   `json:"bytes_sent"`
+	MessagesReceived uint64   `json:"messages_received"`
+	BytesReceived    uint64   `json:"bytes_received"`
+	Queued           int      `json:"queued,omitzero" jsonschema:"messages waiting to be written to these peers"`
+	QueuedBytes      int      `json:"queued_bytes,omitzero"`
+	Reconnects       uint64   `json:"reconnects,omitzero"`
+	Down             []string `json:"down,omitempty" jsonschema:"the first of the peers that are down, by name, at most 16"`
+}
+
+func linkTotalsView(t inspect.LinkTotals) LinkTotalsView {
+	return LinkTotalsView{
+		Group: t.Group, Peers: t.Peers, PeersDown: t.PeersDown,
+		Outbound: t.Outbound, OutboundUp: t.OutboundUp, OutboundDown: t.OutboundDown, Inbound: t.Inbound,
+		MessagesSent: t.MessagesSent, BytesSent: t.BytesSent, MessagesReceived: t.MessagesReceived, BytesReceived: t.BytesReceived,
+		Queued: t.Queued, QueuedBytes: t.QueuedBytes, Reconnects: t.Reconnects, Down: t.Down,
+	}
 }
 
 // MemberView is a node as a node's Membership reports it.
@@ -127,6 +172,7 @@ func (c *Client) nodeView(n grpcproc.NodeInfo) NodeView {
 		Name: n.ID.Name, Incarnation: n.ID.Incarnation, Advertise: n.Advertise, Metadata: n.Metadata,
 		Uptime: c.since(n.StartedAt), Processes: n.Processes,
 		Spawned: n.Spawned, Exited: n.Exited, DeadLetters: n.DeadLetters,
+		Links: []LinkView{},
 	}
 	for _, l := range n.Links {
 		dir := "in"

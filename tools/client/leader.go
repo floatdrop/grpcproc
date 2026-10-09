@@ -35,12 +35,12 @@ type ElectorView struct {
 	Error       string   `json:"error,omitempty" jsonschema:"why the node could not be asked"`
 }
 
-// Election describes the election called cluster on every node reachable
-// from this one that takes part in it, in the order Cluster finds them. A
-// node that runs no elector for it is left out; one that cannot be asked is
-// listed with its Error.
+// Election describes the election called cluster on every node Cluster
+// finds that takes part in it, in Cluster's order. A node that runs no
+// elector for it is left out; one that cannot be asked is listed with its
+// Error.
 func (c *Client) Election(ctx context.Context, cluster string) ([]ElectorView, error) {
-	nodes, err := c.Cluster(ctx)
+	nodes, err := c.walkFor(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -59,19 +59,19 @@ type ElectionView struct {
 	Electors []ElectorView `json:"electors"`
 }
 
-// Elections finds every grpcproc/leader election that a node reachable from
-// this one takes part in, by the names its electors are registered under,
+// Elections finds every grpcproc/leader election that a node Cluster finds
+// takes part in, by the names its electors are registered under,
 // and describes each as Election does, in order of name. An election whose
 // electors all exit while it is asked is listed with none.
 func (c *Client) Elections(ctx context.Context) ([]ElectionView, error) {
-	nodes, err := c.Cluster(ctx)
+	nodes, err := c.walkFor(ctx)
 	if err != nil {
 		return nil, err
 	}
 	prefix := leader.ElectorName("")
 	var names []string
 	for _, n := range nodes {
-		if n.Error != "" {
+		if !n.Reached() {
 			continue
 		}
 		ps, err := c.Processes(ctx, n.Name, Filter{Name: prefix})
@@ -98,8 +98,8 @@ func (c *Client) Elections(ctx context.Context) ([]ElectionView, error) {
 func (c *Client) election(ctx context.Context, nodes []NodeView, cluster string) []ElectorView {
 	out := []ElectorView{}
 	for _, n := range nodes {
-		if n.Error != "" {
-			out = append(out, ElectorView{Node: n.Name, Error: n.Error})
+		if !n.Reached() {
+			out = append(out, ElectorView{Node: n.Name, Error: n.Problem()})
 			continue
 		}
 		resp, err := c.rpc.GetProcess(ctx, &inspectv1.GetProcessRequest{Node: n.Name, Target: electorOf(cluster), Inspect: true})

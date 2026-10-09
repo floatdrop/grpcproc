@@ -24,6 +24,26 @@ func TestBusy(t *testing.T) {
 	}
 }
 
+func TestPeersAndProblem(t *testing.T) {
+	many := client.NodeView{LinkTotals: []client.LinkTotalsView{
+		{Group: "east", Peers: 20, PeersDown: 18, Down: []string{"e1", "e2"}},
+		{Group: "west", Peers: 3},
+	}}
+	for n, want := range map[*client.NodeView]string{
+		{}: "", {LinkTotals: []client.LinkTotalsView{{Peers: 2}}}: "2 up", &many: "5 up, 18 down: e1,e2,…",
+	} {
+		if got := peers(*n); got != want {
+			t.Errorf("peers(%+v) = %q, want %q", n.LinkTotals, got, want)
+		}
+	}
+	if got := (client.NodeView{Unanswered: true}).Problem(); got != client.NotAnswered {
+		t.Error(got)
+	}
+	if got := (client.NodeView{Error: "refused"}).Problem(); got != "refused" {
+		t.Error(got)
+	}
+}
+
 func TestLoopback(t *testing.T) {
 	for addr, want := range map[string]bool{
 		"localhost:9911": true, "127.0.0.1:9911": true, "[::1]:9911": true,

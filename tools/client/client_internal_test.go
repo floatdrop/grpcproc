@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"testing"
 	"time"
 
@@ -84,15 +85,24 @@ func TestFailuresAndOddities(t *testing.T) {
 	ctx := t.Context()
 	// A node that never started has no uptime; a peer that cannot be
 	// reached is listed with why.
-	nodes, err := c.Cluster(ctx)
+	nodes, err := c.Cluster(ctx, ClusterOptions{LinksUpTo: 4})
 	if err != nil || len(nodes) != 4 || nodes[0].Uptime != "" || nodes[0].Links[0].Age != "" || nodes[1].Name != "b" || nodes[1].Error == "" ||
 		nodes[2].Name != "c" || nodes[2].Error == "" || nodes[3].Name != "d" || nodes[3].Error == "" {
 		t.Fatalf("%+v %v", nodes, err)
+	}
+	// An Inspector of an earlier release adds no totals up: they are added
+	// up from its links.
+	if ts := nodes[0].LinkTotals; len(ts) != 1 || ts[0].Peers != 3 || ts[0].PeersDown != 2 || !slices.Equal(ts[0].Down, []string{"c", "d"}) || ts[0].Queued != 3 {
+		t.Fatalf("%+v", ts)
 	}
 	// An outbound link's queue, and when a down one is dialed again: not
 	// at all once that time has passed.
 	if up, down, due := nodes[0].Links[0], nodes[0].Links[1], nodes[0].Links[2]; up.Queued != 3 || up.QueuedBytes != 7 || up.RetryIn != "" || down.State != "down" || down.RetryIn == "" || due.RetryIn != "" {
 		t.Fatalf("%+v %+v %+v", up, down, due)
+	}
+	// A walk follows the links, and drops them past LinksUpTo.
+	if nodes, _ := c.Cluster(ctx, ClusterOptions{LinksUpTo: 3}); len(nodes) != 4 || nodes[0].Links != nil {
+		t.Fatalf("%+v", nodes)
 	}
 	if _, err := c.Node(ctx, "b"); !errors.Is(err, errFake) {
 		t.Fatal(err)
@@ -135,11 +145,124 @@ func TestFailuresAndOddities(t *testing.T) {
 	}
 	// A cluster whose first node fails is an error.
 	c.rpc = unreachable{}
-	if _, err := c.Cluster(ctx); !errors.Is(err, errFake) {
+	if _, err := c.Cluster(ctx, ClusterOptions{}); !errors.Is(err, errFake) {
 		t.Fatal(err)
 	}
 	if _, err := c.Elections(ctx); !errors.Is(err, errFake) {
 		t.Fatal(err)
+	}
+}
+
+// members answers GetNode as an Inspector of an earlier release would,
+// listing links and members whatever it is asked, for "" (node a, whose
+// Membership reports b, c and d, unless none) and b (linked to e, which
+// only b's reports), and blocks until the request ends for the others.
+type members struct {
+	inspectv1.InspectorClient
+	none bool
+}
+
+func (f members) GetNode(ctx context.Context, req *inspectv1.GetNodeRequest, _ ...grpc.CallOption) (*inspectv1.GetNodeResponse, error) {
+	member := func(name, dc string) *inspectv1.Member {
+		return &inspectv1.Member{Id: &inspectv1.NodeID{Name: name, Incarnation: 7}, Addr: name + ":1", Metadata: map[string]string{"dc": dc}}
+	}
+	up := inspectv1.LinkState_LINK_STATE_UP
+	switch req.GetNode() {
+	case "":
+		info := &inspectv1.NodeInfo{
+			Id:      &inspectv1.NodeID{Name: "a"},
+			Links:   []*inspectv1.Link{{Peer: &inspectv1.NodeID{Name: "b"}, Outbound: true, State: up}},
+			Members: []*inspectv1.Member{member("a", "west"), member("b", "west"), member("c", "east"), member("d", "east")},
+		}
+		if f.none {
+			info.Members = nil
+		}
+		return &inspectv1.GetNodeResponse{Node: info}, nil
+	case "b":
+		return &inspectv1.GetNodeResponse{Node: &inspectv1.NodeInfo{
+			Id: &inspectv1.NodeID{Name: "b"},
+			Links: []*inspectv1.Link{
+				{Peer: &inspectv1.NodeID{Name: "a"}, State: up, Messages: 2},
+				{Peer: &inspectv1.NodeID{Name: "e"}, Outbound: true, State: up, Messages: 5},
+			},
+			Members: []*inspectv1.Member{member("b", "west"), member("e", "east")},
+		}}, nil
+	}
+	<-ctx.Done()
+	return nil, status.FromContextError(ctx.Err()).Err()
+}
+
+func TestClusterOfMembers(t *testing.T) {
+	c := &Client{rpc: members{}, now: time.Now}
+	// Totals left out are added up by the peers' metadata as the first
+	// node's Membership reports it; only the first node lists members, and
+	// links only up to LinksUpTo nodes.
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	// Nor are a node's peers followed, only the first's: e is not listed.
+	nodes, err := c.Cluster(ctx, ClusterOptions{GroupLinksBy: "dc", NodeTimeout: time.Millisecond, Parallel: 2})
+	if err != nil || len(nodes) != 4 {
+		t.Fatalf("%+v %v", nodes, err)
+	}
+	a, b, cn := nodes[0], nodes[1], nodes[2]
+	if len(a.Members) != 4 || a.Links != nil || len(b.Members) != 0 || b.Links != nil {
+		t.Fatalf("a %+v\nb %+v", a, b)
+	}
+	if len(a.LinkTotals) != 1 || a.LinkTotals[0].Group != "west" {
+		t.Fatalf("a's totals, by its own members: %+v", a.LinkTotals)
+	}
+	// e is in no group: the Membership does not report it.
+	if len(b.LinkTotals) != 2 || b.LinkTotals[0].Group != "" || b.LinkTotals[0].MessagesSent != 5 || b.LinkTotals[1].Group != "west" || b.LinkTotals[1].MessagesReceived != 2 {
+		t.Fatalf("%+v", b.LinkTotals)
+	}
+	// A node that does not answer in NodeTimeout is an error, shown as its
+	// Membership reports it.
+	if cn.Name != "c" || cn.Unanswered || cn.Error == "" || cn.Reached() || cn.Advertise != "c:1" || cn.Metadata["dc"] != "east" {
+		t.Fatalf("%+v", cn)
+	}
+	// One ctx ended on, asked or waiting to be, is unanswered.
+	ctx, cancel = context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	nodes, err = c.Cluster(ctx, ClusterOptions{LinksUpTo: 5, Parallel: 1})
+	// b answers with its links, unless c or d took the one slot first.
+	if err != nil || len(nodes) < 4 || nodes[0].Links == nil || nodes[1].Reached() && nodes[1].Links == nil || !nodes[1].Reached() && !nodes[1].Unanswered {
+		t.Fatalf("%+v %v", nodes, err)
+	}
+	for _, n := range nodes[2:] {
+		if !n.Unanswered || n.Error != "" || n.Reached() || n.Name != "e" && n.Incarnation != 7 {
+			t.Fatalf("%+v", n)
+		}
+	}
+	if es := c.election(t.Context(), nodes[2:3], "x"); len(es) != 1 || es[0].Error != NotAnswered {
+		t.Fatalf("%+v", es)
+	}
+	// Without a Membership, a walk: b's peer e is found, and asked, and b's
+	// links are grouped by b's own members.
+	c.rpc = members{none: true}
+	nodes, err = c.Cluster(t.Context(), ClusterOptions{GroupLinksBy: "dc", NodeTimeout: time.Millisecond, Parallel: -1})
+	if err != nil || len(nodes) != 3 || nodes[2].Name != "e" || nodes[2].Error == "" {
+		t.Fatalf("%+v %v", nodes, err)
+	}
+	if ts := nodes[1].LinkTotals; len(ts) != 2 || ts[1].Group != "east" || ts[1].MessagesSent != 5 {
+		t.Fatalf("%+v", ts)
+	}
+}
+
+// A walk for a caller takes half of what ctx has left, and a node that
+// hangs a quarter, so that what the caller does next has the other half.
+func TestWalkFor(t *testing.T) {
+	c := &Client{rpc: members{}, now: time.Now}
+	ctx, cancel := context.WithTimeout(t.Context(), 400*time.Millisecond)
+	defer cancel()
+	begin := time.Now()
+	nodes, err := c.walkFor(ctx)
+	if took := time.Since(begin); err != nil || len(nodes) != 4 || took < 100*time.Millisecond || took > 300*time.Millisecond {
+		t.Fatalf("%v: %+v %v", took, nodes, err)
+	}
+	for _, n := range nodes[2:] {
+		if n.Reached() {
+			t.Fatalf("%+v", n)
+		}
 	}
 }
 

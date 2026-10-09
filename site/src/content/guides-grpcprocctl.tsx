@@ -91,10 +91,14 @@ monitors:              2
 			body: (
 				<>
 					<p>
-						<C>nodes</C> walks the cluster from the node it asks, following links and, on nodes
-						with a <C>Config.Membership</C>, the members it reports, so a node nothing has talked to yet
-						is found too, and says which it could not reach, with each node's metadata, its version say, which follows a
-						rolling deploy node by node. <C>node [name]</C> shows one: its processes, dead letters, and
+						<C>nodes</C> lists every node the one it asks knows of: the members its{' '}
+						<C>Config.Membership</C> reports, so a node nothing has talked to yet is found too, and
+						those it is linked to; when it reports none, as without a Membership, it walks the links
+						of every node it finds. With <C>--json</C> it also lists each node's links, up to 32
+						nodes.
+						It asks 32 nodes at a time, each within <C>--timeout</C>, lists those not answered
+						after 30 seconds, or <C>--timeout</C> if longer, as such, and says which it could not reach, with each node's metadata, its version say, which follows a rolling deploy node
+						by node, and its peers: how many are up, and those down by name. <C>node [name]</C> shows one: its processes, dead letters, and
 						each link with its traffic, the envelopes queued on it and their bytes, and its last
 						error. A down outbound link with a <C>RETRY IN</C> is a peer whose dials failed: sends to
 						it fail at once until then.
@@ -258,7 +262,7 @@ orders  order-17  charging  stuck   5         1               2026-10-05T11:49:2
 					head={['Command', '']}
 					rows={[
 						[<C>node [name]</C>, 'Counters and links of a node.'],
-						[<C>nodes</C>, "Every node reachable from this one, following links and the members a node's Membership reports."],
+						[<C>nodes</C>, "Every node this one knows of, by the members its Membership reports and by links, with its peers up and down."],
 						[
 							<C>ps</C>,
 							<>

@@ -79,8 +79,9 @@ func TestAgainstACluster(t *testing.T) {
 	if err != nil || n.Name != "a" || n.Processes < 5 || len(n.Links) != 2 || n.Links[0].Peer != "b" || n.Uptime == "" {
 		t.Fatalf("%+v %v", n, err)
 	}
-	nodes, err := c.Cluster(ctx)
-	if err != nil || len(nodes) != 2 || nodes[1].Name != "b" {
+	// Without a Membership, a walk over the links, which it lists.
+	nodes, err := c.Cluster(ctx, client.ClusterOptions{LinksUpTo: 2})
+	if err != nil || len(nodes) != 2 || nodes[1].Name != "b" || len(nodes[1].Links) == 0 || len(nodes[0].LinkTotals) != 1 || nodes[0].LinkTotals[0].Peers != 1 {
 		t.Fatalf("%+v %v", nodes, err)
 	}
 
@@ -97,9 +98,12 @@ func TestAgainstACluster(t *testing.T) {
 			t.Fatalf("a's members: %+v", n.Members)
 		}
 	}
-	nodes, err = qc.Cluster(ctx)
+	nodes, err = qc.Cluster(ctx, client.ClusterOptions{NodeTimeout: time.Second})
 	var got []string
 	for _, n := range nodes {
+		if n.Links != nil || n.Name != "a" && n.Members != nil || n.Reached() && n.Name != "quiet" && len(n.LinkTotals) == 0 {
+			t.Errorf("links past LinksUpTo, or members past the first node: %+v", n)
+		}
 		state := "ok"
 		if n.Error != "" {
 			state = "unreachable"

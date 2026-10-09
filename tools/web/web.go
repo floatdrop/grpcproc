@@ -53,19 +53,28 @@ type Options struct {
 const maxWait = 10 * time.Second
 
 type server struct {
-	c *client.Client
-	o Options
+	c     *client.Client
+	o     Options
+	nodes *walks
 }
 
 // New returns the page and its API over c.
 func New(c *client.Client, o Options) http.Handler {
 	o.Timeout = cmp.Or(max(o.Timeout, 0), 5*time.Second)
 	s := &server{c: c, o: o}
+	s.nodes = &walks{walk: func(ctx context.Context) ([]client.NodeView, error) {
+		ctx, cancel := context.WithTimeout(ctx, max(client.WalkTime, o.Timeout))
+		defer cancel()
+		return c.Cluster(ctx, client.ClusterOptions{LinksUpTo: client.LinksUpTo, NodeTimeout: o.Timeout})
+	}}
 	ui, _ := fs.Sub(files, "ui") // ui is a directory of files: Sub cannot fail
 	mux := http.NewServeMux()
 	mux.Handle("GET /", http.FileServerFS(ui))
 	mux.HandleFunc("GET /api/info", s.read(s.info))
-	mux.HandleFunc("GET /api/nodes", s.read(func(ctx context.Context, _ url.Values) (any, error) { return s.c.Cluster(ctx) }))
+	mux.HandleFunc("GET /api/nodes", func(w http.ResponseWriter, r *http.Request) {
+		v, err := s.nodes.get(r.Context())
+		reply(w, v, err)
+	})
 	mux.HandleFunc("GET /api/node", s.read(func(ctx context.Context, q url.Values) (any, error) { return s.c.Node(ctx, q.Get("node")) }))
 	mux.HandleFunc("GET /api/processes", s.read(s.processes))
 	mux.HandleFunc("GET /api/process", s.read(s.process))
