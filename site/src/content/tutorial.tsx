@@ -103,9 +103,10 @@ export const tutorial: Doc = {
 						{treeText}
 					</Code>
 					<p>
-						No service knows where the others run. A conversation reaches the model through the
-						models' contract and the node names the placement gives, which is the part of the
-						configuration that says which nodes run each service. The runtime as one program and as
+						No service knows where the others run. A conversation reaches the tools through their
+						contract and the node the placement gives, the part of the configuration that says which
+						node runs each service, and the model through the models' contract and the nodes it finds
+						in their process group. The runtime as one program and as
 						four differ in two things only: which services each entry point composes, and what each
 						program is told.
 					</p>

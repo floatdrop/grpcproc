@@ -7,10 +7,14 @@ import (
 )
 
 const (
-	// Service is the models service's name in a deployment's placement.
+	// Service is the models service's name. Its nodes are not placed: they
+	// are found in Group.
 	Service = "models"
 	// SchedulerName is the name a GPU node's scheduler is registered under.
 	SchedulerName = "models"
+	// Group is the process group every GPU node's scheduler is in: where the
+	// conversations find the nodes that run the model.
+	Group = "models"
 	// ToolFailed begins the text of a tool's turn when the tool failed: what
 	// follows is why.
 	ToolFailed = "failed: "

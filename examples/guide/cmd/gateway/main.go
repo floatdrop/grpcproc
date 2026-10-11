@@ -1,6 +1,6 @@
 // Command gateway is the node that faces browsers: the web front and the
-// conversations. Its configuration places the models and the tools on the
-// other nodes.
+// conversations. Its configuration places the tools on another node; the
+// conversations find the models in their group.
 package main
 
 import (

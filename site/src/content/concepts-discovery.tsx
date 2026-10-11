@@ -1,4 +1,4 @@
-import platform from '../../../examples/guide/internal/platform/platform.go?raw';
+import platformCluster from '../../../examples/guide/internal/platform/cluster.go?raw';
 
 import { Code, region } from '../code.tsx';
 import { A, C, Table } from '../components/prose.tsx';
@@ -69,10 +69,11 @@ type MemberEvent struct {
 					<p>
 						<C>StaticResolver</C> is a map from node name to address, and <C>ResolverFunc</C> adapts
 						a function. Either is enough for a fixed set of programs whose addresses are in their
-						configuration. The tutorial's platform builds one from what the program is told:
+						configuration. The tutorial's platform builds one from what the program is told, or,
+						told an etcd, takes <C>grpcproc/etcd</C>'s resolver, registrar and membership instead:
 					</p>
-					<Code caption="examples/guide/internal/platform/platform.go">
-						{region(platform, /^\/\/ peers resolves the other nodes/, /^}/)}
+					<Code caption="examples/guide/internal/platform/cluster.go">
+						{region(platformCluster, /^func newCluster/, /^}/)}
 					</Code>
 					<p>
 						<C>Resolve</C> runs once per dial, not per message: a node keeps its stream to a peer

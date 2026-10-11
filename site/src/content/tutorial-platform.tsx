@@ -24,8 +24,10 @@ export const tutorialPlatform: Doc = {
 					<p>
 						Every program runs the same platform. It starts from the configuration, the one thing
 						the programs of a deployment differ in: which node this is, where it listens, where the
-						other nodes are, which nodes run each service it does not, and what its peers may ask of
-						it. <C>Where</C> and <C>All</C> are what the conversations and the front ask.
+						other nodes are, as a list or in etcd, which node runs each service it does not, and what
+						its peers may ask of it. <C>Where</C> is what the conversations and the front ask. The
+						nodes that run a model are not placed: the conversations find them in a{' '}
+						<A to="tutorial/deployments/#groups">process group</A>.
 					</p>
 					<Code caption="internal/platform/config.go">{config}</Code>
 				</>
@@ -62,8 +64,8 @@ export const tutorialPlatform: Doc = {
 						the link, or returns the <A to="guides/configuration/">policy</A> that judges every
 						send, call and monitor that arrives on it. The platform makes it from the
 						configuration. A peer named untrusted gets <C>grpcproc.Export()</C> with no names,
-						which allows nothing; any other peer may reach the processes this node exports, or all
-						of them if it names none.
+						which allows nothing; any other peer may reach the processes this node exports, and the
+						scope of its process groups, or all of them if it names none.
 					</p>
 					<Code caption="internal/platform/platform.go">{region(platform, /^\/\/ admit says what each peer may ask/, /^}/)}</Code>
 					<Drawing caption="a peer that answers, and may ask nothing">

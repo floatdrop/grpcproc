@@ -66,7 +66,9 @@ export const tutorialTesting: Doc = {
 						as one. <C>gpu-1</C> gets a model that says two words and stalls.
 					</p>
 					<p>
-						The test follows a conversation, says something, and waits for those two words. It pins
+						Before it speaks, the test waits until the gateway's copy of the <C>models</C> group has
+						both GPU nodes, so that the conversation asks <C>gpu-1</C> first, as the group orders
+						them. It then follows a conversation, says something, and waits for those two words. It pins
 						what each node runs at that moment, stops <C>gpu-1</C>, and pins what the follower is
 						sent from then on. Last, a process on the sandbox tries to speak to the conversation,
 						and must be told there is none.

@@ -1,4 +1,7 @@
 gateway
+├── groups/default                     groups
+│   ├── ·                              groups relay
+│   └── ·                              groups relay
 ├── root                               supervisor
 │   └── conversations                  supervisor
 │       └── conversation/1             conversation
@@ -6,12 +9,18 @@ gateway
 └── ·                                  follower
 
 gpu-1
+├── groups/default  groups
+│   ├── ·           groups relay
+│   └── ·           groups relay
 └── root            supervisor
     └── models-sup  supervisor
         └── models  *modelsv1.Generate
             └── ·   generation
 
 gpu-2
+├── groups/default  groups
+│   ├── ·           groups relay
+│   └── ·           groups relay
 └── root            supervisor
     └── models-sup  supervisor
         └── models  *modelsv1.Generate

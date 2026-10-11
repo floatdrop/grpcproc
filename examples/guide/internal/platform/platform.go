@@ -19,6 +19,7 @@ import (
 
 	"github.com/floatdrop/grpcproc"
 	"github.com/floatdrop/grpcproc/actor"
+	"github.com/floatdrop/grpcproc/groups"
 	"github.com/floatdrop/grpcproc/inspect"
 )
 
@@ -29,7 +30,9 @@ import (
 // services' trees stop first, the node closes its links after them, and the
 // server stops last.
 func Module(s *di.Scope) {
-	s.Wire[grpcproc.Resolver](peers)
+	s.Wire[*cluster](newCluster).
+		// After the node, which registered in it.
+		OnStop(func(_ context.Context, c *cluster) error { return c.close() })
 	s.Wire[net.Listener](listen).
 		// Closed here too, for a start that fails before the server serves.
 		OnStop(func(_ context.Context, ln net.Listener) error { _ = ln.Close(); return nil })
@@ -58,6 +61,8 @@ func Module(s *di.Scope) {
 	s.Wire[*grpcproc.Node](newNode).
 		Eager().
 		OnStop(func(ctx context.Context, n *grpcproc.Node) error { return n.Stop(ctx) })
+	// Built only for the services that join or read a group.
+	s.Wire[*groups.Scope](newScope)
 	s.Wire[*inspect.Server](newInspector).
 		Eager().
 		OnStop(func(_ context.Context, i *inspect.Server) error { return i.Close() })
@@ -68,12 +73,6 @@ func Module(s *di.Scope) {
 		Go(func(ctx context.Context, r *Root) error { return r.wait(ctx) }).
 		OnStop(func(ctx context.Context, r *Root) error { return r.stop(ctx) })
 }
-
-// peers resolves the other nodes from the configuration. A deployment with
-// a registry takes its resolver from grpcproc/etcd instead, with the node's
-// Registrar and Membership, and advertises an address peers can dial; the
-// services do not change.
-func peers(cfg Config) grpcproc.Resolver { return grpcproc.StaticResolver(cfg.Peers) }
 
 // listen binds the gRPC port when the program starts, so a busy one fails
 // the start rather than the first peer's dial.
@@ -107,12 +106,14 @@ func newServer(ln net.Listener) *server {
 	return &server{grpc: grpc.NewServer(grpc.KeepaliveParams(params), grpc.KeepaliveEnforcementPolicy(policy)), ln: ln}
 }
 
-func newNode(cfg Config, r grpcproc.Resolver, srv *server, log *slog.Logger) (*grpcproc.Node, error) {
+func newNode(cfg Config, c *cluster, srv *server, log *slog.Logger) (*grpcproc.Node, error) {
 	n, err := grpcproc.NewNode(grpcproc.Config{
 		Admit:       admit(cfg),
 		Name:        cfg.Node,
 		Advertise:   cfg.Listen,
-		Resolver:    r,
+		Resolver:    c.resolver,
+		Registrar:   c.registrar,
+		Membership:  c.membership,
 		DialOptions: dialOptions(),
 		Logger:      log,
 	})
@@ -125,17 +126,18 @@ func newNode(cfg Config, r grpcproc.Resolver, srv *server, log *slog.Logger) (*g
 
 // admit says what each peer may ask of this node, from the configuration:
 // an untrusted peer nothing, so that it only answers what this node asks
-// it; any other the processes this node exports, or anything if it names
-// none. Nothing here checks who a peer is, so a peer is whoever it says it
+// it; any other the processes this node exports, and its groups' scope, or
+// anything if it names none. Nothing here checks who a peer is, so a peer is whoever it says it
 // is: plaintext keeps the guide short. A real deployment first checks that
 // the peer's certificate names its node, as grpcproc.AdmitTLS does.
 func admit(cfg Config) func(context.Context, grpcproc.NodeID) (grpcproc.Policy, error) {
+	exported := grpcproc.Export(append(slices.Clone(cfg.Export), groups.ScopeName(scope))...)
 	return func(_ context.Context, peer grpcproc.NodeID) (grpcproc.Policy, error) {
 		switch {
 		case slices.Contains(cfg.Untrusted, peer.Name):
 			return grpcproc.Export(), nil
 		case len(cfg.Export) > 0:
-			return grpcproc.Export(cfg.Export...), nil
+			return exported, nil
 		}
 		return nil, nil
 	}

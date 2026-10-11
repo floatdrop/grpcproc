@@ -18,6 +18,7 @@ import (
 	conversationsv1 "github.com/floatdrop/grpcproc/examples/guide/proto/conversations/v1"
 	modelsv1 "github.com/floatdrop/grpcproc/examples/guide/proto/models/v1"
 	toolsv1 "github.com/floatdrop/grpcproc/examples/guide/proto/tools/v1"
+	"github.com/floatdrop/grpcproc/groups"
 	"github.com/floatdrop/grpcproc/pubsub"
 )
 
@@ -41,9 +42,16 @@ type scheduler struct {
 	actor.CallsOnly[*modelsv1.Generate]
 	model Model
 	slots Slots
+	scope *groups.Scope
 	// running is the calls being answered, by the monitor of the process
 	// that answers each.
 	running map[grpcproc.Ref]grpcproc.Msg[*modelsv1.Generate]
+}
+
+// Init joins the scheduler to the models group, where the conversations
+// find it: it is in it until it exits, and a restart joins again.
+func (s *scheduler) Init(p *grpcproc.Process[*modelsv1.Generate]) error {
+	return s.scope.Join(p.Context(), p, modelsv1.Group, p.PID())
 }
 
 func (s *scheduler) HandleCall(p *grpcproc.Process[*modelsv1.Generate], m grpcproc.Msg[*modelsv1.Generate]) (proto.Message, error) {
@@ -98,11 +106,11 @@ func generate(p *grpcproc.Process[proto.Message], model Model, m grpcproc.Msg[*m
 
 // tree is the service's supervision tree. The scheduler's dependencies come
 // from the container; Child builds a fresh actor around them at every start.
-func tree(model Model, slots Slots) actor.ChildSpec {
+func tree(model Model, slots Slots, scope *groups.Scope) actor.ChildSpec {
 	return actor.ChildSupervisor(modelsv1.Service+"-sup", actor.Spec{
 		Children: []actor.ChildSpec{
 			actor.Child(modelsv1.SchedulerName, func() *scheduler {
-				return &scheduler{model: model, slots: slots, running: map[grpcproc.Ref]grpcproc.Msg[*modelsv1.Generate]{}}
+				return &scheduler{model: model, slots: slots, scope: scope, running: map[grpcproc.Ref]grpcproc.Msg[*modelsv1.Generate]{}}
 			}),
 		},
 	})
@@ -117,4 +125,7 @@ func Module(s *di.Scope) {
 	s.Wire[actor.ChildSpec](tree).Group()
 }
 
-var _ actor.DownHandler[*modelsv1.Generate] = (*scheduler)(nil)
+var (
+	_ actor.DownHandler[*modelsv1.Generate] = (*scheduler)(nil)
+	_ actor.Initializer[*modelsv1.Generate] = (*scheduler)(nil)
+)

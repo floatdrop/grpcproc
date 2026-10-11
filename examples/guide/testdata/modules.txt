@@ -1,17 +1,19 @@
 registered directly
   provides   platform.Config, *slog.Logger
 platform.Module
-  provides   grpcproc.Resolver, net.Listener, *platform.server, *grpcproc.Node, *inspect.Server, *platform.Root
+  provides   *platform.cluster, net.Listener, *platform.server, *grpcproc.Node, *groups.Scope, *inspect.Server, *platform.Root
   needs      platform.Config ← registered directly
              *slog.Logger ← registered directly
              all of actor.ChildSpec
 models.Module
   provides   models.Model, models.Pace, models.Slots, actor.ChildSpec
+  needs      *groups.Scope ← platform.Module
 tools.Module
   provides   tools.Tools, actor.ChildSpec
 conversations.Module
   provides   conversations.History, conversations.Limits, actor.ChildSpec
   needs      platform.Config ← registered directly
+             *groups.Scope ← platform.Module
 web.Module
   provides   *web.front, *http.Server
   needs      *grpcproc.Node ← platform.Module

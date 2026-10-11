@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.yandex/di"
 	"google.golang.org/protobuf/proto"
@@ -17,6 +18,7 @@ import (
 	conversationsv1 "github.com/floatdrop/grpcproc/examples/guide/proto/conversations/v1"
 	modelsv1 "github.com/floatdrop/grpcproc/examples/guide/proto/models/v1"
 	toolsv1 "github.com/floatdrop/grpcproc/examples/guide/proto/tools/v1"
+	"github.com/floatdrop/grpcproc/groups"
 )
 
 // stalling is a model that says two words and nothing more: a GPU node
@@ -63,8 +65,9 @@ func TestCluster(t *testing.T) {
 		cfg := platform.Config{Node: n.name, Listen: peers[n.name], Peers: peers}
 		switch n.name {
 		case "gateway":
-			// Where the other services run, and whom not to trust.
-			cfg.Placement = map[string]string{modelsv1.Service: "gpu-1+gpu-2", toolsv1.Service: "sandbox"}
+			// Where the tools run, and whom not to trust. The models are
+			// found in their group.
+			cfg.Placement = map[string]string{toolsv1.Service: "sandbox"}
 			cfg.Untrusted = []string{"sandbox"}
 		case "sandbox":
 			cfg.Export = []string{toolsv1.RunnerName}
@@ -78,6 +81,7 @@ func TestCluster(t *testing.T) {
 		apps[n.name] = n.app
 	}
 	front := apps["gateway"]
+	awaitModels(t, front, 2)
 	events := follow(t, front.Get[*grpcproc.Node](), "gateway", "1")
 
 	if code, body := say(t, front, "1", "what is 6 * 7?"); code != http.StatusAccepted {
@@ -124,5 +128,17 @@ func TestCluster(t *testing.T) {
 		if err := <-denied; !errors.Is(err, grpcproc.ErrNoProc) {
 			t.Fatalf("the sandbox was answered %v", err)
 		}
+	}
+}
+
+// awaitModels waits until app's copy of the models group has n GPU nodes' schedulers.
+func awaitModels(t *testing.T, app *di.Scope, n int) {
+	t.Helper()
+	scope := app.Get[*groups.Scope]()
+	for deadline := time.Now().Add(10 * time.Second); len(scope.Members(modelsv1.Group)) != n; {
+		if time.Now().After(deadline) {
+			t.Fatalf("the models group has %v", scope.Members(modelsv1.Group))
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

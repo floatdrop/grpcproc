@@ -20,15 +20,19 @@ type Config struct {
 	HTTP string
 	// Peers are the gRPC addresses of the nodes it talks to, and of those
 	// that talk to it: a reply travels back on the replier's own link.
-	// PEERS, as node=addr,node=addr.
+	// PEERS, as node=addr,node=addr. Not read with Etcd.
 	Peers map[string]string
+	// Etcd is the etcd cluster the nodes find each other in, instead of
+	// Peers: each node registers its name and Listen there, and learns of
+	// the others as they come and go. ETCD, as host:port,host:port.
+	Etcd []string
 	// Placement names the node of each service that does not run here, or
 	// its nodes, for one that runs on several. PLACEMENT, as
 	// service=node,service=node+node.
 	Placement map[string]string
 	// Export names the processes this node offers its peers: they may send
-	// to, call and monitor those, and nothing else. With none, they may ask
-	// anything. EXPORT, as name,name.
+	// to, call and monitor those, and the node's groups scope, and nothing
+	// else. With none, they may ask anything. EXPORT, as name,name.
 	Export []string
 	// Untrusted names the peers that may ask nothing of this node: they
 	// answer what it asks them. UNTRUSTED, as node,node.
@@ -47,9 +51,13 @@ func (c Config) All(service string) []string {
 // Load reads the configuration from the environment. With none set, it is
 // the local deployment: one node, every service on it.
 func Load() (Config, error) {
-	peers, err := pairs("PEERS")
-	if err != nil {
-		return Config{}, err
+	etcd := list("ETCD")
+	var peers map[string]string
+	if len(etcd) == 0 {
+		var err error
+		if peers, err = pairs("PEERS"); err != nil {
+			return Config{}, err
+		}
 	}
 	placement, err := pairs("PLACEMENT")
 	if err != nil {
@@ -60,12 +68,16 @@ func Load() (Config, error) {
 		Listen:    env("LISTEN", "127.0.0.1:9100"),
 		HTTP:      env("HTTP", "127.0.0.1:8080"),
 		Peers:     peers,
+		Etcd:      etcd,
 		Placement: placement,
 		Export:    list("EXPORT"),
 		Untrusted: list("UNTRUSTED"),
 	}
 	// A service placed on a node nobody can dial fails every call to it;
-	// better to fail here.
+	// better to fail here. With etcd, a node is dialable once registered.
+	if len(cfg.Etcd) > 0 {
+		return cfg, nil
+	}
 	for service := range cfg.Placement {
 		for _, node := range cfg.All(service) {
 			if node != cfg.Node && cfg.Peers[node] == "" {

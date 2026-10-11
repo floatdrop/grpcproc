@@ -2,10 +2,13 @@ import gateway from '../../../examples/guide/cmd/gateway/main.go?raw';
 import gpu from '../../../examples/guide/cmd/gpu/main.go?raw';
 import local from '../../../examples/guide/cmd/local/main.go?raw';
 import sandbox from '../../../examples/guide/cmd/sandbox/main.go?raw';
+import conversations from '../../../examples/guide/internal/conversations/conversations.go?raw';
+import platformCluster from '../../../examples/guide/internal/platform/cluster.go?raw';
 import clusterTree from '../../../examples/guide/testdata/cluster.txt?raw';
+import etcdLog from '../../../examples/guide/testdata/etcd.txt?raw';
 import localTree from '../../../examples/guide/testdata/local.txt?raw';
 
-import { Code } from '../code.tsx';
+import { Code, region } from '../code.tsx';
 import { Drawing } from '../components/Figure.tsx';
 import { ClusterPicture, LocalPicture } from '../components/diagrams.tsx';
 import { A, C, Ext } from '../components/prose.tsx';
@@ -25,10 +28,22 @@ NODE=gpu-1 LISTEN=127.0.0.1:9102 EXPORT=models UNTRUSTED=sandbox bin/gpu &
 NODE=gpu-2 LISTEN=127.0.0.1:9103 EXPORT=models UNTRUSTED=sandbox bin/gpu &
 NODE=sandbox LISTEN=127.0.0.1:9104 EXPORT=tools bin/sandbox &
 NODE=gateway LISTEN=127.0.0.1:9101 UNTRUSTED=sandbox \\
-  PLACEMENT=models=gpu-1+gpu-2,tools=sandbox bin/gateway &
+  PLACEMENT=tools=sandbox bin/gateway &
 sleep 1
 curl -N localhost:8080/conversations/1/events &
 curl -d 'what is 6 * 7?' localhost:8080/conversations/1`;
+
+const etcdShell = `etcd --data-dir /tmp/agents-etcd &      # or any etcd you have
+export ETCD=127.0.0.1:2379
+NODE=gpu-1 LISTEN=127.0.0.1:9102 EXPORT=models UNTRUSTED=sandbox bin/gpu &
+NODE=gpu-2 LISTEN=127.0.0.1:9103 EXPORT=models UNTRUSTED=sandbox bin/gpu &
+NODE=sandbox LISTEN=127.0.0.1:9104 EXPORT=tools bin/sandbox &
+NODE=gateway LISTEN=127.0.0.1:9101 UNTRUSTED=sandbox \\
+  PLACEMENT=tools=sandbox bin/gateway &
+sleep 1
+curl -d 'what is 6 * 7?' localhost:8080/conversations/1
+# one GPU node more, which the gateway finds in etcd
+NODE=gpu-3 LISTEN=127.0.0.1:9105 EXPORT=models UNTRUSTED=sandbox bin/gpu &`;
 
 export const tutorialDeployments: Doc = {
 	path: 'tutorial/deployments/',
@@ -86,10 +101,11 @@ export const tutorialDeployments: Doc = {
 					<Code caption="cmd/gpu/main.go">{gpu}</Code>
 					<Code caption="cmd/sandbox/main.go">{sandbox}</Code>
 					<p>
-						The gateway's placement puts the models on <C>gpu-1</C> and <C>gpu-2</C> and the tools
-						on <C>sandbox</C>, so a conversation's addresses name those nodes; nothing in the
-						conversation changed. A second GPU is the same program started under another name. The
-						other nodes are told the gateway's address because a reply travels back on the
+						The gateway's placement puts the tools on <C>sandbox</C>, so a conversation's runner
+						names that node. The GPU nodes are not placed: each one's scheduler joins the{' '}
+						<C>models</C> group as it starts, and the conversations find them in it, as{' '}
+						<A to="#groups">below</A>. A second GPU is the same program started under another name.
+						The other nodes are told the gateway's address because a reply travels back on the
 						replier's own link, and a generation publishes its tokens to a topic there. A placement
 						naming a node not among the peers is refused at start.
 					</p>
@@ -97,9 +113,10 @@ export const tutorialDeployments: Doc = {
 						<ClusterPicture />
 					</Drawing>
 					<p>
-						Each node's tree holds only the services its entry point composed. This is the cluster
-						in the middle of an answer: the conversation on the gateway, and its generation in a
-						slot of <C>gpu-1</C>.
+						Each node's tree holds only the services its entry point composed, and, where a service
+						joins or reads a group, the node's groups scope, with a relay to each node it asks. This
+						is the cluster in the middle of an answer: the conversation on the gateway, and its
+						generation in a slot of <C>gpu-1</C>.
 					</p>
 					<Code lang="txt" caption="what each node runs">
 						{clusterTree}
@@ -107,27 +124,76 @@ export const tutorialDeployments: Doc = {
 					<p>
 						<C>EXPORT</C> and <C>UNTRUSTED</C> say what each node lets its peers ask, as{' '}
 						<A to="tutorial/platform/#admit">the platform</A> reads them: a GPU node offers its
-						scheduler, the sandbox its runner, and the gateway and the GPU nodes take no requests
-						from the sandbox.
+						scheduler and its groups scope, the sandbox its runner, and the gateway and the GPU nodes
+						take no requests from the sandbox.
 					</p>
 					<Code lang="sh" caption="shell">
 						{clusterShell}
 					</Code>
 					<p>
 						Stop <C>gpu-1</C> with <C>kill %1</C> and the next answer comes from <C>gpu-2</C>; stop
-						it while an answer streams, and the answer starts over there. While dials to a node
-						fail, calls to it fail at once, and it is dialed again within five seconds, so a
-						restarted GPU node takes generations again soon after it starts.
+						it while an answer streams, and the answer starts over there. A stopped GPU node leaves
+						the gateway's copy of the <C>models</C> group, and is asked nothing more; restarted, its
+						scope says hello to the gateway's, its scheduler joins the group again, and it takes
+						generations from then on.
 					</p>
+				</>
+			)
+		},
+		{
+			id: 'groups',
+			title: 'Finding the GPU nodes',
+			body: (
+				<>
 					<p>
-						Here the peers are a static list. For nodes that come and go,{' '}
+						The nodes that run a model are a <A to="guides/groups/">process group</A>. The platform
+						starts the node's groups scope for the services that need one, the models, which join,
+						and the conversations, which read: the sandbox runs none. A scope asks the nodes the
+						node knows of, but those it does not trust, which may ask it nothing anyway.
+					</p>
+					<Code caption="internal/platform/cluster.go">{region(platformCluster, /^\/\/ newScope is the node's part/, /^}/)}</Code>
+					<p>
+						A conversation takes the group's nodes as it starts each answer, in the order it tries
+						them: those it knew, as it left them, so a node that failed stays at the back, then any
+						that joined since. With none known yet, as for a gateway that has just started, it waits
+						as if every one were busy.
+					</p>
+					<Code caption="internal/conversations/conversations.go">{region(conversations, /^\/\/ nodes is the nodes that run a model/, /^}/)}</Code>
+				</>
+			)
+		},
+		{
+			id: 'etcd',
+			title: 'With etcd',
+			body: (
+				<>
+					<p>
+						With a static list, a node is still told every other node's address. With{' '}
+						<C>ETCD</C>, the nodes find each other in etcd instead:{' '}
 						<Ext href={`${REPO}/tree/main/etcd`}>
 							<C>grpcproc/etcd</C>
 						</Ext>{' '}
-						publishes each node under an etcd lease and resolves the others through it; the platform
-						takes its resolver, registrar and membership from there, and the services do not
-						change. The <A to="guides/etcd/">etcd</A> guide shows how.
+						registers each node's name and <C>LISTEN</C> address under a lease as it starts,
+						resolves the others from there, and reports them coming and going, and <C>PEERS</C> is not
+						read. The platform takes the node's resolver, registrar and membership from it; the
+						services do not change. The <A to="guides/etcd/">etcd</A> guide has the rest.
 					</p>
+					<Code caption="internal/platform/cluster.go">{region(platformCluster, /^\/\/ cluster is how the node finds the others/, /^}/) + '\n\n' + region(platformCluster, /^func newCluster/, /^}/)}</Code>
+					<p>
+						The gateway is told nothing of the GPU nodes now. Its scope learns of each from etcd and
+						asks it for its members, so a GPU node started later is asked as soon as it registers,
+						and one that stops leaves the group with its scheduler.
+					</p>
+					<Code lang="sh" caption="shell">
+						{etcdShell}
+					</Code>
+					<p>
+						A test runs the same four programs against an etcd in the test process, starts a third
+						GPU node once the first answer is in, and stops the first:
+					</p>
+					<Code lang="txt" caption="testdata/etcd.txt">
+						{etcdLog}
+					</Code>
 				</>
 			)
 		}

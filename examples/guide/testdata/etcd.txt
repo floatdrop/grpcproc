@@ -1,0 +1,9 @@
+the models group, as the gateway has it: gpu-1, gpu-2
+> what is 6 * 7?
+Let me calculate that.
+  [tool] calc 6 * 7
+  [ran] 42
+The answer is 42.
+  [turn 1 done]
+gpu-3 starts: gpu-1, gpu-2, gpu-3
+gpu-1 stops: gpu-2, gpu-3

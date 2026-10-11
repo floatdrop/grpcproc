@@ -25,6 +25,7 @@ import (
 	conversationsv1 "github.com/floatdrop/grpcproc/examples/guide/proto/conversations/v1"
 	modelsv1 "github.com/floatdrop/grpcproc/examples/guide/proto/models/v1"
 	toolsv1 "github.com/floatdrop/grpcproc/examples/guide/proto/tools/v1"
+	"github.com/floatdrop/grpcproc/groups"
 	"github.com/floatdrop/grpcproc/pubsub"
 )
 
@@ -69,7 +70,8 @@ type conversation struct {
 	id      string
 	node    string // this one: where the topic is
 	history History
-	models  []string // the nodes that run a model, in the order they are tried
+	scope   *groups.Scope // where the models group is
+	models  []string      // the nodes that run a model, in the order they are tried
 	tools   toolsv1.RunnerAddr
 	limits  Limits
 
@@ -211,7 +213,8 @@ func (c *conversation) generate(p *grpcproc.Process[*conversationsv1.Request]) (
 	lost := "" // the node that took the request and did not finish
 	for {
 		var errs []error
-		busy := false
+		c.models = c.nodes()
+		busy := len(c.models) == 0 // none is known yet: as if every one were busy
 		for _, node := range slices.Clone(c.models) {
 			if p.Context().Err() != nil { // the conversation is told to exit
 				return nil, p.Context().Err()
@@ -248,7 +251,10 @@ func (c *conversation) generate(p *grpcproc.Process[*conversationsv1.Request]) (
 				return out, nil
 			}
 		}
-		if !busy || time.Now().After(waited) {
+		switch {
+		case len(errs) == 0 && time.Now().After(waited):
+			return nil, errors.New("no node runs a model")
+		case len(errs) > 0 && (!busy || time.Now().After(waited)):
 			return nil, fmt.Errorf("no model answered: %w", errors.Join(errs...))
 		}
 		select {
@@ -257,6 +263,21 @@ func (c *conversation) generate(p *grpcproc.Process[*conversationsv1.Request]) (
 		case <-time.After(c.limits.Busy):
 		}
 	}
+}
+
+// nodes is the nodes that run a model, as the models group has them now, in
+// the order the conversation tries them: those it knew, as it left them,
+// then any that joined since. A node that left the group is tried no more.
+func (c *conversation) nodes() []string {
+	var now []string // ordered by node, as Members is
+	for _, pid := range c.scope.Members(modelsv1.Group) {
+		now = append(now, pid.Node)
+	}
+	now = slices.Compact(now)
+	left := func(n string) bool { return !slices.Contains(now, n) }
+	kept := slices.DeleteFunc(slices.Clone(c.models), left)
+	joined := func(n string) bool { return slices.Contains(kept, n) }
+	return append(kept, slices.DeleteFunc(now, joined)...)
 }
 
 // call runs the tool the model asked for, and says what came of it. A tool
@@ -297,7 +318,7 @@ func (c *conversation) publish(p *grpcproc.Process[*conversationsv1.Request], e 
 // its own, and a factory for the one kind it is asked for. A conversation is
 // Transient: started again if it crashes, which loads its history back, and
 // left alone once it ends for being idle.
-func tree(cfg platform.Config, history History, limits Limits) actor.ChildSpec {
+func tree(cfg platform.Config, history History, limits Limits, scope *groups.Scope) actor.ChildSpec {
 	return actor.ChildSupervisor(conversationsv1.Service, actor.Spec{
 		Factories: map[string]actor.Factory{
 			conversationsv1.Factory: actor.ChildFactory(func(open *conversationsv1.Open) (actor.ChildSpec, error) {
@@ -305,9 +326,8 @@ func tree(cfg platform.Config, history History, limits Limits) actor.ChildSpec {
 					return actor.ChildSpec{}, fmt.Errorf("conversations: %q cannot name a conversation", open.Id)
 				}
 				c := &conversation{
-					id: open.Id, node: cfg.Node, history: history, limits: limits,
-					models: cfg.All(modelsv1.Service),
-					tools:  toolsv1.Runner(cfg.Where(toolsv1.Service)),
+					id: open.Id, node: cfg.Node, history: history, limits: limits, scope: scope,
+					tools: toolsv1.Runner(cfg.Where(toolsv1.Service)),
 				}
 				inspect := grpcproc.WithInspect(func() map[string]string {
 					return map[string]string{"turns": strconv.FormatUint(c.turn, 10), "said": strconv.Itoa(len(c.turns))}

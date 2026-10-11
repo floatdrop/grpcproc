@@ -16,13 +16,14 @@ import (
 	conversationsv1 "github.com/floatdrop/grpcproc/examples/guide/proto/conversations/v1"
 	modelsv1 "github.com/floatdrop/grpcproc/examples/guide/proto/models/v1"
 	toolsv1 "github.com/floatdrop/grpcproc/examples/guide/proto/tools/v1"
+	"github.com/floatdrop/grpcproc/groups"
 )
 
 // The conversations alone. Their collaborators are addresses, so a test
 // puts fakes behind them: processes registered under the names the
 // contracts give, on the node the placement points at, which with none is
-// this one. What the model is asked comes out on a channel, for the test to
-// read.
+// this one, and a scheduler in the models group. What the model is asked
+// comes out on a channel, for the test to read.
 func service(t *testing.T, limits conversations.Limits, model func(*modelsv1.Generate) *modelsv1.Generated) (*grpcproc.Node, <-chan *modelsv1.Generate) {
 	t.Helper()
 	s := di.Test(t)
@@ -43,7 +44,11 @@ func service(t *testing.T, limits conversations.Limits, model func(*modelsv1.Gen
 			_ = m.Reply(model(m.Body), nil)
 		}
 	}
-	if _, err := n.Spawn(scheduler, grpcproc.WithName(modelsv1.SchedulerName)); err != nil {
+	a, err := n.Spawn(scheduler, grpcproc.WithName(modelsv1.SchedulerName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Get[*groups.Scope]().Join(t.Context(), n, modelsv1.Group, a.PID()); err != nil {
 		t.Fatal(err)
 	}
 	// A sandbox that takes every call and answers none.
@@ -216,5 +221,46 @@ func TestARequestThatSaysNothingIsRefused(t *testing.T) {
 	}
 	if said, err := c.Say(t.Context(), n, "one"); err != nil || said.Turn != 1 {
 		t.Fatalf("%v %v", said, err)
+	}
+}
+
+// With no node in the models group, a turn waits as if every node were
+// busy, then fails, and says why.
+func TestNoNodeRunsAModel(t *testing.T) {
+	s := di.Test(t)
+	platform.Compose(s, platform.Config{Node: "local", Listen: "127.0.0.1:0"}, slog.New(slog.DiscardHandler), conversations.Module)
+	s.Value(conversations.Limits{Idle: time.Minute, Generate: 50 * time.Millisecond, Tool: time.Second, Busy: time.Millisecond}).Override()
+	if err := s.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	n := s.Get[*grpcproc.Node]()
+	c := conversationsv1.Conversation("local", "1")
+	failed := make(chan string, 1)
+	if _, err := n.Spawn(func(p *grpcproc.Process[*conversationsv1.Event]) error {
+		if _, err := c.Follow(p.Context(), p); err != nil {
+			return err
+		}
+		for {
+			m, err := p.Receive()
+			if err != nil {
+				return err
+			}
+			if f := m.Body.GetFailed(); f != "" {
+				failed <- f
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Say(t.Context(), n, "anyone?"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case f := <-failed:
+		if !strings.Contains(f, "no node runs a model") {
+			t.Fatalf("failed with %q", f)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the turn did not fail")
 	}
 }

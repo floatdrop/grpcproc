@@ -32,6 +32,8 @@ export const tutorialWorkers: Doc = {
 						process for the generation with <C>SpawnMonitor</C>, keeps the call under the monitor's{' '}
 						<C>Ref</C>, and returns <C>actor.ErrNoReply</C>: the call stays open, and the scheduler
 						is free for the next request. It never generates anything itself, so it always answers.
+						As it starts, <C>Init</C> joins it to the <C>models</C>{' '}
+						<A to="guides/groups/">process group</A>, which is where the conversations find it.
 					</p>
 					<Drawing caption="a call handed to a process of its own">
 						<Handoff />
@@ -85,9 +87,9 @@ export const tutorialWorkers: Doc = {
 			body: (
 				<>
 					<p>
-						The placement may name several nodes for the models, and a conversation asks them in
-						order. What it does next depends on what it is told, and the three cases are three
-						different answers:
+						A conversation finds the nodes that run a model in the <C>models</C> group, and asks them
+						in order: those it knew, as it left them, then any that joined since. What it does next
+						depends on what it is told, and the three cases are three different answers:
 					</p>
 					<ul>
 						<li>

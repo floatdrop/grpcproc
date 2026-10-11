@@ -39,26 +39,32 @@ func TestAProgramWhoseServicesGiveUpStops(t *testing.T) {
 func TestLoad(t *testing.T) {
 	for _, tc := range []struct {
 		env  map[string]string
-		want string // an error, or where the models run
+		want string // an error, or where the tools run
 	}{
 		{map[string]string{}, "local"},
-		{map[string]string{"NODE": "gateway", "PEERS": " gpu-1 = 127.0.0.1:9102 ", "PLACEMENT": "models=gpu-1"}, "gpu-1"},
-		{map[string]string{"NODE": "gateway", "PEERS": "gpu-1=:9102,gpu-2=:9103", "PLACEMENT": "models=gpu-1+gpu-2"}, "gpu-1 gpu-2"},
-		{map[string]string{"PEERS": "gpu-1"}, `"gpu-1" is not name=value`},
+		{map[string]string{"NODE": "gateway", "PEERS": " sandbox = 127.0.0.1:9104 ", "PLACEMENT": "tools=sandbox"}, "sandbox"},
+		{map[string]string{"NODE": "gateway", "PEERS": "a=:9104,b=:9105", "PLACEMENT": "tools=a+b"}, "a b"},
+		{map[string]string{"PEERS": "sandbox"}, `"sandbox" is not name=value`},
 		{map[string]string{"PEERS": "a=1,a=2"}, "names a twice"},
-		{map[string]string{"PLACEMENT": "models=gpu-1"}, "PEERS does not name"},
-		{map[string]string{"PEERS": "gpu-1=:9102", "PLACEMENT": "models=gpu-1+gpu-2"}, "puts models on gpu-2"},
+		{map[string]string{"PLACEMENT": "tools=sandbox"}, "PEERS does not name"},
+		{map[string]string{"PEERS": "a=:9104", "PLACEMENT": "tools=a+b"}, "puts tools on b"},
+		// With etcd, a node is found there, and PEERS is not read.
+		{map[string]string{"ETCD": "127.0.0.1:2379", "PEERS": "a=:9104", "PLACEMENT": "tools=sandbox"}, "sandbox"},
+		{map[string]string{"ETCD": "127.0.0.1:2379", "PEERS": "not a pair"}, "local"},
 	} {
-		for _, key := range []string{"NODE", "PEERS", "PLACEMENT"} {
+		for _, key := range []string{"NODE", "PEERS", "PLACEMENT", "ETCD"} {
 			t.Setenv(key, tc.env[key])
 		}
 		cfg, err := platform.Load()
-		got := strings.Join(cfg.All("models"), " ")
+		got := strings.Join(cfg.All("tools"), " ")
 		if err != nil {
 			got = err.Error()
 		}
 		if !strings.Contains(got, tc.want) {
 			t.Errorf("%v: got %q, want %q", tc.env, got, tc.want)
+		}
+		if tc.env["ETCD"] != "" && (err != nil || cfg.Peers != nil || len(cfg.Etcd) != 1) {
+			t.Errorf("%v: etcd %v, peers %v, %v", tc.env, cfg.Etcd, cfg.Peers, err)
 		}
 	}
 }
