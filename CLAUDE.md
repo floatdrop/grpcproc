@@ -25,7 +25,8 @@ error types), `queue.go` (the mailbox and link queue), `admit.go` (`Policy`,
 (the inspection types, and the pprof label keys). Packages of the core
 module: `grpcproctest` (clusters over bufconn), `inspect` (the Inspector
 service), `actor`
-(handler loop, supervisor, `Workers`), `pubsub`, `cron`, `leader`, `saga`
+(handler loop, supervisor, `Workers`), `pubsub`, `groups` (process
+groups, a scope per node and a relay per peer), `cron`, `leader`, `saga`
 (durable sagas behind a `Store`; `saga/sagatest` checks a store). Nested modules:
 `otel`, `etcd`, `tools`, `saga/postgres` (released), `examples`, `benchmarks`,
 `saga/postgres/integration` (not: saga/postgres's tests, with the drivers
@@ -100,13 +101,13 @@ the core's API can break it, `go vet ./... && golangci-lint run ./... &&
 go test -run '^$' -bench . -benchtime=50ms ./...`.
 
 Then coverage, which must stay at 100% for each package CI lists — in the
-root `. ./inspect ./actor ./pubsub ./cron ./leader ./saga`, in `otel` and `etcd`
+root `. ./inspect ./actor ./pubsub ./groups ./cron ./leader ./saga`, in `otel` and `etcd`
 `.`, in `tools` `./client ./dot ./cli ./mcpserver ./web`, and `saga/postgres`
 from `saga/postgres/integration`
 (`go test -coverpkg=github.com/floatdrop/grpcproc/saga/postgres .`):
 
 ```sh
-for pkg in . ./inspect ./actor ./pubsub ./cron ./leader ./saga; do
+for pkg in . ./inspect ./actor ./pubsub ./groups ./cron ./leader ./saga; do
   go test -count=1 -coverprofile=coverage.out -coverpkg=$pkg $pkg >/dev/null
   echo "$pkg $(go tool cover -func=coverage.out | awk '/^total:/ {print $3}')"
 done
@@ -282,7 +283,7 @@ works on a newer one's runs. A store must pass `sagatest.Store`.
   and `grpcproctest` clusters run inside a bubble as they are: processes wait
   on channels the bubble sees, bufconn connections are channels, and timers
   keep the fake clock. Tests in the core, `actor`, `grpcproctest`, `pubsub`,
-  `cron` and `leader` rely on it. A test that needs time to pass sleeps
+  `groups`, `cron` and `leader` rely on it. A test that needs time to pass sleeps
   inside the bubble; one that waits for quiet calls `synctest.Wait`.
 - **`grpcproctest` is the cluster.** `New(t, "a", "b", "c")`, `Partition`,
   `Heal`, `Kill`, `Restart`: a node dying is a plain `go test`. Its nodes

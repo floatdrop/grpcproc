@@ -1,0 +1,174 @@
+// grpcproc.groups.v1 is what grpcproc/groups' scopes are called with, what
+// they say to each other, and what they tell the processes that watch a
+// group.
+syntax = "proto3";
+
+package grpcproc.groups.v1;
+
+import "grpcproc/v1/grpcproc.proto";
+
+option go_package = "github.com/floatdrop/grpcproc/groups/proto/grpcproc/groups/v1;groupsv1";
+
+// Join, as a call to a scope, adds processes of the scope's node to a group.
+message Join {
+  string group = 1;
+  repeated grpcproc.v1.PID pids = 2;
+}
+
+// Leave, as a call to a scope, removes processes of the scope's node from a
+// group.
+message Leave {
+  string group = 1;
+  repeated grpcproc.v1.PID pids = 2;
+}
+
+// Watch, as a call to a scope from a process of its node, has it send the
+// caller a Changed for every change to the group, until the caller sends
+// Unwatch with the same id or exits. It is answered with Watching. A process
+// that holds several watches of a group gets one Changed per change.
+message Watch {
+  string group = 1;
+  // Unique among the caller's watches.
+  uint64 id = 2;
+}
+
+// Watching answers Watch.
+message Watching {
+  // The group's members when the watch began, every node's, ordered.
+  repeated grpcproc.v1.PID members = 1;
+}
+
+// Unwatch, sent to a scope, ends the sender's watch of a group with that
+// id; one it does not hold is ignored.
+message Unwatch {
+  string group = 1;
+  uint64 id = 2;
+}
+
+// Changed tells a watcher who joined and who left a group.
+message Changed {
+  string group = 1;
+  repeated grpcproc.v1.PID joined = 2;
+  repeated grpcproc.v1.PID left = 3;
+}
+
+// Hello, as a call from a scope's relay to the scope of the same name on
+// another node, asks for that scope's members; the answer is a Hello that
+// names the scope answering. The scope called then sends its members to the
+// caller's scope, which the call's Hello names.
+message Hello {
+  grpcproc.v1.PID scope = 1;
+}
+
+// Found is a relay telling its scope that the other node's scope answered
+// its Hello, and that it watches that scope now.
+message Found {
+  grpcproc.v1.PID scope = 1;
+}
+
+// Lost is a relay telling its scope that the other node's scope did not
+// answer, or that the scope it watched is gone, and that the relay ends.
+message Lost {
+  // The scope that is gone; unset when Hello was not answered.
+  grpcproc.v1.PID scope = 1;
+  // Why: noproc when that node runs no such scope, noconnection when it
+  // cannot be reached, or the exit reason of the scope it watched.
+  string reason = 2;
+}
+
+// Sync, from one scope to another of the same name, lists the sender's
+// local members, which replace those the receiver kept for the sender's
+// node. A long list comes in several, the first with first set and the last
+// with more unset.
+message Sync {
+  // The scope whose members these are.
+  grpcproc.v1.PID scope = 1;
+  repeated Members groups = 2;
+  bool first = 3;
+  bool more = 4;
+}
+
+// Members are processes of the sender's node in a group, by id: their
+// incarnation is the sender's.
+message Members {
+  string group = 1;
+  repeated uint64 ids = 2;
+}
+
+// Update, from one scope to the others after its Sync, says which of its
+// node's processes joined groups, and which left them. A long one comes in
+// several.
+message Update {
+  repeated Members joined = 1;
+  repeated Members left = 2;
+}
+
+// Listing is a scope's membership watch telling it that a new list of the
+// members begins: what an earlier watch listed is listed again.
+message Listing {}
+
+// MemberEvent is a scope's membership watch telling it of a node that is
+// up, and whether Select takes it, or of one that left the cluster.
+message MemberEvent {
+  string node = 1;
+  bool up = 2;
+  bool selected = 3;
+  // Which incarnation Membership reported; 0 for whichever.
+  uint64 incarnation = 4;
+}
+
+// Retry is a scope's note to itself: to ask an unreachable node again, or,
+// with no node, to watch the membership again.
+message Retry {
+  string node = 1;
+  // Which of the node's waits it ends: a later one is not ended early.
+  uint64 seq = 2;
+}
+
+// Query, asked of a scope (grpcproc.WithQuery), is answered with a Report:
+// its groups, or with a group the members of it.
+message Query {
+  // One group's members; unset, the groups.
+  string group = 1;
+  // Only the groups whose names start with this.
+  string prefix = 2;
+  // At most this many groups, or members of the group, ordered; 0 is 1000.
+  uint32 limit = 3;
+}
+
+// Report answers Query.
+message Report {
+  string scope = 1;
+  // The groups with members, by name, when no group was asked.
+  repeated Group groups = 2;
+  // The group's members, when one was asked, ordered.
+  repeated grpcproc.v1.PID members = 3;
+  // How many groups, or members, were left out past the limit.
+  uint32 omitted = 4;
+  // The other nodes the scope knows, by name.
+  repeated Peer peers = 5;
+}
+
+// Group is a group as a scope knows it.
+message Group {
+  string name = 1;
+  // Members on every node.
+  uint32 members = 2;
+  // Members on the scope's node.
+  uint32 local = 3;
+  // Nodes with a member.
+  uint32 nodes = 4;
+}
+
+// Peer is another node's scope, as this one knows it.
+message Peer {
+  string node = 1;
+  // syncing: asked, its members not yet known; synced: its members are
+  // known; absent: it runs no such scope; unreachable: lost, and asked
+  // again later.
+  string state = 2;
+  // Its scope, once it synced.
+  grpcproc.v1.PID scope = 3;
+  // Its members, in every group.
+  uint32 members = 4;
+}

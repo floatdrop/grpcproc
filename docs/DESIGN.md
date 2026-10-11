@@ -39,6 +39,7 @@ site say how to use it; `CLAUDE.md` has the working detail for a change.
 - [Helpers (`grpcproc/actor`)](#helpers-grpcprocactor)
 - [Remote spawn](#remote-spawn)
 - [Pub/sub (`grpcproc/pubsub`)](#pubsub-grpcprocpubsub)
+- [Process groups (`grpcproc/groups`)](#process-groups-grpcprocgroups)
 - [Cron and leader election](#cron-and-leader-election)
 - [Global names](#global-names)
 - [Sagas (`grpcproc/saga`)](#sagas-grpcprocsaga)
@@ -102,6 +103,7 @@ ref := p.Monitor(grpcproc.Name{Node: "billing-2", Name: "ledger"})
 | `inspect` | the `grpcproc.inspect.v1.Inspector` gRPC service, optional to register; its Go client is `tools/client` |
 | `actor` | the handler loop, supervisors, workers |
 | `pubsub` | topics with a replay buffer, relayed once per node |
+| `groups` | process groups: named sets of processes on any node, listed and watched |
 | `cron` | jobs on crontab schedules, every run a process |
 | `leader` | leader election, and a singleton that runs on the leader with its state |
 | `saga` | durable sagas: an fsm machine and its data per run, behind a `Store` |
@@ -1155,6 +1157,122 @@ sequenceDiagram
   sentinel its own call failed with, not the error that wraps it, so it is
   that sentinel on the subscriber's side too.
 
+## Process groups (`grpcproc/groups`)
+
+A group is a name many processes hold at once: the workers that resize
+images, the SFU nodes of a shard. Erlang has `pg`, Akka the Receptionist. A
+global name has one holder and a pub/sub topic hides its subscribers; a
+group's members are listed, and addressed by whoever lists them. Built on
+the public API alone, as `pubsub` is.
+
+```go
+workers, err := groups.Start(node, groups.Config{Scope: "jobs"}) // on every node that takes part
+err = workers.Join(ctx, p, "resize", p.PID())                     // a process of this node
+members := workers.Members("resize")                               // every node's, from this node's copy
+w, err := workers.Watch(ctx, p, "resize")                          // *groupsv1.Changed from w.From
+```
+
+- **A scope per node, and a copy read without a message.** Each node that
+  takes part runs a scope, a process registered as `groups/<scope>`, which
+  keeps every node's members of every group; `Members`, `Local` and `Groups`
+  read that copy under a lock, as `pg` reads its ETS table. A process joins
+  on its own node only, so each member has one node that vouches for it, and
+  a node's copy is the union of what each node said of its own processes.
+  The copy is eventually consistent: this node's joins are in it when `Join`
+  returns, another node's once its message arrives.
+- **A relay per node, as `leader` has.** A remote send or monitor waits for
+  a dial, up to `DialTimeout`: a scope that sent to nodes itself would stall
+  once per unreachable node, for minutes when a data center goes. So a
+  scope reaches each other scope through a relay of its own, which alone
+  waits, and answers a call from another node from a process spawned for
+  the answer, since an answer to a node with no link yet waits for a dial
+  too: the scope only ever sends locally. A relay ends when what it reaches
+  does, or when a send through it fails, since what it could not send is
+  missing on the other side; the next relay syncs again.
+- **Hello is a call.** A relay calls the other node's scope by name; the
+  answer names that scope, which the relay then monitors by PID, so every
+  `Down` says which scope ended. `noproc` means the node runs no such scope,
+  `absent`, as does an answer that is an error, and a call that cannot
+  reach it `unreachable`; either way its members are dropped, and it is
+  asked again after `Config.Retry`, doubling with each loss in a row to 32
+  times as long, or at once when it says hello or Membership reports a
+  newer incarnation of it, as that ends the core's backoff. A relay that
+  outlasts the wait before it starts the count over, as the core's backoff
+  starts over for a link that outlasts `DialTimeout`. The wait is the
+  node's, not its peer entry's, so a node forgotten and made again as the
+  same incarnation waits as long; a wait over for 32 times `Retry` is
+  dropped. A node
+  that is only answered is forgotten, once its scope ends or after five
+  tries in vain, and asked again when it writes; one that writes while it
+  waits waits. A Hello from a scope older than the one a relay reaches, a
+  late one from a scope that restarted, changes nothing.
+- **A Sync, then Updates.** Once its relay reaches a scope, a scope sends it
+  its members, whole, and then each change. A Sync replaces what the
+  receiver kept for that node; a Sync and an Update come in parts of about
+  32 KiB, under the smallest `MaxMessageSize` a node may set, and a part of
+  a Sync whose start was not taken is dropped, since a whole one follows. Everything one node says to
+  another goes over one link in order, so a Sync is never overtaken by the
+  Updates after it. A scope that is said hello to sends its Sync again, so
+  a node that lost it gets it back whichever side noticed.
+- **Peers, Membership and Select.** `Peers` are asked from the start, and
+  whatever Membership says; `Membership`, by default the node's, reports
+  the others, those it reports down are forgotten, and news of an
+  incarnation older than one the node is known to have, from Membership, a
+  Hello or a Sync, is ignored, as the core ignores it. `Select` keeps the
+  scope to the members whose metadata says they run it, so a node does not
+  dial the whole cluster to learn who does not, and one it stops taking is
+  only answered. A node that says hello is
+  answered whatever these say. A Membership watch that ends is started
+  again, and once it watches, what it lists replaces what the last one
+  listed, so a node that left meanwhile is asked no more, and one that
+  fails to start leaves the list as it was. Only the scope's own membership watch and timers are
+  heeded; the same messages from anyone else are not.
+- **What a node knows is what it is told.** A Sync counts only from a node
+  the scope runs a relay to, one it asked or that said hello, and an Update
+  only after that node's Sync; either from another node makes the scope say
+  hello to it, and it syncs again. Each adds only the sender's own processes:
+  their PIDs are made from the sender's node and incarnation, so no node can
+  put another's processes in a group.
+
+```mermaid
+sequenceDiagram
+    participant SA as scope on a
+    participant RA as a's relay to b
+    participant SB as scope on b
+    participant RB as b's relay to a
+    SA->>RA: spawned when b is declared, by Peers or Membership
+    RA->>SB: Hello call, by name, naming scope a
+    Note over SB: no relay to a yet: b starts one
+    SB-->>RA: Hello, naming scope b
+    RA->>SA: Found(scope b), and RA monitors scope b
+    SA->>RA: Sync (a's members), in parts
+    RA->>SB: Sync
+    SB->>RB: spawned on a's Hello
+    RB->>SA: Hello call
+    SA-->>RB: Hello
+    RB->>SB: Found(scope a)
+    SB->>RB: Sync (b's members)
+    RB->>SA: Sync
+    Note over SA,SB: from then on each join and leave goes as an Update, through the relays
+    Note over RA: scope b ends, or b cannot be reached: Down to RA
+    RA->>SA: Lost(scope b, reason), and RA ends
+    Note over SA: b's members dropped: absent, or unreachable and asked again later
+```
+
+- **Scale.** A node holds a relay and a copy of every member for each node
+  of its scope, and sends every change to every one of them: a change costs
+  a local send per node of the scope, and a member's exit one Update for
+  all its groups. That is fine for a scope of the nodes
+  that use it, tens to a few thousand; `Select`, and a scope per purpose,
+  keep it there. A group is a directory of live processes, not a store: a
+  scope that restarts has no members until its processes join again.
+- **Inspection.** A scope's inspect map counts its groups, members,
+  watchers and peers by state, and it answers a `groupsv1.Query` through
+  `WithQuery`, which a read-only Inspector serves: its groups by prefix,
+  with each one's members on every node and on this one, one group's
+  members, and its peers' states. `grpcprocctl groups`, the MCP tools and
+  the web UI's Groups page read it from whichever node they are pointed at.
+
 ## Cron and leader election
 
 Both are built on the public API alone, and neither imports the other.
@@ -1603,6 +1721,7 @@ side by side, and retention; see [Open work](#open-work).
 | Metrics per PID | GoAkt | Cardinality; the label is the key, and a PID's own numbers are in `Processes()` and the Inspector |
 | A UI served by every node | ergo Observer | A UI is a client: `grpcprocctl web` is one, over the Inspector, and a node serves nothing but gRPC |
 | gob / custom codec | first prototype | protobuf is already the service's contract; a body travels as its full name and bytes, and generated types register themselves |
+| A send acknowledged once it is queued | ergo `SendImportant` | A `Call` is that round trip already: a callee that is gone or full answers `ErrNoProc` or `ErrMailboxFull`, and never saw the request; a `Monitor` reports a missing target as `Down{noproc}`. An ack confirms a mailbox, not that the message was handled, and a lost one leaves the sender as unsure as before |
 | Delivery beyond at-most-once in the core | Akka Reliable Delivery, GoAkt | Every send would pay for a store and acknowledgements most do not need, and both Akka and GoAkt made it a layer one opts into. Here it is a module, open work below; the core's `LinkError.Unsent` tells it what is safe to send again |
 | Sagas that live in memory | ergo `gen.Saga` (v2, gone in v3), Elixir's Sage | A crashed coordinator leaves steps done and nothing to undo them. Every saga framework that calls itself production-ready (Akka's workflows, Dapr Workflow, Commanded) has a coordinator that outlives a crash, and steps that are idempotent for it. `grpcproc/saga` keeps every run in a `Store` |
 | One membership across installations | Orleans multi-cluster (removed in 3.2), Akka ClusterClient (deprecated in 2.6) | Two installations are operated apart: a registry or a singleton spanning both needs agreement over a network neither side controls, and the systems that tried went back to an explicit boundary: grpcproc's is `Admit` and `DialOptionsFor` |
@@ -1627,9 +1746,6 @@ etcd, OpenTelemetry and the PostgreSQL saga store are.
   with the stored reply and refuses a lower fence; steps that run side by
   side; retention of finished runs; dropping the signals no state of a run
   will take; a `Store.List` that pages and leaves the data out.
-- **Process groups**, Erlang's `pg` and Akka's Receptionist: the live
-  members of a group, found and watched. Pub/sub topics already monitor
-  their subscribers through a relay per node, so it is a thin module.
 - **Durable one-shot timers**: "send this to that name at that time", kept
   in the checkpointed state of a cron process that runs as the leader's
   singleton, so it outlasts the node that set it, as Dapr's reminders
@@ -1654,9 +1770,6 @@ etcd, OpenTelemetry and the PostgreSQL saga store are.
   Orleans' grains and Akka's sharding, without the strongly consistent
   directory that made Orleans' multi-cluster mode admit duplicates; state
   only through the saga module's `Store`.
-- **A send acknowledged once it is queued**, ergo's `SendImportant`:
-  deferred until a use asks for it. It costs a round trip per send, and
-  confirms only that the message is in a mailbox, not that it was handled.
 - **A protoc plugin** that writes contract address types like `StockAddr`
   from a service definition, as Proto.Actor generates its grains' clients.
 
