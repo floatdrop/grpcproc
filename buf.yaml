@@ -6,6 +6,7 @@ modules:
   - path: cron/proto
   - path: leader/proto
   - path: saga/proto
+  - path: groups/proto
 lint:
   use:
     - STANDARD

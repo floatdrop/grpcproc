@@ -23,7 +23,7 @@ jobs:
       matrix:
         include:
           - module: .
-            cover: . ./inspect ./actor ./pubsub ./cron ./leader ./saga
+            cover: . ./inspect ./actor ./pubsub ./groups ./cron ./leader ./saga
           - module: otel
             cover: .
           - module: etcd

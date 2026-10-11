@@ -121,6 +121,9 @@ your `*grpc.Server` next to your other services, start and stop.
   publishes to and any node subscribes to, with the last few events kept for
   whoever comes late, and each event sent once to each node.
   [Guide](https://floatdrop.github.io/grpcproc/guides/pubsub/)
+- **Process groups** in [`grpcproc/groups`](groups/README.md): named sets
+  of processes on any node, after Erlang's `pg`, which every node lists from
+  its own copy and any process can watch.
 - **An Inspector** and [`grpcprocctl`](tools/README.md): every process, its
   mailbox and what it says about itself, from a terminal or an AI agent over
   MCP. [Guide](https://floatdrop.github.io/grpcproc/guides/inspector/)
