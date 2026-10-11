@@ -28,6 +28,11 @@ for {
 }
 ```
 
+The [guide](https://floatdrop.github.io/grpcproc/guides/groups/) walks
+through [`examples/groups`](../examples/groups/main.go): workers on two nodes
+in a group, found and called from a third, which watches a worker exit and a
+node stop.
+
 ## Scopes
 
 A scope is a process on each node that takes part, registered as

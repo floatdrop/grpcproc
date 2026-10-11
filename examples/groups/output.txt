@@ -1,0 +1,7 @@
+workers: 4, on east, east, west, west
+photo-1.jpg resized by worker 1 on east
+photo-2.jpg resized by worker 2 on east
+photo-3.jpg resized by worker 1 on west
+photo-4.jpg resized by worker 2 on west
+watcher: a worker on west left, 3 remain
+after east stopped: 1, on west

@@ -288,7 +288,7 @@ orders  order-17  charging  stuck   5         1               2026-10-05T11:49:2
 						[
 							<C>groups [group]</C>,
 							<>
-								A <Ext href={file('groups/README.md')}>process groups</Ext> scope's groups, with their members on every node and
+								A <A to="guides/groups/">process groups</A> scope's groups, with their members on every node and
 								on this one, and its other nodes and their states; or one group's members: <C>--node</C>,{' '}
 								<C>--scope</C>, <C>--prefix</C>, <C>--limit</C>.
 							</>

@@ -20,7 +20,7 @@ code that runs.
 After editing a program, refresh its pinned output and the README's embeds:
 
 ```sh
-cd examples && go test ./quickstart ./actors ./supervisor ./blockingio ./pubsub -update
+cd examples && go test ./quickstart ./actors ./supervisor ./blockingio ./pubsub ./groups -update
 go test ./guide -update
 cd .. && gofmt -w examples && go run github.com/campoy/embedmd@v1.0.0 -w README.md
 ```

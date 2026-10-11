@@ -80,7 +80,7 @@ go test -run '^$' -fuzz '^FuzzScenario$' -fuzztime 5m .        # FuzzDispatch, F
 go test -run '^$' -fuzz '^FuzzParse$' -fuzztime 5m ./cron
 go test -race -count=25 -cpu=1,2,4,8 -timeout=80m ./...  # the nightly stress, for a concurrency change
 go test -count=1 -run 'Machines|Diagrams' ./leader -update   # leader's diagrams after a machine change
-(cd examples && go test ./quickstart ./actors ./supervisor ./blockingio ./pubsub ./guide -update)  # pinned output
+(cd examples && go test ./quickstart ./actors ./supervisor ./blockingio ./pubsub ./groups ./guide -update)  # pinned output
 scripts/release.sh -n v0.7.0                         # a release plan; see RELEASING.md
 ```
 

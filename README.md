@@ -124,6 +124,7 @@ your `*grpc.Server` next to your other services, start and stop.
 - **Process groups** in [`grpcproc/groups`](groups/README.md): named sets
   of processes on any node, after Erlang's `pg`, which every node lists from
   its own copy and any process can watch.
+  [Guide](https://floatdrop.github.io/grpcproc/guides/groups/)
 - **An Inspector** and [`grpcprocctl`](tools/README.md): every process, its
   mailbox and what it says about itself, from a terminal or an AI agent over
   MCP. [Guide](https://floatdrop.github.io/grpcproc/guides/inspector/)

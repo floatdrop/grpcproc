@@ -1,7 +1,6 @@
 import { Code } from '../code.tsx';
 import { Screenshot } from '../components/Figure.tsx';
-import { A, C, Ext, Table } from '../components/prose.tsx';
-import { file } from '../config.ts';
+import { A, C, Table } from '../components/prose.tsx';
 import type { Doc } from './types.ts';
 
 export const guidesWeb: Doc = {
@@ -63,7 +62,7 @@ grpcprocctl --plaintext --addr 10.0.0.5:9000 web   # http://localhost:9911`}</Co
 							[
 								'Groups',
 								<>
-									The <Ext href={file('groups/README.md')}>process groups</Ext> scopes the node runs, as its copy has them: each
+									The <A to="guides/groups/">process groups</A> scopes the node runs, as its copy has them: each
 									group's members on every node and on this one, a group's members once picked, and the
 									other nodes of the scope with their states.
 								</>
