@@ -214,6 +214,7 @@ const LABEL_THEME = {
 	up: 'success', connecting: 'warning', down: 'danger',
 	leader: 'success', follower: 'info', candidate: 'warning', unclustered: 'unknown',
 	active: 'info', stuck: 'danger', done: 'unknown',
+	synced: 'success', syncing: 'warning', absent: 'unknown', unreachable: 'danger',
 	spawn: 'success', exit: 'unknown', 'link-up': 'info', 'link-down': 'warning', 'dead-letter': 'danger',
 	info: 'info', bad: 'danger', warn: 'warning',
 };
@@ -1312,6 +1313,96 @@ function namesPage(node, params) {
 	return page;
 }
 
+function groupsPage(node, params) {
+	let p = params;
+	const b = banner();
+	const scope = h('select', { onchange: (e) => set({ scope: e.target.value, group: '' }) });
+	const prefix = h('input', { type: 'search', placeholder: 'prefix, such as room:', value: p.prefix || '', oninput: debounce((e) => set({ prefix: e.target.value }), 300) });
+	const list = h('div');
+	const members = h('div');
+	const peers = h('div');
+	let scopes = '';
+	const nodeLink = (n) => h('a', { href: href('node', { node: n }), onclick: (e) => e.stopPropagation() }, n);
+	const page = {
+		every: 2000,
+		el: h(
+			'div',
+			null,
+			head('Process groups', `The grpcproc/groups scopes ${node} runs, as its copy has them: each group's members on every node, and the other nodes of the scope. Pick a group to see its members.`),
+			b.el,
+			h('div', { class: 'scope' }, h('label', null, 'scope', select(scope)), h('label', null, 'groups starting with', prefix)),
+			list,
+			members,
+			h('h2', null, 'Nodes of the scope'),
+			peers,
+		),
+		banner: b.set,
+		update(np) {
+			const what = (x) => [x.scope || '', x.prefix || '', x.group || ''].join('\n');
+			const refetch = what(np) !== what(p);
+			p = np;
+			if (refetch) run(page);
+		},
+		async tick(stale) {
+			const q = { node, scope: p.scope || '' };
+			const [v, m] = await Promise.all([api('/api/groups', { ...q, prefix: p.prefix || '' }), p.group ? api('/api/group', { ...q, group: p.group }) : null]);
+			if (stale()) return;
+			// Options are made again only when they change, so an open select stays open.
+			if (JSON.stringify(v.scopes) !== scopes) {
+				scopes = JSON.stringify(v.scopes);
+				scope.replaceChildren(...v.scopes.map((s) => h('option', { value: s }, s)));
+			}
+			scope.value = v.scope;
+			list.replaceChildren(
+				table(
+					[
+						{ t: 'Group', get: (g) => h('b', null, g.name) },
+						{ t: 'Members', num: true, get: (g) => fmtInt(g.members) },
+						{ t: `On ${node}`, num: true, get: (g) => fmtInt(g.local) },
+						{ t: 'Nodes', num: true, get: (g) => fmtInt(g.nodes) },
+					],
+					v.groups,
+					{
+						onRow: (g) => set({ group: g.name === p.group ? '' : g.name }, false),
+						rowClass: (g) => g.name === p.group && 'sel',
+						empty: p.prefix ? `No group of ${v.scope} starts with ${p.prefix}.` : `No process is in a group of ${v.scope}.`,
+					},
+				),
+				v.omitted ? h('p', { class: 'muted' }, `${fmtInt(v.omitted)} more groups: narrow them with a prefix.`) : '',
+			);
+			members.replaceChildren(
+				...(m
+					? [
+							h('h2', null, `Members of ${m.group}`),
+							table(
+								[
+									{ t: 'Process', get: (pid) => pidLink(pid) },
+									{ t: 'Node', get: (pid) => nodeLink(nodeOf(pid)) },
+								],
+								m.members,
+								{ empty: `${m.group} has no members.` },
+							),
+							m.omitted ? h('p', { class: 'muted' }, `${fmtInt(m.omitted)} more members.`) : '',
+						]
+					: []),
+			);
+			peers.replaceChildren(
+				table(
+					[
+						{ t: 'Node', get: (x) => nodeLink(x.node) },
+						{ t: 'State', get: (x) => pill(x.state) },
+						{ t: 'Members', num: true, get: (x) => fmtInt(x.members) },
+						{ t: 'Scope', get: (x) => pidLink(x.scope) },
+					],
+					v.peers,
+					{ rowClass: (x) => x.state === 'unreachable' && 'backlog', empty: `${v.scope} on ${node} knows no other node.` },
+				),
+			);
+		},
+	};
+	return page;
+}
+
 function electionsPage() {
 	const b = banner();
 	const list = h('div');
@@ -1742,6 +1833,7 @@ const pages = {
 	node: { make: nodePage, node: true, title: 'Node' },
 	processes: { make: processesPage, node: true, title: 'Processes' },
 	names: { make: namesPage, node: true, title: 'Global names' },
+	groups: { make: groupsPage, node: true, title: 'Process groups' },
 	tree: { make: treePage, node: true, title: 'Supervision' },
 	events: { make: eventsPage, node: true, title: 'Events' },
 	cron: { make: cronPage, title: 'Cron' },

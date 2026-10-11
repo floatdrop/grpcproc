@@ -87,6 +87,14 @@ func New(c *client.Client, o Options) http.Handler {
 		limit, _ := strconv.Atoi(q.Get("limit")) // 0, the node's default, unless a number
 		return s.c.Names(ctx, q.Get("node"), q.Get("prefix"), limit)
 	}))
+	mux.HandleFunc("GET /api/groups", s.read(func(ctx context.Context, q url.Values) (any, error) {
+		limit, _ := strconv.Atoi(q.Get("limit")) // 0, the default, unless a number
+		return s.c.Groups(ctx, q.Get("node"), q.Get("scope"), q.Get("prefix"), limit)
+	}))
+	mux.HandleFunc("GET /api/group", s.read(func(ctx context.Context, q url.Values) (any, error) {
+		limit, _ := strconv.Atoi(q.Get("limit"))
+		return s.c.GroupMembers(ctx, q.Get("node"), q.Get("scope"), q.Get("group"), limit)
+	}))
 	mux.HandleFunc("GET /api/crons", s.across(
 		func(ctx context.Context, node string) (any, error) { return s.c.Crons(ctx, node) },
 		func(ctx context.Context, nodes []client.NodeView) (any, error) {
