@@ -60,7 +60,9 @@ export const guidesMcp: Doc = {
 							[<C>cron_jobs</C>, 'Cron processes and their jobs, on a node or all of them.'],
 							[<C>saga_runs</C>, 'Saga runs by saga and status, a page at a time.'],
 							[<C>saga_run</C>, 'One saga run: the error that stopped it, its waiting signals, and its data when the engine shows it.'],
-							[<C>global_names</C>, 'Who holds a global name, or every name with a prefix, such as room:.']
+							[<C>global_names</C>, 'Who holds a global name, or every name with a prefix, such as room:.'],
+							[<C>process_groups</C>, 'A grpcproc/groups scope’s groups and its other nodes, as one node’s copy has them.'],
+							[<C>group_members</C>, 'One grpcproc/groups group’s members on every node, by pid.']
 						]}
 					/>
 					<p>

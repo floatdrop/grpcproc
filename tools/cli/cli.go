@@ -84,6 +84,7 @@ Commands:
   ps                          processes (--node, --name, --label, --state, --min-mailbox, --sort, --limit)
   inspect <pid|name>          one process, and what it says about itself (--node, --wait)
   names [name]                global names: who holds one, or a list (--node, --prefix, --limit)
+  groups [group]              grpcproc/groups: a scope's groups and peers, or one group's members (--node, --scope, --prefix, --limit)
   watch                       stream events (--node, --kind, --count)
   exit <pid|name> [reason]    ask a process to exit (--node)
   loglevel <pid|name> <level> set a process's log level (--node)
@@ -252,7 +253,7 @@ func init() {
 	commands = map[string]command{
 		"node": cmdNode, "nodes": cmdNodes, "ps": cmdPS, "inspect": cmdInspect, "watch": cmdWatch,
 		"exit": cmdExit, "loglevel": cmdLogLevel, "dot": cmdDot, "mcp": cmdMCP, "leader": cmdLeader, "cron": cmdCron, "saga": cmdSaga,
-		"web": cmdWeb, "names": cmdNames,
+		"web": cmdWeb, "names": cmdNames, "groups": cmdGroups,
 	}
 }
 
@@ -426,6 +427,70 @@ func cmdNames(ctx context.Context, a *app, args []string) error {
 		rows = append(rows, []string{n.Name, n.PID})
 	}
 	return a.table("NAME\tPID", rows)
+}
+
+func cmdGroups(ctx context.Context, a *app, args []string) error {
+	var node, scope, prefix string
+	var limit int
+	fs, err := a.flags("groups", args, func(fs *flag.FlagSet) {
+		fs.StringVar(&node, "node", "", "node whose copy of the groups to read, by default the one serving the Inspector")
+		fs.StringVar(&scope, "scope", "", "scope to read, by default the one named default, or the node's first")
+		fs.StringVar(&prefix, "prefix", "", "only groups whose names start with this")
+		fs.IntVar(&limit, "limit", 0, "show at most this many groups, or members (0: 1000)")
+	})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := a.request(ctx)
+	defer cancel()
+	switch fs.NArg() {
+	case 0:
+	case 1:
+		m, err := a.client.GroupMembers(ctx, node, scope, fs.Arg(0), limit)
+		if err != nil {
+			return err
+		}
+		if a.json {
+			return a.printJSON(m)
+		}
+		rows := make([][]string, 0, len(m.Members))
+		for _, pid := range m.Members {
+			rows = append(rows, []string{pid})
+		}
+		return a.omitted(a.table("PID", rows), m.Omitted, "members")
+	default:
+		return usageError{"want at most one group"}
+	}
+	v, err := a.client.Groups(ctx, node, scope, prefix, limit)
+	if err != nil {
+		return err
+	}
+	if a.json {
+		return a.printJSON(v)
+	}
+	fmt.Fprintf(a.env.Stdout, "scope %s on %s (it runs %s)\n\n", v.Scope, v.Node, strings.Join(v.Scopes, ", "))
+	rows := make([][]string, 0, len(v.Groups))
+	for _, g := range v.Groups {
+		rows = append(rows, []string{g.Name, strconv.Itoa(g.Members), strconv.Itoa(g.Local), strconv.Itoa(g.Nodes)})
+	}
+	err = a.omitted(a.table("GROUP\tMEMBERS\tLOCAL\tNODES", rows), v.Omitted, "groups")
+	if err == nil {
+		rows = rows[:0]
+		for _, p := range v.Peers {
+			rows = append(rows, []string{p.Node, p.State, strconv.Itoa(p.Members), p.Scope})
+		}
+		fmt.Fprintln(a.env.Stdout)
+		err = a.table("PEER\tSTATE\tMEMBERS\tSCOPE", rows)
+	}
+	return err
+}
+
+// omitted says how many rows a limit left out, after a table that printed.
+func (a *app) omitted(err error, n int, what string) error {
+	if err == nil && n > 0 {
+		fmt.Fprintf(a.env.Stdout, "… %d more %s past --limit\n", n, what)
+	}
+	return err
 }
 
 func cmdPS(ctx context.Context, a *app, args []string) error {

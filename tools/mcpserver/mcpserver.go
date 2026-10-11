@@ -68,6 +68,8 @@ func New(c *client.Client, o Options) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "get_process", Description: "One process by pid or name, with what it says about itself.", Annotations: readOnly}, t.getProcess)
 	mcp.AddTool(s, &mcp.Tool{Name: "watch_events", Description: "Collect a node's events for a few seconds: spawns, exits with reasons, links up and down, dead letters.", Annotations: readOnly}, t.watchEvents)
 	mcp.AddTool(s, &mcp.Tool{Name: "global_names", Description: "The installation's global names and the processes that hold them: one name, or every name with a prefix. A process found by its global name can be inspected by its pid.", Annotations: readOnly}, t.globalNames)
+	mcp.AddTool(s, &mcp.Tool{Name: "process_groups", Description: "A grpcproc/groups scope's groups, as one node's copy has them: each group's members on every node and on that one, and the other nodes the scope knows, with whether their members are known (synced), they run no such scope (absent), or they could not be reached.", Annotations: readOnly}, t.processGroups)
+	mcp.AddTool(s, &mcp.Tool{Name: "group_members", Description: "The members of one grpcproc/groups group on every node, as one node's copy has them, by pid: each can be inspected with get_process.", Annotations: readOnly}, t.groupMembers)
 	mcp.AddTool(s, &mcp.Tool{Name: "cron_jobs", Description: "The grpcproc/cron processes of a node, or of every node, and their jobs: schedule, next and last run, runs going, last failure.", Annotations: readOnly}, t.cronJobs)
 	mcp.AddTool(s, &mcp.Tool{Name: "saga_runs", Description: "Runs of grpcproc/saga sagas, from the store a saga engine shares: by saga and status (active, done, stuck), a page at a time, with each one's state, attempts and last error.", Annotations: readOnly}, t.sagaRuns)
 	mcp.AddTool(s, &mcp.Tool{Name: "saga_run", Description: "One run of a saga: its state, status, the error that stopped it, its timers and lease, the signals waiting in its inbox, and its data as JSON if the engine shows data.", Annotations: readOnly}, t.sagaRun)
@@ -196,6 +198,34 @@ func (t tools) globalNames(ctx context.Context, _ *mcp.CallToolRequest, in names
 		out.Names = names
 	}
 	return nil, out, err
+}
+
+type groupsIn struct {
+	Node   string `json:"node,omitempty" jsonschema:"node whose copy of the groups to read; empty for the node serving the Inspector"`
+	Scope  string `json:"scope,omitempty" jsonschema:"scope to read; empty for the one named default, or the node's first"`
+	Prefix string `json:"prefix,omitempty" jsonschema:"only groups whose names start with this"`
+	Limit  uint   `json:"limit,omitempty" jsonschema:"at most this many groups; default 100"`
+}
+
+func (t tools) processGroups(ctx context.Context, _ *mcp.CallToolRequest, in groupsIn) (*mcp.CallToolResult, client.GroupsView, error) {
+	ctx, cancel := t.ctx(ctx)
+	defer cancel()
+	v, err := t.c.Groups(ctx, in.Node, in.Scope, in.Prefix, int(min(cmp.Or(in.Limit, 100), 1<<20)))
+	return nil, v, err
+}
+
+type groupIn struct {
+	Node  string `json:"node,omitempty" jsonschema:"node whose copy of the groups to read; empty for the node serving the Inspector"`
+	Scope string `json:"scope,omitempty" jsonschema:"scope of the group; empty for the one named default, or the node's first"`
+	Group string `json:"group" jsonschema:"the group"`
+	Limit uint   `json:"limit,omitempty" jsonschema:"at most this many members; default 100"`
+}
+
+func (t tools) groupMembers(ctx context.Context, _ *mcp.CallToolRequest, in groupIn) (*mcp.CallToolResult, client.GroupMembersView, error) {
+	ctx, cancel := t.ctx(ctx)
+	defer cancel()
+	v, err := t.c.GroupMembers(ctx, in.Node, in.Scope, in.Group, int(min(cmp.Or(in.Limit, 100), 1<<20)))
+	return nil, v, err
 }
 
 type watchIn struct {

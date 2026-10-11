@@ -3,6 +3,7 @@ package testcluster
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/floatdrop/grpcproc"
 	"github.com/floatdrop/grpcproc/actor"
 	"github.com/floatdrop/grpcproc/cron"
+	"github.com/floatdrop/grpcproc/groups"
 	"github.com/floatdrop/grpcproc/grpcproctest"
 	"github.com/floatdrop/grpcproc/inspect"
 	"github.com/floatdrop/grpcproc/internal/testpb"
@@ -193,6 +195,43 @@ func (f *Fixture) Leading(t *testing.T, cluster, node string, ok func(string) bo
 			t.Fatalf("%s: no leader as wanted: %+v, %v", cluster, info, err)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// Groups runs the grpcproc/groups scope "default" on nodes a and b, each
+// asking the other and node "c", which runs none, and the scope "rooms" on
+// a alone. The talker is in "chat"; the echo in "chat" and "echo". On a, a
+// process "broken" is labelled as a scope and answers no queries. Groups
+// waits until a's copy has b's members.
+func (f *Fixture) Groups(t *testing.T) {
+	t.Helper()
+	a, b := f.C.Node("a"), f.C.Node("b")
+	sa, err := groups.Start(a, groups.Config{Peers: []string{"b", "c"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sb, err := groups.Start(b, groups.Config{Peers: []string{"a", "c"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := groups.Start(a, groups.Config{Scope: "rooms"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Spawn(worker, grpcproc.WithName(groups.ScopeName("broken")), grpcproc.WithLabel(groups.Label)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Spawn(worker, grpcproc.WithLabel(groups.Label)); err != nil { // labelled so, and named nothing
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := errors.Join(sa.Join(ctx, a, "chat", f.Talker), sb.Join(ctx, b, "chat", f.Echo), sb.Join(ctx, b, "echo", f.Echo)); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(10 * time.Second); len(sa.Members("chat")) != 2 || len(sa.Members("echo")) != 1; {
+		if time.Now().After(deadline) {
+			t.Fatalf("a's copy of the groups: %v", sa.Groups())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

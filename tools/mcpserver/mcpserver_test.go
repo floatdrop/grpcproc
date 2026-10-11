@@ -76,7 +76,7 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) []string {
 
 func TestToolsOnOffer(t *testing.T) {
 	f := testcluster.Start(t)
-	read := []string{"cluster_nodes", "cron_jobs", "election", "get_process", "global_names", "list_processes", "node_info", "saga_run", "saga_runs", "watch_events"}
+	read := []string{"cluster_nodes", "cron_jobs", "election", "get_process", "global_names", "group_members", "list_processes", "node_info", "process_groups", "saga_run", "saga_runs", "watch_events"}
 	if got := toolNames(t, connect(t, f, mcpserver.Options{})); !slices.Equal(got, read) {
 		t.Fatalf("read-only: %v", got)
 	}

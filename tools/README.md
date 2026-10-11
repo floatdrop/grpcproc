@@ -72,6 +72,7 @@ monitors:              2
 | `ps` | processes: `--node`, `--name`, `--label`, `--state`, `--min-mailbox`, `--sort pid\|mailbox\|received\|sent\|busy`, `--limit` |
 | `inspect <pid\|name>` | one process, with what it says about itself: `--node`, `--wait` |
 | `names [name]` | [global names](https://floatdrop.github.io/grpcproc/concepts/addressing/#global): who holds one, or a list: `--node`, `--prefix`, `--limit` |
+| `groups [group]` | a [grpcproc/groups](../groups/README.md) scope's groups, with their members on every node and on this one, and the scope's other nodes and their states; or one group's members: `--node`, `--scope`, `--prefix`, `--limit` |
 | `watch` | stream spawns, exits, links, dead letters: `--node`, `--kind`, `--count` |
 | `exit <pid\|name> [reason]` | ask a process to exit |
 | `loglevel <pid\|name> <level>` | change one process's log level |
@@ -94,7 +95,7 @@ what its MCP server reports.
 
 A pid is written as grpcproc prints it, `<node.incarnation.id>`; a name is
 looked up on `--node`, by default the node serving the Inspector.
-`--json` before `node`, `nodes`, `ps`, `inspect`, `names`, `watch`, `leader`, `cron` or `saga` prints the same
+`--json` before `node`, `nodes`, `ps`, `inspect`, `names`, `groups`, `watch`, `leader`, `cron` or `saga` prints the same
 data as JSON: one indented value, or for `watch` one compact event per line,
 so `grpcprocctl --json watch | jq` sees events as they happen. The objects
 are those the MCP tools return, which wrap lists in an object of their own.
@@ -218,6 +219,10 @@ through the same Inspector and refreshes every second:
   and how electors are named, asking 32 nodes at a time; a node that
   cannot be asked is listed with why. A cron process spawned with a label
   of its own is shown by `grpcprocctl cron --node`, not here.
+- **Groups**: the grpcproc/groups scopes the node runs, as its copy has
+  them: each group's members on every node and on this one, by prefix, a
+  group's members once picked, and the other nodes of the scope with their
+  states (synced, syncing, absent, unreachable).
 - **Sagas**: the grpcproc/saga engines reachable from here and the sagas
   each runs, and a saga's runs a page at a time, by status, as
   `grpcprocctl saga runs` lists them. A run opens beside them, as `saga
@@ -243,7 +248,7 @@ so a page elsewhere cannot reach it through the browser; a change must come
 from the page itself. On any other address, put it behind something that
 authenticates. The API behind the page returns the objects `--json`
 prints, `/api/nodes` with when the walk ended: `/api/nodes`, `/api/node`, `/api/processes`, `/api/process`,
-`/api/crons`, `/api/elections`, `/api/sagas`, `/api/saga/runs`,
+`/api/names`, `/api/groups`, `/api/group`, `/api/crons`, `/api/elections`, `/api/sagas`, `/api/saga/runs`,
 `/api/saga/run`, and `/api/events` as server-sent events.
 
 ## For an AI agent
@@ -267,6 +272,7 @@ or a busy process means) and offers:
 | `saga_runs` | saga runs by saga and status, a page at a time |
 | `saga_run` | one saga run: its state, error and waiting signals, and its data when the engine shows it |
 | `global_names` | who holds a global name, or every name with a prefix |
+| `process_groups`, `group_members` | a groups scope's groups and other nodes, as one node's copy has them; one group's members |
 | `exit_process`, `set_log_level`, `move_leader`, `cordon_node`, `uncordon_node`, `enable_cron_job`, `disable_cron_job`, `remove_cron_job`, `resume_saga_run` | only with `--allow-writes` |
 
 So "orders are slow since the deploy" becomes: list processes by mailbox,
