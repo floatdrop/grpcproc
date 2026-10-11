@@ -91,6 +91,9 @@ func TestMsgContextEndsWithTheCaller(t *testing.T) {
 		c := grpcproctest.New(t, "a", "b")
 		a, b := c.Node("a"), c.Node("b")
 		ended := make(chan error, 1)
+		// The callee's deadline is the caller's in a bubble: a reply sent
+		// when it ends could still win the caller's select.
+		returned := make(chan struct{})
 		slow, err := b.Spawn(func(p *grpcproc.Process[*testpb.Ping]) error {
 			m, err := p.Receive()
 			if err != nil {
@@ -103,6 +106,7 @@ func TestMsgContextEndsWithTheCaller(t *testing.T) {
 			}
 			<-ctx.Done() // work that outlives its caller's patience
 			ended <- ctx.Err()
+			<-returned
 			return m.Reply(&testpb.Pong{}, nil) // nobody waits for it
 		})
 		if err != nil {
@@ -110,7 +114,9 @@ func TestMsgContextEndsWithTheCaller(t *testing.T) {
 		}
 		ctx, cancel := context.WithTimeout(grpcproc.WithMetadata(t.Context(), grpcproc.Metadata{"tenant": "acme"}), 50*time.Millisecond)
 		defer cancel()
-		if _, err := slow.Call[*testpb.Pong](ctx, a, &testpb.Ping{N: 1}); !errors.Is(err, context.DeadlineExceeded) {
+		_, err = slow.Call[*testpb.Pong](ctx, a, &testpb.Ping{N: 1})
+		close(returned)
+		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("want the caller's deadline, got %v", err)
 		}
 		select {
