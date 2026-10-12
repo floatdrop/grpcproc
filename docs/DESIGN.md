@@ -1196,7 +1196,10 @@ w, err := workers.Watch(ctx, p, "resize")                          // *groupsv1.
   reach it `unreachable`; either way its members are dropped, and it is
   asked again after `Config.Retry`, doubling with each loss in a row to 32
   times as long, or at once when it says hello or Membership reports a
-  newer incarnation of it, as that ends the core's backoff. A relay that
+  newer incarnation of it, as that ends the core's backoff. A hello that
+  comes while the relay is still asking counts once that relay is lost or
+  finds an older scope than the hello's: the node is asked again at once
+  either way, whichever came first. A relay that
   outlasts the wait before it starts the count over, as the core's backoff
   starts over for a link that outlasts `DialTimeout`. The wait is the
   node's, not its peer entry's, so a node forgotten and made again as the

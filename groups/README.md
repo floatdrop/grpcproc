@@ -105,7 +105,9 @@ and the next one syncs again.
 An `absent` or `unreachable` node is asked again after `Config.Retry` (1s),
 doubling with each loss in a row up to 32 times as long; a relay that lasts
 longer than the wait before it starts the count over. A Hello from the node,
-or Membership reporting a newer incarnation of it, ends the wait; the wait
+or Membership reporting a newer incarnation of it, ends the wait; one that
+came while the relay to it was still asking ends the wait that relay's loss
+starts, and has an older scope the relay finds replaced. The wait
 is the node's, so one forgotten and made again, as the same incarnation,
 waits it out. A node that is only answered is forgotten instead when
 its scope ends, or after five tries in vain, and asked again when it writes

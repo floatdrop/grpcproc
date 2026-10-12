@@ -56,6 +56,7 @@ type peer struct {
 	found       time.Time    // when its relay reached its scope
 	relay       grpcproc.PID // the relay to it, while one runs
 	reached     grpcproc.PID // its scope, as the relay found it
+	hailed      grpcproc.PID // the newest scope that said hello while the relay reached none
 	scope       grpcproc.PID // its scope, as its last Sync named it
 	members     map[string]map[grpcproc.PID]struct{}
 	size        int                                  // memberships in members
@@ -175,8 +176,8 @@ func (s *scope) handle(m grpcproc.Msg[proto.Message]) {
 	case *groupsv1.Hello:
 		s.hello(m, grpcproc.PIDFromProto(b.GetScope()))
 	case *groupsv1.Found:
-		if _, pr := s.relayed(m.From); pr != nil {
-			s.found(pr, grpcproc.PIDFromProto(b.GetScope()))
+		if node, pr := s.relayed(m.From); pr != nil {
+			s.found(node, pr, grpcproc.PIDFromProto(b.GetScope()))
 		}
 	case *groupsv1.Lost:
 		if node, pr := s.relayed(m.From); pr != nil {
@@ -501,7 +502,7 @@ func (s *scope) connect(node string, pr *peer) {
 	s.waits[node].stop()
 	a, _, _ := s.p.SpawnMonitor(relay(node, s.name, s.p.PID()), grpcproc.LinkParent(), grpcproc.WithLabel(RelayLabel))
 	s.relays[a.PID()] = node
-	pr.relay, pr.reached = a.PID(), grpcproc.PID{}
+	pr.relay, pr.reached, pr.hailed, pr.found = a.PID(), grpcproc.PID{}, grpcproc.PID{}, time.Time{}
 	if pr.scope.IsZero() {
 		s.locked(func() { pr.state = syncing })
 	}
@@ -524,19 +525,34 @@ func (s *scope) hello(m grpcproc.Msg[proto.Message], from grpcproc.PID) {
 	if node == s.n.Name() {
 		return
 	}
+	if from.Node != node {
+		from = grpcproc.PID{} // a scope of another node's is none of node's
+	}
 	pr := s.peers[node]
 	switch {
 	case pr != nil && pr.saw(from.Incarnation):
 		// A late hello from an incarnation older than one it is known to have.
 	case pr == nil || pr.relay.IsZero():
 		s.reach(node, true).saw(from.Incarnation)
+	case pr.reached.IsZero():
+		// Its relay is saying hello: what it finds, or its failure, is
+		// weighed against this hello then, as if the hello came after.
+		if newer(from, pr.hailed) {
+			pr.hailed = from
+		}
 	case pr.reached == from:
 		s.sync(pr)
-	case !pr.reached.IsZero() && newer(from, pr.reached):
+	case newer(from, pr.reached):
 		// Its relay reaches an older scope of node's: reach this one.
-		_ = s.p.Exit(pr.relay, "replaced")
-		s.connect(node, pr)
+		s.replace(node, pr)
 	}
+}
+
+// replace ends pr's relay, which reaches an older scope than one that said
+// hello, and starts another.
+func (s *scope) replace(node string, pr *peer) {
+	_ = s.p.Exit(pr.relay, "replaced")
+	s.connect(node, pr)
 }
 
 // newer says whether a is a later process of its node than b: of a later
@@ -550,10 +566,15 @@ func newer(a, b grpcproc.PID) bool {
 // and syncs again.
 func (s *scope) wrote(node string) { s.reach(node, false) }
 
-// found is pr's relay reaching its scope: it is sent this one's members.
-func (s *scope) found(pr *peer, scope grpcproc.PID) {
-	pr.reached, pr.found = scope, time.Now()
+// found is pr's relay reaching its scope: it is sent this one's members,
+// unless a newer scope of node's said hello meanwhile, which is reached.
+func (s *scope) found(node string, pr *peer, scope grpcproc.PID) {
 	pr.saw(scope.Incarnation)
+	if newer(pr.hailed, scope) {
+		s.replace(node, pr)
+		return
+	}
+	pr.reached, pr.found, pr.hailed = scope, time.Now(), grpcproc.PID{}
 	s.sync(pr)
 }
 
@@ -582,6 +603,10 @@ func (s *scope) lost(node string, pr *peer, scope grpcproc.PID, reason string) {
 		// It watched an older scope than the one whose members these are.
 		s.connect(node, pr)
 		return
+	}
+	if hailed := pr.hailed; !hailed.IsZero() {
+		// node's scope said hello while the relay asked: as if it said it now.
+		defer func() { s.reach(node, true).saw(hailed.Incarnation) }()
 	}
 	s.dropPeer(pr)
 	longest := s.cfg.Retry << maxBackoff

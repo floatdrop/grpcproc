@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -164,6 +165,14 @@ func TestStrays(t *testing.T) {
 			t.Fatalf("a hello from its own node: %v", err)
 		}
 		unchanged("a hello from its own node")
+		before := relays(a)
+		if _, err := b.CallTo[*groupsv1.Hello](t.Context(), sa.PID(), &groupsv1.Hello{Scope: grpcproc.PID{Node: "c", Incarnation: sb.PID().Incarnation + 1, ID: 1}.Proto()}); err != nil {
+			t.Fatal(err)
+		}
+		unchanged("a hello naming another node's scope")
+		if after := relays(a); !slices.Equal(before, after) {
+			t.Fatalf("a hello naming another node's scope replaced a relay: %v, then %v", before, after)
+		}
 		tell(t, a, sa.PID(), &groupsv1.Found{Scope: sb.PID().Proto()})
 		tell(t, a, sa.PID(), &groupsv1.Lost{Reason: grpcproc.ReasonNoConnection})
 		unchanged("a Found and a Lost from no relay")
@@ -238,6 +247,73 @@ func TestReplaced(t *testing.T) {
 		exit(t, b, sb.PID())
 		wantPeers(t, a, sa, "b absent")
 	})
+}
+
+// A hello that comes while the relay to its node is still asking counts
+// once that relay is done: b's policy holds a's first hello until then. If
+// the hello fails, b has a scope now, and is asked again at once; if it
+// finds an older scope than the one that said hello, that one is reached.
+func TestHelloWhileAsking(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		refuse bool
+	}{{"refused", true}, {"older scope", false}} {
+		refuse := tc.refuse
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				gate := make(chan struct{})
+				open := sync.OnceFunc(func() { close(gate) })
+				defer open() // a failure before the gate opens leaves no link stuck
+				var first atomic.Bool
+				hold := grpcproctest.WithConfig(func(name string, cfg *grpcproc.Config) {
+					if name != "b" {
+						return
+					}
+					cfg.Admit = func(context.Context, grpcproc.NodeID) (grpcproc.Policy, error) {
+						return func(op grpcproc.Op, to string) bool {
+							if op == grpcproc.OpCall && to == groups.ScopeName(groups.DefaultScope) && first.CompareAndSwap(false, true) {
+								<-gate
+								return !refuse
+							}
+							return true
+						}, nil
+					}
+				})
+				c := grpcproctest.NewWith(t, []grpcproctest.Option{hold}, "a", "b")
+				a, b := c.Node("a"), c.Node("b")
+				var sb *groups.Scope
+				if !refuse {
+					sb = start(t, b, groups.Config{})
+				}
+				sa := start(t, a, peers("b"))
+				pa := idle(t, a)
+				join(t, sa, a, "g", pa)
+				synctest.Wait()
+				begun, asking := time.Now(), relays(a)
+				if refuse {
+					sb = start(t, b, peers("a"))
+				} else {
+					// A newer scope than the one a's relay is about to find. Its
+					// answer comes back once the gate opens.
+					newer := idle(t, b)
+					go func() {
+						_, _ = b.CallTo[*groupsv1.Hello](t.Context(), sa.PID(), &groupsv1.Hello{Scope: newer.Proto()})
+					}()
+				}
+				synctest.Wait()
+				open()
+				synctest.Wait()
+				wantPeers(t, a, sa, "b synced")
+				same(t, "b's view of g", sb.Members("g"), pa)
+				if now := relays(a); len(now) != 1 || slices.Equal(now, asking) {
+					t.Fatalf("relays %v, then %v: b not asked again", asking, now)
+				}
+				if waited := time.Since(begun); waited != 0 {
+					t.Fatalf("waited %v: a timeout, not the policy, ended the hello", waited)
+				}
+			})
+		})
+	}
 }
 
 // A node that asked this one, and cannot be reached for long, is forgotten,
