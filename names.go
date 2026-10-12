@@ -112,7 +112,8 @@ type ClaimOption func(*ClaimOptions)
 
 // WaitForName makes Claim wait, until its ctx is done, for a name that is
 // held to be free, and claim it then: a standby, with the same process on
-// other nodes, that takes over when the holder exits or its node goes.
+// other nodes, that takes over when the holder exits or its node goes. A
+// wait also ends when the process is told to exit, with Receive's error.
 func WaitForName() ClaimOption { return func(o *ClaimOptions) { o.Wait = true } }
 
 // KeepOnLoss keeps the holder running when its claim is lost, rather than
@@ -243,13 +244,16 @@ func (p *proc) Claim(ctx context.Context, name string, opts ...ClaimOption) (*Cl
 	for _, opt := range opts {
 		opt(&o)
 	}
-	// A wait for the name ends with the process too.
-	ctx, cancel := context.WithCancel(ctx)
-	defer context.AfterFunc(p.ctx, unlabelled(cancel))()
-	defer cancel()
+	// A wait for the name ends with the process too, for the same reason.
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer context.AfterFunc(p.ctx, unlabelled(func() { cancel(context.Cause(p.ctx)) }))()
+	defer cancel(nil)
 	c := &Claim{name: name, p: p, keep: o.KeepOnLoss, held: true}
 	nc, err := names.Claim(ctx, name, p.pid, o, c.notified)
 	if err != nil {
+		if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+			err = context.Cause(ctx) // why, whether or not the store says
+		}
 		return nil, err
 	}
 	c.mu.Lock()

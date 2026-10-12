@@ -235,15 +235,30 @@ func TestClaimWaits(t *testing.T) {
 		if pid, _ := a.Names().Lookup("gateway"); pid != standby.PID() {
 			t.Fatalf("holder %v, want the standby", pid)
 		}
-		// A wait ends with the process that waits.
-		waiting, ch := holding(t, a, "gateway", grpcproc.WaitForName())
-		synctest.Wait()
-		if err := a.Exit(ctx(t), waiting.PID(), "give up"); err != nil {
-			t.Fatal(err)
-		}
-		var ee *grpcproc.ExitError
-		if got := within(t, ch, "a wait that ended"); !errors.As(got.err, &ee) || ee.Reason != "give up" {
-			t.Fatalf("wait: %v", got.err)
+		// A wait ends with the process that waits, and says why, whatever
+		// its ctx.
+		for _, own := range []bool{true, false} {
+			ch := make(chan claimed, 1)
+			waiting, err := a.Spawn(func(p *grpcproc.Process[*testpb.Ping]) error {
+				wctx := p.Context()
+				if !own {
+					wctx = context.WithoutCancel(wctx)
+				}
+				_, err := p.Claim(wctx, "gateway", grpcproc.WaitForName())
+				ch <- claimed{nil, err}
+				return err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			synctest.Wait()
+			if err := a.Exit(ctx(t), waiting.PID(), "give up"); err != nil {
+				t.Fatal(err)
+			}
+			var ee *grpcproc.ExitError
+			if got := within(t, ch, "a wait that ended"); !errors.As(got.err, &ee) || ee.Reason != "give up" {
+				t.Fatalf("wait with the process's ctx %v: %v", own, got.err)
+			}
 		}
 	})
 }
