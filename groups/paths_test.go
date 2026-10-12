@@ -207,7 +207,10 @@ func TestReplaced(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := grpcproctest.New(t, "a", "b")
 		a, b := c.Node("a"), c.Node("b")
-		sa, sb := start(t, a, peers("b")), start(t, b, peers("a"))
+		// b's scope first, so a's first hello finds it: a loss then would
+		// double the wait below.
+		sb := start(t, b, peers("a"))
+		sa := start(t, a, peers("b"))
 		pb := idle(t, b)
 		join(t, sb, b, "g", pb)
 		synctest.Wait()
@@ -376,9 +379,11 @@ func TestPeersAndMembership(t *testing.T) {
 			return m
 		}
 		mem := &members{up: []grpcproc.Member{inc("b", 0), inc("c", 0), inc("d", 0)}}
-		sa := start(t, a, groups.Config{Peers: []string{"b"}, Membership: mem, Select: func(m grpcproc.Member) bool { return m.Metadata["groups"] == "yes" }})
+		// b and c ask nothing of a, so their scopes start first: a's first
+		// hello finds them.
 		start(t, c.Node("b"), groups.Config{})
 		start(t, c.Node("c"), groups.Config{})
+		sa := start(t, a, groups.Config{Peers: []string{"b"}, Membership: mem, Select: func(m grpcproc.Member) bool { return m.Metadata["groups"] == "yes" }})
 		synctest.Wait()
 		wantPeers(t, a, sa, "b synced, c synced, d absent")
 

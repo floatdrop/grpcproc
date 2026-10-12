@@ -437,7 +437,10 @@ func TestUnreachable(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := grpcproctest.New(t, "a", "b")
 		a, b := c.Node("a"), c.Node("b")
-		sa, sb := start(t, a, peers("b")), start(t, b, peers("a"))
+		// b's scope first, so a's first hello finds it: a loss then would
+		// double the waits below.
+		sb := start(t, b, peers("a"))
+		sa := start(t, a, peers("b"))
 		p1, p2 := idle(t, a), idle(t, b)
 		join(t, sa, a, "g", p1)
 		join(t, sb, b, "g", p2)

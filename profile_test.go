@@ -229,7 +229,8 @@ func TestProfileLabelsOfATimer(t *testing.T) {
 	}
 	<-h.sending
 	found := false
-	for _, r := range goroutines(t) {
+	all := goroutines(t)
+	for _, r := range all {
 		if strings.Contains(r.stack, "(*sendHeld).OnSend") {
 			found = true
 			if !strings.Contains(r.labels, `"`+grpcproc.ProfilePID+`":"`+timer.PID().String()+`"`) {
@@ -238,6 +239,10 @@ func TestProfileLabelsOfATimer(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("no goroutine in the timer's send")
+		var stacks []string
+		for _, r := range all {
+			stacks = append(stacks, r.stack)
+		}
+		t.Fatalf("no goroutine in the timer's send, of:\n%s", strings.Join(stacks, "\n\n"))
 	}
 }
