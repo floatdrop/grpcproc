@@ -289,7 +289,9 @@ go tool pprof -tagfocus=grpcproc.label=ledger http://localhost:6060/debug/pprof/
 					<Code>{`h, err := grpcprocotel.New() // global meter and tracer providers and propagator; see Options
 node, err := grpcproc.NewNode(grpcproc.Config{…, Hooks: grpcproc.JoinHooks(h, myHooks)})
 reg, err := h.Observe(node) // gauges read from node snapshots at each collection
-defer reg.Unregister()`}</Code>
+defer reg.Unregister()
+lreg, err := h.ObserveLeader(node) // gauges of the node's grpcproc/leader elections
+defer lreg.Unregister()`}</Code>
 					<h3>Traces</h3>
 					<Table
 						head={['Where', 'Span']}
@@ -372,6 +374,71 @@ defer span.End()`}</Code>
 						<C>MaxMessageSize</C>), <C>busy</C> (the link to the peer was full),{' '}
 						<C>noconnection</C>, <C>timeout</C>, <C>canceled</C>, <C>remote</C> (the
 						handler returned an error) or <C>other</C>. <A to="reference/errors/">Errors and exit reasons</A> says what each means.
+					</p>
+					<h3>Leader elections</h3>
+					<p>
+						<C>ObserveLeader</C> reads each <A to="guides/leader/">grpcproc/leader</A> elector on the
+						node, the processes named <C>leader.ElectorName(cluster)</C> with its label, at each
+						collection, from <A to="guides/leader/#inspector">its inspect map</A>, and reports one set
+						of gauges per election, by <C>grpcproc.leader.cluster</C>. The electors are asked at once.
+						One that the node's snapshot shows on one message for a second, busy in a slow{' '}
+						<C>Store</C> say, or that does not answer within a second of a collection that lasts that
+						long, is reported as stalled, with no other gauge.
+					</p>
+					<Table
+						head={['Name', 'What it says']}
+						rows={[
+							[<C>grpcproc.leader.electors</C>, <>
+								1, with <C>grpcproc.leader.role</C>: <C>leader</C>, <C>candidate</C>, <C>follower</C> or{' '}
+								<C>unclustered</C>
+							</>],
+							[<C>grpcproc.leader.stalled</C>, <>
+								1 while the elector is on one message for a second or more, or does not answer within
+								one; 0 while it answers.
+							</>],
+							[<C>grpcproc.leader.term</C>, "The elector's term."],
+							[<>
+								<C>grpcproc.leader.view</C>, <C>grpcproc.leader.quorum</C>
+							</>, 'The nodes whose majority elects, and how many that majority is.'],
+							[<C>grpcproc.leader.reachable</C>, 'The nodes of the view it hears from, itself included.'],
+							[<C>grpcproc.leader.singleton</C>, '1 while the singleton runs on this node.'],
+							[<C>grpcproc.leader.checkpoints.waiting</C>, <>
+								<C>Checkpoint</C> calls waiting for a majority to hold their state.
+							</>]
+						]}
+					/>
+					<p>
+						Alerts per cluster, in PromQL, with the names as the Prometheus exporter writes them: dots
+						turned to underscores, and a unit suffix where there is one:
+					</p>
+					<Code lang="txt">{`# No leader: the leaders, with a 0 for every elector, so that none adds up to 0.
+# A cluster below MinClusterSize has none by design: its electors are unclustered.
+sum by (grpcproc_leader_cluster) (grpcproc_leader_electors{grpcproc_leader_role="leader"} or grpcproc_leader_electors * 0) < 1
+# No node of a cluster reporting at all: one rule per cluster.
+absent(grpcproc_leader_electors{grpcproc_leader_cluster="scheduler"})
+# Two leaders: a leader cut off from the others has not noticed.
+sum by (grpcproc_leader_cluster) (grpcproc_leader_electors{grpcproc_leader_role="leader"}) > 1
+# The singleton runs nowhere, or twice.
+sum by (grpcproc_leader_cluster) (grpcproc_leader_singleton) != 1
+# One more node lost and this side has no majority; below it, none can be elected.
+# A view of one or two never has a node to spare.
+grpcproc_leader_reachable <= grpcproc_leader_quorum and grpcproc_leader_view >= 3
+# Elections keep happening.
+changes(max by (grpcproc_leader_cluster) (grpcproc_leader_term)[15m:]) > 3
+# A majority is not taking the leader's state.
+grpcproc_leader_checkpoints_waiting > 0
+# An elector held up for a second or more, which sends no heartbeat or vote meanwhile.
+grpcproc_leader_stalled > 0`}</Code>
+					<p>
+						Give each a <C>for:</C> of a few scrape intervals, a minute say: an election, and a
+						hand-over, whose <C>Resign</C> stops the old singleton before the next leader starts its
+						own, leave no leader or no singleton for a moment, and a leader cut off from the others
+						leads for up to two election timeouts after they elect another. A stalled elector is in
+						none of the sums: when the leader is the one held up, the other nodes' gauges show no
+						leader, and with no other node reporting the sums are empty, which only "stalled" alerts
+						on. A second is fixed: with an <C>ElectionTimeout</C> above it, a <C>Store</C> slow enough
+						to be stalled can still be within it, so give "stalled" a <C>for:</C> longer than the
+						timeout.
 					</p>
 				</>
 			)

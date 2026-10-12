@@ -22,13 +22,8 @@ import (
 // returned registration when the node stops.
 func (h *Hooks) Observe(node *grpcproc.Node) (metric.Registration, error) {
 	var errs []error
-	gauge := func(name, desc, unit string) metric.Int64ObservableGauge {
-		g, err := h.meter.Int64ObservableGauge(name, metric.WithDescription(desc), metric.WithUnit(unit))
-		errs = append(errs, err)
-		return g
-	}
-	processes := gauge("grpcproc.processes", "Live processes, by label.", "{process}")
-	depth := gauge("grpcproc.mailbox.depth", "Messages waiting in mailboxes, summed by label.", "{message}")
+	processes := h.gauge(&errs, "grpcproc.processes", "Live processes, by label.", "{process}")
+	depth := h.gauge(&errs, "grpcproc.mailbox.depth", "Messages waiting in mailboxes, summed by label.", "{message}")
 	oldest, err := h.meter.Float64ObservableGauge("grpcproc.mailbox.oldest",
 		metric.WithDescription("Age of the oldest waiting message, the maximum by label."), metric.WithUnit("s"))
 	errs = append(errs, err)
@@ -110,4 +105,11 @@ func (h *Hooks) Observe(node *grpcproc.Node) (metric.Registration, error) {
 		}
 		return nil
 	}, processes, depth, oldest, linkMessages, linkBytes)
+}
+
+// gauge makes an int64 gauge, adding its error to errs.
+func (h *Hooks) gauge(errs *[]error, name, desc, unit string) metric.Int64ObservableGauge {
+	g, err := h.meter.Int64ObservableGauge(name, metric.WithDescription(desc), metric.WithUnit(unit))
+	*errs = append(*errs, err)
+	return g
 }

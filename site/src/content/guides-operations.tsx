@@ -369,7 +369,10 @@ srv.GracefulStop()`}</Code>
 								'Crashes, and a supervisor that gave up.'
 							],
 							[
-								<>A leader's term rising, from <C>leader.Status</C>: no metric carries it</>,
+								<>
+									<C>grpcproc.leader.term</C> rising, from{' '}
+									<A to="guides/observability/#otel">ObserveLeader</A>
+								</>,
 								<>
 									Elections keep happening: <C>ElectionTimeout</C> too low for the network, or a
 									node flapping. <C>grpcprocctl leader</C> shows each node's view.

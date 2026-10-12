@@ -408,6 +408,11 @@ c     follower  2     a       a,b,c  2.3    b                      none`}</Outpu
 						<C>leader relay</C>; the process that starts the singleton, <C>leader starter</C>; and
 						the watch of a <C>Membership</C>, <C>leader membership</C>.
 					</p>
+					<p>
+						<A to="guides/observability/#otel">grpcproc/otel</A>'s <C>ObserveLeader</C> turns what
+						every node's elector publishes into gauges, to alert on: no leader or two, a singleton
+						that runs nowhere, a view one node short of losing its majority.
+					</p>
 				</>
 			)
 		}

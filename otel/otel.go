@@ -6,6 +6,8 @@
 //	node, err := grpcproc.NewNode(grpcproc.Config{…, Hooks: h})
 //	reg, err := h.Observe(node)                // gauges from snapshots
 //	defer reg.Unregister()
+//	lreg, err := h.ObserveLeader(node)         // grpcproc/leader elections, if any
+//	defer lreg.Unregister()
 //
 // Inside a handler, h.Extract(ctx, m.Metadata) is a context whose span is the
 // one handling m, for the handler's own spans (a database call, an HTTP
@@ -44,7 +46,9 @@ const (
 	AttrMessageType = attribute.Key("grpcproc.message.type")
 	AttrPeer        = attribute.Key("grpcproc.peer")
 	AttrDirection   = attribute.Key("grpcproc.direction")
-	AttrPID         = attribute.Key("grpcproc.pid") // spans only
+	AttrCluster     = attribute.Key("grpcproc.leader.cluster") // ObserveLeader
+	AttrRole        = attribute.Key("grpcproc.leader.role")    // ObserveLeader's grpcproc.leader.electors
+	AttrPID         = attribute.Key("grpcproc.pid")            // spans only
 	AttrErrorType   = attribute.Key("error.type")
 )
 
