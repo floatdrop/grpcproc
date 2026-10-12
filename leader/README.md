@@ -400,6 +400,10 @@ shows: `role`, `term`, `leader`, `voted_for`, `view`, `quorum`,
 membership watch are its children, labelled `leader relay`, `leader starter`
 and `leader membership`.
 
+[grpcproc/otel](../otel/README.md#leader-elections)'s `ObserveLeader` turns
+it into gauges on every node, to alert on: no leader or two, a singleton that
+runs nowhere, a view one node short of losing its majority.
+
 ## A job that runs once in a cluster
 
 [grpcproc/cron](../cron/README.md) as the singleton: the cron process runs on

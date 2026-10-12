@@ -465,6 +465,9 @@ func TestInstrumentErrors(t *testing.T) {
 	if _, err := h.Observe(c.Node("a")); !errors.Is(err, errNoInstruments) {
 		t.Fatalf("Observe: %v", err)
 	}
+	if _, err := h.ObserveLeader(c.Node("a")); !errors.Is(err, errNoInstruments) {
+		t.Fatalf("ObserveLeader: %v", err)
+	}
 }
 
 type observeFailing struct{ noop.MeterProvider }
