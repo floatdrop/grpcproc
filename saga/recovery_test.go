@@ -353,8 +353,8 @@ func TestAStoreThatFails(t *testing.T) {
 		began := time.Now()
 		begin(t, d, e, "1")
 		time.Sleep(5 * time.Second)
+		store.fail("Save", down) // before claims: a tick now may claim between the two
 		store.fail("Claim", nil)
-		store.fail("Save", down)
 		time.Sleep(5 * time.Second)
 		store.fail("Save", nil)
 		s := wait(t, d, e, "1")
