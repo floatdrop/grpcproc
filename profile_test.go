@@ -24,7 +24,7 @@ func goroutines(t *testing.T) []goroutineRecord {
 	if err := pprof.Lookup("goroutine").WriteTo(&b, 1); err != nil {
 		t.Fatal(err)
 	}
-	head := regexp.MustCompile(`^(\d+) @`)
+	head := regexp.MustCompile(`(?m)^(\d+) @`) // the first block opens with the profile's total
 	var out []goroutineRecord
 	for block := range strings.SplitSeq(b.String(), "\n\n") {
 		m := head.FindStringSubmatch(block)

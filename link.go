@@ -579,6 +579,10 @@ func handshake(peer string, stream grpc.BidiStreamingClient[grpcprocv1.Frame, gr
 
 // ---------- inbound ----------
 
+// helloNo is the order of an inbound link's Hello among this node's, and
+// the peer's incarnation.
+type helloNo struct{ incarnation, n uint64 }
+
 type inLink struct {
 	peer   NodeID
 	policy Policy // from Config.Admit; nil lets everything through
@@ -691,8 +695,9 @@ func (n *Node) serveLink(stream grpc.BidiStreamingServer[grpcprocv1.Frame, grpcp
 	if err != nil {
 		return n.refuse(peer, err)
 	}
+	no, hello := helloNo{incarnation: peer.Incarnation, n: n.hellos.Add(1)}, max(ours, session)
 	if err := stream.Send(&grpcprocv1.Frame{Envelopes: []*grpcprocv1.Envelope{{Kind: grpcprocv1.Kind_KIND_HELLO, Hello: &grpcprocv1.Hello{
-		Node: n.id.Name, Incarnation: n.id.Incarnation, Version: protoVersion, Session: max(ours, session),
+		Node: n.id.Name, Incarnation: n.id.Incarnation, Version: protoVersion, Session: hello,
 	}}}}); err != nil {
 		return err
 	}
@@ -714,6 +719,23 @@ func (n *Node) serveLink(stream grpc.BidiStreamingServer[grpcprocv1.Frame, grpcp
 			n.settled.Wait()
 			continue
 		}
+		if last := n.lastIn[peer.Name]; last.incarnation == no.incarnation && last.n > no.n && n.stale(peer) == nil {
+			// Given up for the later link: unread, and in a session still on,
+			// perhaps waited on, as a link that broke would be.
+			var out *outLink
+			var in *inLink
+			if n.in[peer.Name] != nil && n.epochs[peer.Name] == hello {
+				out, in = n.takeLinks(peer.Name)
+			}
+			n.mu.Unlock()
+			if in != nil {
+				n.log.Warn("a link the peer gave up came after its next one; ending the session", "peer", peer)
+				n.linksLost(out, in, errUnread)
+			} else {
+				n.log.Debug("refused a link the peer gave up", "peer", peer)
+			}
+			return status.Error(codes.Aborted, "grpcproc: a later link from this peer went in")
+		}
 		dropped, err := n.supersede(peer, session, true)
 		if err != nil { // a newer incarnation came up since the Hello
 			n.mu.Unlock()
@@ -727,7 +749,7 @@ func (n *Node) serveLink(stream grpc.BidiStreamingServer[grpcprocv1.Frame, grpcp
 	if began {
 		n.announcing[peer.Name]++
 	}
-	n.in[peer.Name] = l
+	n.in[peer.Name], n.lastIn[peer.Name] = l, no
 	n.settling[peer.Name]++ // until it is announced
 	// The peer reached this node, which shows it is up, not that this node
 	// can reach it: the next send dials it at once, and the wait keeps

@@ -140,7 +140,13 @@ the two agree, and a restarted peer's count is taken whatever it is. The
 `Hello` is never smaller than what the dialer sent, so a dialer that finds
 it smaller than its count *now* dialed in a session it ended during the
 dial, and drops the link without backing off (`finishDial`). This closed a
-lost `Down` the fuzzer found (`supersede`, `admit`).
+lost `Down` the fuzzer found (`supersede`, `admit`). The count does not
+order two links of one session, so the server numbers its inbound links as
+their `Hello`s go out and refuses one that would go in after a link
+numbered later from the same incarnation did (`lastIn`): the peer gave it
+up before dialing that one, and its messages would arrive after newer ones.
+Unread, they end the session if it is still the one its `Hello` named, as
+a link that broke would, or the peer's calls on it might wait for good.
 
 **Incarnations fence links.** A node remembers per peer name the newest
 incarnation it has seen (`newest`, `meet`) and refuses an older one; a newer
@@ -248,7 +254,9 @@ works on a newer one's runs. A store must pass `sagatest.Store`.
   send bumps `protoVersion` in `link.go`, and the release notes say whether
   nodes of the last release and this one can share a cluster.
 - Nothing dispatched from a link after its `Down`; nothing from a new
-  session before the old session's `Down`s (`settling`).
+  session before the old session's `Down`s (`settling`); no inbound link
+  in after one from the same incarnation whose `Hello` was numbered later
+  (`lastIn`).
 - A peer is declared down from its inbound link, not from an outbound
   failure.
 - `epochs` is taken, not incremented, on a larger count, and a restarted

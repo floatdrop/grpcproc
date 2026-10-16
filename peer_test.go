@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -618,6 +619,130 @@ func TestSlowPeerFillsItsOwnLink(t *testing.T) {
 			t.Fatalf("got %d after catching up", binary.BigEndian.Uint64(v))
 		}
 	})
+}
+
+// A link the peer ended before it went in, whose Hello it had, stays out
+// once the peer's next link went in: what it carries was sent before
+// everything the next one carried, which is already delivered, and the
+// session the next one began goes on.
+func TestLinkAfterTheNextOne(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		hold, release := holdFirstLink()
+		nodes := mesh(t, grpcproc.Config{Admit: grpcproc.AdmitAll}, map[string][]grpc.ServerOption{"b": {hold}}, "a", "b")
+		t.Cleanup(release)
+		a := nodes["a"]
+		to, got := collector(t, nodes["b"])
+		ping := func(n int64) {
+			t.Helper()
+			if err := a.SendTo(t.Context(), to, &testpb.Ping{N: n}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		ping(1) // b holds the link after its Hello, and 1 with it
+		a.Disconnect("b")
+		ping(2)
+		if m := <-got; m.Body.(*testpb.Ping).GetN() != 2 {
+			t.Fatalf("got %v, want 2", m.Body)
+		}
+		w, downs := watcher(t, nodes["b"])
+		w.Monitor(spawnEcho(t, a))
+		synctest.Wait()
+		release()
+		synctest.Wait()
+		select {
+		case m := <-got:
+			t.Fatalf("got %v after 2", m.Body)
+		case m := <-downs:
+			t.Fatalf("the session ended: %+v", m.Down)
+		default:
+		}
+	})
+}
+
+// A link the peer gave up, though not their session, that comes after its
+// next one ends the session, as a link that broke would: what the peer
+// wrote on it is not read, and a call it carried fails rather than wait for
+// an answer that never comes.
+func TestLinkAfterTheNextOneOfItsSession(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		hold, release := holdFirstLink()
+		cuts := make(chan context.CancelFunc, 2)
+		cfg := grpcproc.Config{Admit: grpcproc.AdmitAll, DialBackoff: -1, DialOptionsFor: func(peer string) []grpc.DialOption {
+			if peer != "b" {
+				return nil
+			}
+			return []grpc.DialOption{grpc.WithStreamInterceptor(func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+				ctx, cancel := context.WithCancel(ctx)
+				select {
+				case cuts <- cancel:
+				default:
+				}
+				return streamer(ctx, desc, cc, method, opts...)
+			})}
+		}}
+		nodes := mesh(t, cfg, map[string][]grpc.ServerOption{"b": {hold}}, "a", "b")
+		t.Cleanup(release)
+		a, b := nodes["a"], nodes["b"]
+		// b's link to a first, so that a keeps the session when its link to b
+		// breaks.
+		toA, _ := collector(t, a)
+		if err := b.SendTo(t.Context(), toA, &testpb.Ping{}); err != nil {
+			t.Fatal(err)
+		}
+		echo, asked := answering(t, b)
+		called := make(chan error, 1)
+		go func() {
+			_, err := a.CallTo[*testpb.Pong](t.Context(), echo, &testpb.Ping{N: 1})
+			called <- err
+		}()
+		synctest.Wait() // the call is on the link b holds
+		(<-cuts)()
+		synctest.Wait()
+		toB, got := collector(t, b)
+		if err := a.SendTo(t.Context(), toB, &testpb.Ping{N: 2}); err != nil {
+			t.Fatal(err)
+		}
+		<-got
+		release()
+		synctest.Wait()
+		select {
+		case err := <-called:
+			if !errors.Is(err, grpcproc.ErrNoConnection) {
+				t.Fatalf("the call on the link b did not read: %v", err)
+			}
+		default:
+			t.Fatal("the call on the link b did not read still waits")
+		}
+		if len(asked) != 0 {
+			t.Fatalf("the call was read: %v", (<-asked).Body)
+		}
+	})
+}
+
+// holdFirstLink is a server option under whose first link the handler, once
+// its Hello is sent, waits until release is called.
+func holdFirstLink() (hold grpc.ServerOption, release func()) {
+	released := make(chan struct{})
+	var held atomic.Bool
+	hold = grpc.StreamInterceptor(func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if held.CompareAndSwap(false, true) {
+			ss = heldStream{ss, released}
+		}
+		return handler(srv, ss)
+	})
+	return hold, sync.OnceFunc(func() { close(released) })
+}
+
+// heldStream is a server stream whose sends return once release is closed.
+type heldStream struct {
+	grpc.ServerStream
+	release <-chan struct{}
+}
+
+func (s heldStream) SendMsg(m any) error {
+	err := s.ServerStream.SendMsg(m)
+	<-s.release
+	return err
 }
 
 func TestPartitionAndHeal(t *testing.T) {

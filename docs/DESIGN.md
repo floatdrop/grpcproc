@@ -473,6 +473,25 @@ count is taken as it comes, never reset. `Node.Disconnect` drops a dial
 under way outright. `LinkInfo.Sessions` shows the count: one that keeps
 growing is a peer whose links keep breaking.
 
+The count does not order two links of one session: a dialer whose outbound
+link broke while its inbound one lived dials again with the same count, and
+one whose link the server held between its `Hello` and going in may have
+given that link up, and dialed the next, meanwhile. So the server numbers
+each inbound link just before its `Hello` goes out, and refuses one that
+would go in after a link numbered later from the same incarnation went in.
+A peer that read the refused link's `Hello` gave it up before dialing the
+later one, which carries what was sent after everything it carries; let in,
+it would end the later link's session and deliver its messages after newer
+ones. Refused, what it carries is never read. If the server's count has
+grown past the one the refused link's `Hello` sent, that session has ended
+on both ends, and the peer failed what it sent on it. Otherwise the peer
+may still wait on it, so the server ends the session, as if the link had
+broken: the peer's calls on it fail and its monitors fire, at the cost of a
+session ended for nothing when the peer sent nothing on it. The numbers
+follow the peer's dials only for links whose `Hello` it read: one it gave
+up before that carries nothing, and may still go in after the next one,
+whose session it then ends.
+
 #### A failed dial backs off
 
 `Config.DialTimeout` (5s by default) bounds a dial. After one fails,

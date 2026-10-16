@@ -259,6 +259,8 @@ type Node struct {
 	dials    map[string]uint64  // per peer, for LinkInfo.Reconnects
 	newest   map[string]uint64  // per peer, the newest incarnation seen (see meet)
 	epochs   map[string]uint64  // per peer, the sessions with it that ended (see supersede)
+	lastIn   map[string]helloNo // per peer, the inbound link that went in last (see serveLink)
+	hellos   atomic.Uint64      // numbers the Hellos of inbound links
 	members  map[string]Member  // what Membership reports up, by name (see Members)
 	stopping bool               // Stop began: no new processes
 	stopped  bool               // links closed: no new links
@@ -368,6 +370,7 @@ func NewNode(cfg Config) (*Node, error) {
 		dials:    map[string]uint64{},
 		newest:   map[string]uint64{},
 		epochs:   map[string]uint64{},
+		lastIn:   map[string]helloNo{},
 		members:  map[string]Member{},
 		settling: map[string]int{},
 
@@ -841,6 +844,9 @@ var (
 	// errSessionEnded is why a dial's link was dropped: this node ended its
 	// session with the peer while it dialed (see finishDial).
 	errSessionEnded = errors.New("the session it was dialed in ended")
+	// errUnread is why a session ended when a link from the peer came after
+	// its next one, and was not read (see serveLink).
+	errUnread = errors.New("a link from it came after its next one, unread")
 )
 
 // Disconnect drops every link with peer, and a dial to it under way, as if
