@@ -11,7 +11,7 @@ replace (
 )
 
 require (
-	github.com/floatdrop/grpcproc v0.15.0
+	github.com/floatdrop/grpcproc v0.16.0
 	github.com/floatdrop/grpcproc/etcd v0.13.0
 	go.etcd.io/etcd/client/v3 v3.7.2
 	go.etcd.io/etcd/server/v3 v3.7.2
