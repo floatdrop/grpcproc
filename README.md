@@ -129,7 +129,7 @@ your `*grpc.Server` next to your other services, start and stop.
   is what a process answers and takes, and `protoc-gen-grpcproc`, run by
   `buf generate`, writes its address with a method per rpc and the handler
   that dispatches to it, as gRPC's stubs are written.
-  [Addressing](https://floatdrop.github.io/grpcproc/concepts/addressing/)
+  [Guide](https://floatdrop.github.io/grpcproc/guides/contracts/)
 - **An Inspector** and [`grpcprocctl`](tools/README.md): every process, its
   mailbox and what it says about itself, from a terminal or an AI agent over
   MCP. [Guide](https://floatdrop.github.io/grpcproc/guides/inspector/)

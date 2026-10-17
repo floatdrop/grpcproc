@@ -20,6 +20,7 @@ import { guidesInspector } from './guides-inspector.tsx';
 import { guidesLeader } from './guides-leader.tsx';
 import { guidesMcp } from './guides-mcp.tsx';
 import { guidesObservability } from './guides-observability.tsx';
+import { guidesContracts } from './guides-contracts.tsx';
 import { guidesGroups } from './guides-groups.tsx';
 import { guidesPubsub } from './guides-pubsub.tsx';
 import { guidesSagas } from './guides-sagas.tsx';
@@ -49,6 +50,7 @@ const all: Doc[] = [
 	conceptsNodes,
 	conceptsDiscovery,
 	guidesActors,
+	guidesContracts,
 	guidesSupervisors,
 	guidesPubsub,
 	guidesGroups,

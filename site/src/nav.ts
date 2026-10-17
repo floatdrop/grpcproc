@@ -27,6 +27,7 @@ export const groups: NavGroup[] = [
 		title: 'Build',
 		paths: [
 			'guides/actors/',
+			'guides/contracts/',
 			'guides/supervisors/',
 			'guides/pubsub/',
 			'guides/groups/',

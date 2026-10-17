@@ -7,16 +7,17 @@ import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 import go from '@shikijs/langs/go';
 import proto from '@shikijs/langs/proto';
 import sh from '@shikijs/langs/shellscript';
+import yaml from '@shikijs/langs/yaml';
 import githubDark from '@shikijs/themes/github-dark';
 import githubLight from '@shikijs/themes/github-light';
 
 import { Figure, Highlighted, Plain } from './components/Figure.tsx';
 
-export type Lang = 'go' | 'proto' | 'sh' | 'txt';
+export type Lang = 'go' | 'proto' | 'sh' | 'txt' | 'yaml';
 
 const highlighter = createHighlighterCoreSync({
 	themes: [githubLight, githubDark],
-	langs: [go, proto, sh],
+	langs: [go, proto, sh, yaml],
 	engine: createJavaScriptRegexEngine()
 });
 

@@ -224,7 +224,8 @@ ${region(conversationsAddress, /^\/\/ Say tells the conversation/, /^}/)}`}
 						The same service gives the process its side: a <C>ConversationHandler</C> interface
 						with a method per rpc, and <C>HandleConversationCall</C>, which dispatches a call to it
 						from an actor's <C>HandleCall</C> and answers <C>ErrType</C> for any other message.{' '}
-						<A to="tutorial/#contracts">The tutorial</A>'s contracts are written this way.
+						<A to="guides/contracts/">Contracts from proto</A> has every form the plugin writes;{' '}
+						<A to="tutorial/#contracts">the tutorial</A>'s contracts are written this way.
 					</p>
 				</>
 			)
