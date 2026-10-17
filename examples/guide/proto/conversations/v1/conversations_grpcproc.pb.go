@@ -6,19 +6,45 @@ package conversationsv1
 import (
 	context "context"
 	grpcproc "github.com/floatdrop/grpcproc"
+	pubsub "github.com/floatdrop/grpcproc/pubsub"
 	proto "google.golang.org/protobuf/proto"
 )
 
+// ConversationProcess is the name the process of the Conversation service for id is registered under on its node.
+func ConversationProcess(id string) string { return "conversation/" + id }
+
 // ConversationAddr addresses a process of the Conversation service; its methods are its rpcs.
 //
-// Conversation is one conversation's process, named after its id: what it
-// accepts. protoc-gen-grpcproc writes its address from this; address.go
-// adds what every caller does first, opening it.
+// Conversation is one conversation's process, registered as "conversation/"
+// and its id: what it accepts, and the topic it publishes on.
+// protoc-gen-grpcproc writes its address from this; address.go adds what
+// every caller does first, opening it.
 type ConversationAddr struct{ grpcproc.Addr[proto.Message] }
 
 // ConversationAddrOf addresses t, a PID, a Name or a global name, as a process of the Conversation service.
 func ConversationAddrOf(t grpcproc.Target) ConversationAddr {
 	return ConversationAddr{grpcproc.AddrOf[proto.Message](t)}
+}
+
+// ConversationAt addresses the process of the Conversation service for id on node, registered as ConversationProcess(id).
+func ConversationAt(node, id string) ConversationAddr {
+	return ConversationAddrOf(grpcproc.Name{Node: node, Name: ConversationProcess(id)})
+}
+
+// ConversationGlobal addresses the process of the Conversation service that holds the global name ConversationProcess(id), wherever it runs.
+func ConversationGlobal(id string) ConversationAddr {
+	return ConversationAddrOf(grpcproc.Global{Name: ConversationProcess(id)})
+}
+
+// ConversationEventsTopic is the name the Events topic of the Conversation service's process for id is registered under on its node.
+func ConversationEventsTopic(id string) string { return ConversationProcess(id) + "/events" }
+
+// ConversationEventsAt is the Events topic of the Conversation service's process for id on node, whose events are Event.
+//
+// Events is the conversation's topic: what the user says, every token of
+// its answers, the tools it calls, and the end of each turn.
+func ConversationEventsAt(node, id string) pubsub.Topic[*Event] {
+	return pubsub.Named[*Event](node, ConversationEventsTopic(id))
 }
 
 // Say tells the conversation what the user said, and returns once its
@@ -30,7 +56,8 @@ func (c ConversationAddr) Say(ctx context.Context, from grpcproc.Caller, req *Sa
 
 // ConversationHandler is what a process of the Conversation service does with what it is
 // sent: a method per call, whose result is the reply, as actor.CallHandler's
-// is, and one per send. HandleConversationCall and HandleConversationMessage dispatch to it.
+// is, and one per send. HandleConversationCall and HandleConversationMessage dispatch to it;
+// UnimplementedConversationHandler answers for the methods an implementation leaves out.
 type ConversationHandler interface {
 	Say(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message], req *Say) (*Said, error)
 }
@@ -48,8 +75,17 @@ func HandleConversationCall(s ConversationHandler, p *grpcproc.Process[proto.Mes
 
 // HandleConversationMessage takes a send to a process of the Conversation service through s,
 // for an actor.Handler's HandleMessage; a message of another type is logged
-// and dropped, as actor.CallsOnly drops one.
+// and dropped, as actor.CallsOnly drops one. A message the process takes
+// from elsewhere, a topic's events say, is declared as a send too.
 func HandleConversationMessage(s ConversationHandler, p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) error {
 	p.Log().Warn("conversation: dropped a message that is not one of its sends", "from", m.From, "type", proto.MessageName(m.Body))
 	return nil
+}
+
+// UnimplementedConversationHandler answers grpcproc.ErrType to every call and drops every send,
+// for an implementation to embed and override what it handles.
+type UnimplementedConversationHandler struct{}
+
+func (UnimplementedConversationHandler) Say(*grpcproc.Process[proto.Message], grpcproc.Msg[proto.Message], *Say) (*Said, error) {
+	return nil, grpcproc.ErrType
 }

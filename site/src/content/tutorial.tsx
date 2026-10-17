@@ -150,15 +150,17 @@ ${region(conversationsGenerated, /^\/\/ Say tells the conversation/, /^}/)}
 ${region(conversationsGenerated, /^\/\/ ConversationHandler is what/, /^}/)}`}
 					</Code>
 					<p>
-						The package writes by hand only what the service cannot say: the type a caller holds,
-						which wraps the generated address with the conversation's node and id, and what every
-						caller does first. <A to="tutorial/conversations/">The next page</A> has what{' '}
+						The service names its processes by a prefix, so <C>ConversationProcess(id)</C>,{' '}
+						<C>ConversationAt(node, id)</C> and <C>ConversationEventsAt(node, id)</C>, the topic, are
+						generated too. The package writes by hand only what the service cannot say: the type a
+						caller holds, which wraps the generated address with the conversation's node and id, and
+						what every caller does first. <A to="tutorial/conversations/">The next page</A> has what{' '}
 						<C>open</C> and <C>Follow</C> do.
 					</p>
 					<Code caption="proto/conversations/v1/address.go">
 						{`${region(conversationsAddress, /^\/\/ Conversation is one conversation/, /^}/)}
 
-${region(conversationsAddress, /^\/\/ ConversationAt addresses the conversation/, /^}/)}
+${region(conversationsAddress, /^\/\/ NewConversation is the conversation/, /^}/)}
 
 ${region(conversationsAddress, /^\/\/ Say tells the conversation/, /^}/)}`}
 					</Code>

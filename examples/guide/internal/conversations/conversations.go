@@ -96,7 +96,7 @@ func (c *conversation) run(p *grpcproc.Process[proto.Message]) (err error) {
 	// has the name until then.
 	for {
 		c.events, err = pubsub.SpawnOwned[*conversationsv1.Event](p, pubsub.Config{Buffer: 1024},
-			grpcproc.WithName(conversationsv1.TopicName(c.id)))
+			grpcproc.WithName(conversationsv1.ConversationEventsTopic(c.id)))
 		if !errors.Is(err, grpcproc.ErrNameTaken) {
 			break
 		}
@@ -238,7 +238,7 @@ func (c *conversation) generate(p *grpcproc.Process[proto.Message]) (*modelsv1.G
 			// A message of its own for each try: a local send passes the
 			// pointer, and the try before may still be reading its own.
 			req := &modelsv1.Generate{
-				History: c.turns, TopicNode: c.node, Topic: conversationsv1.TopicName(c.id),
+				History: c.turns, TopicNode: c.node, Topic: conversationsv1.ConversationEventsTopic(c.id),
 				Turn: c.turn, Attempt: c.attempt,
 			}
 			ctx, cancel := context.WithTimeout(p.Context(), c.limits.Generate)
@@ -341,7 +341,7 @@ func tree(cfg platform.Config, history History, limits Limits, scope *groups.Sco
 				inspect := grpcproc.WithInspect(func() map[string]string {
 					return map[string]string{"turns": strconv.FormatUint(c.turn, 10), "said": strconv.Itoa(len(c.turns))}
 				})
-				name := conversationsv1.ConversationAt(cfg.Node, open.Id).Name()
+				name := conversationsv1.ConversationProcess(open.Id)
 				return actor.ChildFunc(name, c.run, inspect, grpcproc.WithLabel("conversation")).WithRestart(actor.Transient), nil
 			}),
 		},

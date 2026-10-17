@@ -1,5 +1,5 @@
 // What protoc-gen-grpcproc is tested on: a process registered under a
-// name, with a call and a send, and one named per instance.
+// name, with calls, sends and a topic, and one named per instance.
 syntax = "proto3";
 
 package grpcproc.protocgen.test.v1;
@@ -21,21 +21,72 @@ message Note {
   string text = 1;
 }
 
+// Kind is an enum of the file's own, whose Go name is taken too.
+enum Kind {
+  KIND_UNSPECIFIED = 0;
+}
+
+// Count asks how many notes were kept: a request with no fields.
+message Count {}
+
+// Clear forgets the notes: a send with no fields.
+message Clear {}
+
 // Echo answers pings, and takes notes.
 service Echo {
   option (grpcproc.v1.process) = {name: "echo"};
   // Ping is answered with a Pong of the same n. The message's name is the
   // rpc's, so it is qualified.
   rpc Ping(grpcproc.protocgen.test.v1.Ping) returns (Pong);
+  rpc Count(grpcproc.protocgen.test.v1.Count) returns (Pong);
   // Note is kept; nothing answers it.
   rpc Note(grpcproc.protocgen.test.v1.Note) returns (google.protobuf.Empty) {
     option (grpcproc.v1.send) = true;
   }
+  rpc Clear(grpcproc.protocgen.test.v1.Clear) returns (google.protobuf.Empty) {
+    option (grpcproc.v1.send) = true;
+  }
+  // Stats is the topic the echo publishes a Pong to for each ping.
+  rpc Stats(google.protobuf.Empty) returns (Pong) {
+    option (grpcproc.v1.topic) = {name: "echo-stats"};
+  }
 }
 
-service Room {
-  option (grpcproc.v1.process) = {};
+// RoomProcess is a room, named per instance: "room:" + id. Its Go name is
+// Room, which the message of that name keeps it from being in the proto.
+service RoomProcess {
+  option (grpcproc.v1.process) = {
+    prefix: "room:"
+    go_name: "Room"
+  };
   rpc Bounce(Ping) returns (Pong);
+  rpc Events(google.protobuf.Empty) returns (Note) {
+    option (grpcproc.v1.topic) = {name: "events"};
+  }
+}
+
+message Room {
+  string id = 1;
+  // A oneof's wrappers are Go types of their own, Room_Addr here.
+  oneof target {
+    string addr = 2;
+  }
+  // Seat and State are nested, which the generator's own names may not
+  // clash with either.
+  message Seat {}
+  enum State {
+    STATE_UNSPECIFIED = 0;
+  }
+}
+
+// Sink takes a Clear and nothing else: a process with no name and no
+// prefix, addressed by PID or by a name of the application's, with a send
+// only, whose request has no fields.
+service Sink {
+  option (grpcproc.v1.process) = {};
+  rpc Flush(Clear) returns (google.protobuf.Empty) {
+    option (grpcproc.v1.send) = true;
+  }
 }
 
 // Plain is a gRPC service: not a process, and left alone.

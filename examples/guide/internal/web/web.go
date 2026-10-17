@@ -50,7 +50,7 @@ func (f *front) conversation(w http.ResponseWriter, r *http.Request) (conversati
 		http.Error(w, "no such conversation", http.StatusNotFound)
 		return conversationsv1.Conversation{}, false
 	}
-	return conversationsv1.ConversationAt(f.where, id), true
+	return conversationsv1.NewConversation(f.where, id), true
 }
 
 // say is POST /conversations/{id}: the body is what the user says. It

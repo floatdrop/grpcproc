@@ -285,6 +285,9 @@ service Runner {
   rpc Note(Note) returns (google.protobuf.Empty) {     // a send: nothing answers it
     option (grpcproc.v1.send) = true;
   }
+  rpc Stats(google.protobuf.Empty) returns (Load) {    // a topic the process owns
+    option (grpcproc.v1.topic) = {name: "tools-stats"};
+  }
 }
 ```
 
@@ -293,13 +296,54 @@ over `internal/protocgen`), writes `tools_grpcproc.pb.go` beside
 `protoc-gen-go`'s file: `RunnerAddr`, an address with a method per rpc that
 names the reply once (`Run(ctx, from, *Run) (*Ran, error)`, `Note(ctx, from,
 *Note) error`), `RunnerAddrOf(Target)` and, for a service with a name,
-`RunnerProcess` and `RunnerAt(node)`; and the process's side,
-`RunnerHandler`, an interface with a method per rpc, with
+`RunnerProcess`, `RunnerAt(node)` and `RunnerGlobal()`; and the process's
+side, `RunnerHandler`, an interface with a method per rpc, with
 `HandleRunnerCall` and `HandleRunnerMessage` dispatching a message to it
-from an actor's `HandleCall` and `HandleMessage`. A call of a type the
-service has no rpc for is answered `ErrType`; a send of one is logged and
-dropped, as `actor.CallsOnly` drops a message. A service without the
-option is left alone, so a gRPC service and a process can share a file.
+from an actor's `HandleCall` and `HandleMessage`, and
+`UnimplementedRunnerHandler` to embed, which answers `ErrType` to every
+call and drops every send, so adding an rpc breaks no implementation that
+embeds it. A call of a type the service has no rpc for is answered
+`ErrType`; a send of one is logged and dropped, as `actor.CallsOnly` drops
+a message. A message the process takes from elsewhere, a topic's events
+say, is declared as a send too, and dispatched like one. A service without
+the option is left alone, so a gRPC service and a process can share a file.
+
+The rest of what an application wrote by hand has a form in the service:
+
+- A process named per instance, a room as `"room:" + id`, says
+  `{prefix: "room:"}` instead of a name, and gets `RoomProcess(id)`,
+  `RoomAt(node, id)` and `RoomGlobal(id)`.
+- A topic the process owns is an rpc that takes `Empty` and returns the
+  event type, marked `(grpcproc.v1.topic) = {name: "tools-stats"}`: the
+  address gets `RunnerStatsAt(node) pubsub.Topic[*Load]`, and the process
+  the name to register it under, `RunnerStatsTopic`, or
+  `RoomEventsTopic(id)` for a process named per instance, which is
+  `RoomProcess(id) + "/events"`. A topic is not dispatched.
+- A send has a timer to go with it, `NoteAfter(p, d, req) *Timer`, since
+  `p.SendAfter` infers its type from the address and would need the message
+  cast to `proto.Message`.
+- A request with no fields is left out of the signatures: `Clear(ctx,
+  from)`, `ClearAfter(p, d)`, and `Clear(p, m)` on the handler. A field
+  added later changes them, which is when callers should notice.
+- A service may not share a name with a message in protobuf, so
+  `{go_name: "Relay"}` lets the proto say `RelayProcess` while the Go is
+  `RelayAddr`.
+- An rpc may not be named as a method of `grpcproc.Addr` or of an actor
+  (`Init`, `HandleCall`, `HandleDown`...), which the generated method would
+  shadow or collide with; the plugin refuses it, as it refuses streaming, a
+  send that returns anything but `Empty`, two rpcs of one kind taking the
+  same message, since a message is dispatched by its type, an rpc that is a
+  send and a topic at once, a `go_name` that is not an exported identifier,
+  and whatever would not compile or run: a generated identifier the file
+  declares already, a message or an enum say, or an rpc whose `After` another
+  rpc is named, and a topic registered under its process's name, or two
+  processes or topics of one file under one name.
+
+A message's full protobuf name is part of the protocol: a body travels
+under it, so renaming a message, `Relay` to `RelayEndpoint` say, breaks the
+wire between nodes of the two versions even with its fields unchanged.
+`buf breaking` with the `FILE` category reports a rename as a deleted
+message, which is the signal to watch for.
 
 Why a service and not a message with a `oneof` of operations, which is how
 the guide and yarco began: a service already states each request with its
@@ -337,9 +381,24 @@ plugins:
 The options come from `proto/grpcproc/v1/options.proto`, which an
 application's protos import. buf resolves imports from the Buf Schema
 Registry, where this repository does not publish yet, so an application
-copies the file into its proto tree: one file, importing only
-`descriptor.proto`. The extension numbers are not registered in protobuf's
-global extension registry. The plugin itself is
+copies the file into its proto tree, one file importing only
+`descriptor.proto`, and keeps it out of its own generation with an input
+that names its paths:
+
+```yaml
+# buf.gen.yaml
+inputs:
+  - directory: proto
+    paths: [proto/app]      # not proto/grpcproc, which is only imported
+```
+
+buf's `STANDARD` lint rules are written for gRPC, and a process's service
+breaks four of them by design, which `buf.yaml` excepts:
+`SERVICE_SUFFIX` (a `Runner`, not a `RunnerService`),
+`RPC_REQUEST_STANDARD_NAME` and `RPC_RESPONSE_STANDARD_NAME` (a request is
+the message, not `RunRequest`), and `RPC_REQUEST_RESPONSE_UNIQUE` (every
+send returns `Empty`). The extension numbers are not registered in
+protobuf's global extension registry. The plugin itself is
 tested without protoc: `internal/protocgen/testdata/image.txtpb` is the
 test protos' descriptors as `buf build` wrote them, comments included, and
 the test runs the generator over them and compares with the checked-in

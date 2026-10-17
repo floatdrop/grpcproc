@@ -27,14 +27,25 @@ const (
 )
 
 // ProcessOptions says a service is what a process accepts and answers: each
-// rpc a call, answered with its response, or a send (see send). A service
-// without it is left alone: a gRPC service, say.
+// rpc a call, answered with its response, a send (see send) or a topic the
+// process owns (see topic). A service without it is left alone: a gRPC
+// service, say.
 type ProcessOptions struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The name the process is registered under on its node, for a
-	// <Service>At(node) constructor and a <Service>Process constant. Empty
-	// for a process named per instance, as a room or a conversation is.
-	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// <Service>At(node) constructor, <Service>Global() and a
+	// <Service>Process constant. Empty for a process named per instance
+	// (see prefix), or addressed by PID or by a name of the application's.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The prefix of the names of processes named per instance, as a room is
+	// "room:" + its id: for <Service>Process(id), <Service>At(node, id) and
+	// <Service>Global(id). Exclusive with name.
+	Prefix string `protobuf:"bytes,2,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	// The Go name the generated identifiers are made from, when the
+	// service's own would clash: a service and a message may not share a
+	// name in protobuf, so a service RelayProcess beside a message Relay
+	// takes go_name "Relay" and is RelayAddr all the same.
+	GoName        string `protobuf:"bytes,3,opt,name=go_name,json=goName,proto3" json:"go_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -76,6 +87,70 @@ func (x *ProcessOptions) GetName() string {
 	return ""
 }
 
+func (x *ProcessOptions) GetPrefix() string {
+	if x != nil {
+		return x.Prefix
+	}
+	return ""
+}
+
+func (x *ProcessOptions) GetGoName() string {
+	if x != nil {
+		return x.GoName
+	}
+	return ""
+}
+
+// TopicOptions marks an rpc as a pubsub topic the process owns: it takes
+// google.protobuf.Empty and returns the topic's event type. The rpc is not
+// dispatched; it gives the address a typed way to the topic.
+type TopicOptions struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The topic's name, registered on the process's node: as given for a
+	// process with a name, and <Service>Process(id) + "/" + name for one
+	// named per instance.
+	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TopicOptions) Reset() {
+	*x = TopicOptions{}
+	mi := &file_grpcproc_v1_options_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TopicOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TopicOptions) ProtoMessage() {}
+
+func (x *TopicOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_grpcproc_v1_options_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TopicOptions.ProtoReflect.Descriptor instead.
+func (*TopicOptions) Descriptor() ([]byte, []int) {
+	return file_grpcproc_v1_options_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *TopicOptions) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
 var file_grpcproc_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 	{
 		ExtendedType:  (*descriptorpb.ServiceOptions)(nil),
@@ -91,6 +166,14 @@ var file_grpcproc_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 		Field:         51001,
 		Name:          "grpcproc.v1.send",
 		Tag:           "varint,51001,opt,name=send",
+		Filename:      "grpcproc/v1/options.proto",
+	},
+	{
+		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
+		ExtensionType: (*TopicOptions)(nil),
+		Field:         51002,
+		Name:          "grpcproc.v1.topic",
+		Tag:           "bytes,51002,opt,name=topic",
 		Filename:      "grpcproc/v1/options.proto",
 	},
 }
@@ -110,17 +193,26 @@ var (
 	//
 	// optional bool send = 51001;
 	E_Send = &file_grpcproc_v1_options_proto_extTypes[1]
+	// topic marks an rpc as a topic the process owns (see TopicOptions).
+	//
+	// optional grpcproc.v1.TopicOptions topic = 51002;
+	E_Topic = &file_grpcproc_v1_options_proto_extTypes[2]
 )
 
 var File_grpcproc_v1_options_proto protoreflect.FileDescriptor
 
 const file_grpcproc_v1_options_proto_rawDesc = "" +
 	"\n" +
-	"\x19grpcproc/v1/options.proto\x12\vgrpcproc.v1\x1a google/protobuf/descriptor.proto\"$\n" +
+	"\x19grpcproc/v1/options.proto\x12\vgrpcproc.v1\x1a google/protobuf/descriptor.proto\"U\n" +
 	"\x0eProcessOptions\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06prefix\x18\x02 \x01(\tR\x06prefix\x12\x17\n" +
+	"\ago_name\x18\x03 \x01(\tR\x06goName\"\"\n" +
+	"\fTopicOptions\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name:X\n" +
 	"\aprocess\x12\x1f.google.protobuf.ServiceOptions\x18\xb9\x8e\x03 \x01(\v2\x1b.grpcproc.v1.ProcessOptionsR\aprocess:4\n" +
-	"\x04send\x12\x1e.google.protobuf.MethodOptions\x18\xb9\x8e\x03 \x01(\bR\x04sendB<Z:github.com/floatdrop/grpcproc/proto/grpcproc/v1;grpcprocv1b\x06proto3"
+	"\x04send\x12\x1e.google.protobuf.MethodOptions\x18\xb9\x8e\x03 \x01(\bR\x04send:Q\n" +
+	"\x05topic\x12\x1e.google.protobuf.MethodOptions\x18\xba\x8e\x03 \x01(\v2\x19.grpcproc.v1.TopicOptionsR\x05topicB<Z:github.com/floatdrop/grpcproc/proto/grpcproc/v1;grpcprocv1b\x06proto3"
 
 var (
 	file_grpcproc_v1_options_proto_rawDescOnce sync.Once
@@ -134,20 +226,23 @@ func file_grpcproc_v1_options_proto_rawDescGZIP() []byte {
 	return file_grpcproc_v1_options_proto_rawDescData
 }
 
-var file_grpcproc_v1_options_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_grpcproc_v1_options_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_grpcproc_v1_options_proto_goTypes = []any{
 	(*ProcessOptions)(nil),              // 0: grpcproc.v1.ProcessOptions
-	(*descriptorpb.ServiceOptions)(nil), // 1: google.protobuf.ServiceOptions
-	(*descriptorpb.MethodOptions)(nil),  // 2: google.protobuf.MethodOptions
+	(*TopicOptions)(nil),                // 1: grpcproc.v1.TopicOptions
+	(*descriptorpb.ServiceOptions)(nil), // 2: google.protobuf.ServiceOptions
+	(*descriptorpb.MethodOptions)(nil),  // 3: google.protobuf.MethodOptions
 }
 var file_grpcproc_v1_options_proto_depIdxs = []int32{
-	1, // 0: grpcproc.v1.process:extendee -> google.protobuf.ServiceOptions
-	2, // 1: grpcproc.v1.send:extendee -> google.protobuf.MethodOptions
-	0, // 2: grpcproc.v1.process:type_name -> grpcproc.v1.ProcessOptions
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	2, // [2:3] is the sub-list for extension type_name
-	0, // [0:2] is the sub-list for extension extendee
+	2, // 0: grpcproc.v1.process:extendee -> google.protobuf.ServiceOptions
+	3, // 1: grpcproc.v1.send:extendee -> google.protobuf.MethodOptions
+	3, // 2: grpcproc.v1.topic:extendee -> google.protobuf.MethodOptions
+	0, // 3: grpcproc.v1.process:type_name -> grpcproc.v1.ProcessOptions
+	1, // 4: grpcproc.v1.topic:type_name -> grpcproc.v1.TopicOptions
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	3, // [3:5] is the sub-list for extension type_name
+	0, // [0:3] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
 }
 
@@ -162,8 +257,8 @@ func file_grpcproc_v1_options_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_grpcproc_v1_options_proto_rawDesc), len(file_grpcproc_v1_options_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
-			NumExtensions: 2,
+			NumMessages:   2,
+			NumExtensions: 3,
 			NumServices:   0,
 		},
 		GoTypes:           file_grpcproc_v1_options_proto_goTypes,

@@ -135,7 +135,7 @@ func follow(t *testing.T, n *grpcproc.Node, where, id string) <-chan *conversati
 	events := make(chan *conversationsv1.Event, 256)
 	ready := make(chan error, 1)
 	follower, err := n.Spawn(func(p *grpcproc.Process[*conversationsv1.Event]) error {
-		_, err := conversationsv1.ConversationAt(where, id).Follow(p.Context(), p)
+		_, err := conversationsv1.NewConversation(where, id).Follow(p.Context(), p)
 		ready <- err
 		for err == nil {
 			var m grpcproc.Msg[*conversationsv1.Event]

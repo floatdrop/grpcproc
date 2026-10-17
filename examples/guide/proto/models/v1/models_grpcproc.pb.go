@@ -28,6 +28,11 @@ func SchedulerAt(node string) SchedulerAddr {
 	return SchedulerAddrOf(grpcproc.Name{Node: node, Name: SchedulerProcess})
 }
 
+// SchedulerGlobal addresses the process of the Scheduler service that holds the global name SchedulerProcess, wherever it runs.
+func SchedulerGlobal() SchedulerAddr {
+	return SchedulerAddrOf(grpcproc.Global{Name: SchedulerProcess})
+}
+
 // Generate has the model answer, and returns once it is done; the tokens
 // are published meanwhile on the topic the request names. A node with no
 // slot free answers Busy; an error means no answer: the node is gone, or
@@ -38,7 +43,8 @@ func (c SchedulerAddr) Generate(ctx context.Context, from grpcproc.Caller, req *
 
 // SchedulerHandler is what a process of the Scheduler service does with what it is
 // sent: a method per call, whose result is the reply, as actor.CallHandler's
-// is, and one per send. HandleSchedulerCall and HandleSchedulerMessage dispatch to it.
+// is, and one per send. HandleSchedulerCall and HandleSchedulerMessage dispatch to it;
+// UnimplementedSchedulerHandler answers for the methods an implementation leaves out.
 type SchedulerHandler interface {
 	Generate(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message], req *Generate) (*Generated, error)
 }
@@ -56,8 +62,17 @@ func HandleSchedulerCall(s SchedulerHandler, p *grpcproc.Process[proto.Message],
 
 // HandleSchedulerMessage takes a send to a process of the Scheduler service through s,
 // for an actor.Handler's HandleMessage; a message of another type is logged
-// and dropped, as actor.CallsOnly drops one.
+// and dropped, as actor.CallsOnly drops one. A message the process takes
+// from elsewhere, a topic's events say, is declared as a send too.
 func HandleSchedulerMessage(s SchedulerHandler, p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) error {
 	p.Log().Warn("scheduler: dropped a message that is not one of its sends", "from", m.From, "type", proto.MessageName(m.Body))
 	return nil
+}
+
+// UnimplementedSchedulerHandler answers grpcproc.ErrType to every call and drops every send,
+// for an implementation to embed and override what it handles.
+type UnimplementedSchedulerHandler struct{}
+
+func (UnimplementedSchedulerHandler) Generate(*grpcproc.Process[proto.Message], grpcproc.Msg[proto.Message], *Generate) (*Generated, error) {
+	return nil, grpcproc.ErrType
 }

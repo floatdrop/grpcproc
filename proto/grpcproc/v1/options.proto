@@ -10,12 +10,33 @@ import "google/protobuf/descriptor.proto";
 option go_package = "github.com/floatdrop/grpcproc/proto/grpcproc/v1;grpcprocv1";
 
 // ProcessOptions says a service is what a process accepts and answers: each
-// rpc a call, answered with its response, or a send (see send). A service
-// without it is left alone: a gRPC service, say.
+// rpc a call, answered with its response, a send (see send) or a topic the
+// process owns (see topic). A service without it is left alone: a gRPC
+// service, say.
 message ProcessOptions {
   // The name the process is registered under on its node, for a
-  // <Service>At(node) constructor and a <Service>Process constant. Empty
-  // for a process named per instance, as a room or a conversation is.
+  // <Service>At(node) constructor, <Service>Global() and a
+  // <Service>Process constant. Empty for a process named per instance
+  // (see prefix), or addressed by PID or by a name of the application's.
+  string name = 1;
+  // The prefix of the names of processes named per instance, as a room is
+  // "room:" + its id: for <Service>Process(id), <Service>At(node, id) and
+  // <Service>Global(id). Exclusive with name.
+  string prefix = 2;
+  // The Go name the generated identifiers are made from, when the
+  // service's own would clash: a service and a message may not share a
+  // name in protobuf, so a service RelayProcess beside a message Relay
+  // takes go_name "Relay" and is RelayAddr all the same.
+  string go_name = 3;
+}
+
+// TopicOptions marks an rpc as a pubsub topic the process owns: it takes
+// google.protobuf.Empty and returns the topic's event type. The rpc is not
+// dispatched; it gives the address a typed way to the topic.
+message TopicOptions {
+  // The topic's name, registered on the process's node: as given for a
+  // process with a name, and <Service>Process(id) + "/" + name for one
+  // named per instance.
   string name = 1;
 }
 
@@ -28,4 +49,6 @@ extend google.protobuf.MethodOptions {
   // send marks an rpc as a send: the process takes the message and
   // answers nothing. It must return google.protobuf.Empty.
   bool send = 51001;
+  // topic marks an rpc as a topic the process owns (see TopicOptions).
+  TopicOptions topic = 51002;
 }

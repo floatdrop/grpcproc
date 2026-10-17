@@ -15,6 +15,7 @@ import (
 	_ "github.com/floatdrop/grpcproc/proto/grpcproc/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -355,7 +356,7 @@ var File_guide_proto_conversations_v1_conversations_proto protoreflect.FileDescr
 
 const file_guide_proto_conversations_v1_conversations_proto_rawDesc = "" +
 	"\n" +
-	"0guide/proto/conversations/v1/conversations.proto\x12\x10conversations.v1\x1a\x19grpcproc/v1/options.proto\x1a guide/proto/tools/v1/tools.proto\"\x16\n" +
+	"0guide/proto/conversations/v1/conversations.proto\x12\x10conversations.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x19grpcproc/v1/options.proto\x1a guide/proto/tools/v1/tools.proto\"\x16\n" +
 	"\x04Open\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x19\n" +
 	"\x03Say\x12\x12\n" +
@@ -372,9 +373,11 @@ const file_guide_proto_conversations_v1_conversations_proto_rawDesc = "" +
 	"\bretrying\x18\x05 \x01(\tH\x00R\bretrying\x12\x14\n" +
 	"\x04done\x18\x06 \x01(\bH\x00R\x04done\x12\x18\n" +
 	"\x06failed\x18\a \x01(\tH\x00R\x06failedB\x06\n" +
-	"\x04kind2J\n" +
+	"\x04kind2\xa2\x01\n" +
 	"\fConversation\x124\n" +
-	"\x03Say\x12\x15.conversations.v1.Say\x1a\x16.conversations.v1.Said\x1a\x04\xca\xf3\x18\x00BUZSgithub.com/floatdrop/grpcproc/examples/guide/proto/conversations/v1;conversationsv1b\x06proto3"
+	"\x03Say\x12\x15.conversations.v1.Say\x1a\x16.conversations.v1.Said\x12G\n" +
+	"\x06Events\x12\x16.google.protobuf.Empty\x1a\x17.conversations.v1.Event\"\f\xd2\xf3\x18\b\n" +
+	"\x06events\x1a\x13\xca\xf3\x18\x0f\x12\rconversation/BUZSgithub.com/floatdrop/grpcproc/examples/guide/proto/conversations/v1;conversationsv1b\x06proto3"
 
 var (
 	file_guide_proto_conversations_v1_conversations_proto_rawDescOnce sync.Once
@@ -390,20 +393,23 @@ func file_guide_proto_conversations_v1_conversations_proto_rawDescGZIP() []byte 
 
 var file_guide_proto_conversations_v1_conversations_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_guide_proto_conversations_v1_conversations_proto_goTypes = []any{
-	(*Open)(nil),   // 0: conversations.v1.Open
-	(*Say)(nil),    // 1: conversations.v1.Say
-	(*Said)(nil),   // 2: conversations.v1.Said
-	(*Event)(nil),  // 3: conversations.v1.Event
-	(*v1.Run)(nil), // 4: tools.v1.Run
-	(*v1.Ran)(nil), // 5: tools.v1.Ran
+	(*Open)(nil),          // 0: conversations.v1.Open
+	(*Say)(nil),           // 1: conversations.v1.Say
+	(*Said)(nil),          // 2: conversations.v1.Said
+	(*Event)(nil),         // 3: conversations.v1.Event
+	(*v1.Run)(nil),        // 4: tools.v1.Run
+	(*v1.Ran)(nil),        // 5: tools.v1.Ran
+	(*emptypb.Empty)(nil), // 6: google.protobuf.Empty
 }
 var file_guide_proto_conversations_v1_conversations_proto_depIdxs = []int32{
 	4, // 0: conversations.v1.Event.tool:type_name -> tools.v1.Run
 	5, // 1: conversations.v1.Event.ran:type_name -> tools.v1.Ran
 	1, // 2: conversations.v1.Conversation.Say:input_type -> conversations.v1.Say
-	2, // 3: conversations.v1.Conversation.Say:output_type -> conversations.v1.Said
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
+	6, // 3: conversations.v1.Conversation.Events:input_type -> google.protobuf.Empty
+	2, // 4: conversations.v1.Conversation.Say:output_type -> conversations.v1.Said
+	3, // 5: conversations.v1.Conversation.Events:output_type -> conversations.v1.Event
+	4, // [4:6] is the sub-list for method output_type
+	2, // [2:4] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
 	2, // [2:2] is the sub-list for extension extendee
 	0, // [0:2] is the sub-list for field type_name

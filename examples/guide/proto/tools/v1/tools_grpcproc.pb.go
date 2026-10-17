@@ -29,6 +29,11 @@ func RunnerAt(node string) RunnerAddr {
 	return RunnerAddrOf(grpcproc.Name{Node: node, Name: RunnerProcess})
 }
 
+// RunnerGlobal addresses the process of the Runner service that holds the global name RunnerProcess, wherever it runs.
+func RunnerGlobal() RunnerAddr {
+	return RunnerAddrOf(grpcproc.Global{Name: RunnerProcess})
+}
+
 // Run calls a tool, and waits for it no longer than ctx allows. A tool
 // that fails is part of the answer, in Failed, and one that panics is
 // answered with an error of the panic's text; actor.ErrWorkersBusy, with
@@ -39,7 +44,8 @@ func (c RunnerAddr) Run(ctx context.Context, from grpcproc.Caller, req *Run) (*R
 
 // RunnerHandler is what a process of the Runner service does with what it is
 // sent: a method per call, whose result is the reply, as actor.CallHandler's
-// is, and one per send. HandleRunnerCall and HandleRunnerMessage dispatch to it.
+// is, and one per send. HandleRunnerCall and HandleRunnerMessage dispatch to it;
+// UnimplementedRunnerHandler answers for the methods an implementation leaves out.
 type RunnerHandler interface {
 	Run(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message], req *Run) (*Ran, error)
 }
@@ -57,8 +63,17 @@ func HandleRunnerCall(s RunnerHandler, p *grpcproc.Process[proto.Message], m grp
 
 // HandleRunnerMessage takes a send to a process of the Runner service through s,
 // for an actor.Handler's HandleMessage; a message of another type is logged
-// and dropped, as actor.CallsOnly drops one.
+// and dropped, as actor.CallsOnly drops one. A message the process takes
+// from elsewhere, a topic's events say, is declared as a send too.
 func HandleRunnerMessage(s RunnerHandler, p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) error {
 	p.Log().Warn("runner: dropped a message that is not one of its sends", "from", m.From, "type", proto.MessageName(m.Body))
 	return nil
+}
+
+// UnimplementedRunnerHandler answers grpcproc.ErrType to every call and drops every send,
+// for an implementation to embed and override what it handles.
+type UnimplementedRunnerHandler struct{}
+
+func (UnimplementedRunnerHandler) Run(*grpcproc.Process[proto.Message], grpcproc.Msg[proto.Message], *Run) (*Ran, error) {
+	return nil, grpcproc.ErrType
 }

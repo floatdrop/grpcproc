@@ -38,11 +38,12 @@ func ValidID(id string) bool {
 	return id != "" && len(id) <= 64 && strings.IndexFunc(id, func(r rune) bool { return !ok(r) }) < 0
 }
 
-// ConversationAt addresses the conversation id on node, the node that runs
-// the conversations service. A conversation is registered under a name made
-// from its id, for as long as its process runs.
-func ConversationAt(node, id string) Conversation {
-	return Conversation{ConversationAddr: ConversationAddrOf(grpcproc.Name{Node: node, Name: "conversation/" + id}), node: node, id: id}
+// NewConversation is the conversation id on node, the node that runs the
+// conversations service: the generated address, which is registered under
+// a name made from the id for as long as the process runs, with what opens
+// it.
+func NewConversation(node, id string) Conversation {
+	return Conversation{ConversationAddr: ConversationAt(node, id), node: node, id: id}
 }
 
 // open starts the conversation's process, unless it runs already. A
@@ -86,7 +87,7 @@ func (c Conversation) Follow(ctx context.Context, p *grpcproc.Process[*Event]) (
 	if err := c.open(ctx, p); err != nil {
 		return pubsub.Subscription{}, err
 	}
-	topic := pubsub.Named[*Event](c.node, TopicName(c.id))
+	topic := ConversationEventsAt(c.node, c.id)
 	for range 100 {
 		sub, err := topic.Subscribe(ctx, p)
 		if !errors.Is(err, grpcproc.ErrNoProc) {
@@ -100,7 +101,3 @@ func (c Conversation) Follow(ctx context.Context, p *grpcproc.Process[*Event]) (
 	}
 	return pubsub.Subscription{}, grpcproc.ErrNoProc
 }
-
-// TopicName is the name the topic of conversation id is registered under,
-// on the conversation's node: what a model is told to publish its tokens to.
-func TopicName(id string) string { return "conversation/" + id + "/events" }

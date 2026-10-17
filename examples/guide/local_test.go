@@ -12,7 +12,6 @@ import (
 	"github.com/floatdrop/grpcproc"
 	"github.com/floatdrop/grpcproc/examples/guide/internal/platform"
 	conversationsv1 "github.com/floatdrop/grpcproc/examples/guide/proto/conversations/v1"
-	"github.com/floatdrop/grpcproc/pubsub"
 )
 
 // The local deployment: every service in one process, on one node. What is
@@ -75,7 +74,7 @@ func TestTheFront(t *testing.T) {
 	}
 	// A node that lost its caller may publish on, after another was asked:
 	// the tokens of the earlier try are not for the browser.
-	topic := pubsub.Named[*conversationsv1.Event]("local", conversationsv1.TopicName("1"))
+	topic := conversationsv1.ConversationEventsAt("local", "1")
 	for _, e := range []*conversationsv1.Event{
 		{Attempt: 2, Kind: &conversationsv1.Event_Token{Token: "new"}},
 		{Attempt: 1, Kind: &conversationsv1.Event_Token{Token: "stale"}},

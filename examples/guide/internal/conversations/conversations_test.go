@@ -87,7 +87,7 @@ func TestAToolWithNoAnswerIsToldToTheModel(t *testing.T) {
 		}
 		return &modelsv1.Generated{Text: "One moment.", Tool: &toolsv1.Run{Name: "sleep", Args: "1h"}}
 	})
-	if _, err := conversationsv1.ConversationAt("local", "1").Say(t.Context(), n, "wait an hour"); err != nil {
+	if _, err := conversationsv1.NewConversation("local", "1").Say(t.Context(), n, "wait an hour"); err != nil {
 		t.Fatal(err)
 	}
 	next(t, asked)
@@ -104,7 +104,7 @@ func TestAnIdleConversationEndsAndComesBack(t *testing.T) {
 	n, asked := service(t, limits, func(*modelsv1.Generate) *modelsv1.Generated {
 		return &modelsv1.Generated{Text: "Noted."}
 	})
-	c := conversationsv1.ConversationAt("local", "1")
+	c := conversationsv1.NewConversation("local", "1")
 	if said, err := c.Say(t.Context(), n, "one"); err != nil || said.Turn != 1 {
 		t.Fatalf("%v %v", said, err)
 	}
@@ -140,7 +140,7 @@ func TestABusyModelIsAskedAgain(t *testing.T) {
 		asks++ // by the one process that is the model here
 		return &modelsv1.Generated{Text: "Here.", Busy: asks < 3}
 	})
-	if _, err := conversationsv1.ConversationAt("local", "1").Say(t.Context(), n, "anyone?"); err != nil {
+	if _, err := conversationsv1.NewConversation("local", "1").Say(t.Context(), n, "anyone?"); err != nil {
 		t.Fatal(err)
 	}
 	for range 3 {
@@ -162,7 +162,7 @@ func TestARestartedConversationReplaysItsHistory(t *testing.T) {
 		}
 		return &modelsv1.Generated{Text: "One moment.", Tool: &toolsv1.Run{Name: "sleep", Args: "1h"}}
 	})
-	c := conversationsv1.ConversationAt("local", "1")
+	c := conversationsv1.NewConversation("local", "1")
 	if _, err := c.Say(t.Context(), n, "wait an hour"); err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestARestartedConversationReplaysItsHistory(t *testing.T) {
 func TestARequestThatSaysNothingIsRefused(t *testing.T) {
 	limits := conversations.Limits{Idle: time.Minute, Generate: time.Second, Tool: time.Second, Busy: time.Millisecond}
 	n, _ := service(t, limits, func(*modelsv1.Generate) *modelsv1.Generated { return &modelsv1.Generated{Text: "Noted."} })
-	c := conversationsv1.ConversationAt("local", "1")
+	c := conversationsv1.NewConversation("local", "1")
 	if _, err := c.Say(t.Context(), n, ""); err == nil || !strings.Contains(err.Error(), "nothing was said") {
 		t.Fatalf("got %v", err)
 	}
@@ -241,7 +241,7 @@ func TestNoNodeRunsAModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := s.Get[*grpcproc.Node]()
-	c := conversationsv1.ConversationAt("local", "1")
+	c := conversationsv1.NewConversation("local", "1")
 	failed := make(chan string, 1)
 	if _, err := n.Spawn(func(p *grpcproc.Process[*conversationsv1.Event]) error {
 		if _, err := c.Follow(p.Context(), p); err != nil {

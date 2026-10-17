@@ -33,11 +33,60 @@ file: {
       json_name: "text"
     }
   }
+  message_type: {
+    name: "Count"
+  }
+  message_type: {
+    name: "Clear"
+  }
+  message_type: {
+    name: "Room"
+    field: {
+      name: "id"
+      number: 1
+      label: LABEL_OPTIONAL
+      type: TYPE_STRING
+      json_name: "id"
+    }
+    field: {
+      name: "addr"
+      number: 2
+      label: LABEL_OPTIONAL
+      type: TYPE_STRING
+      oneof_index: 0
+      json_name: "addr"
+    }
+    nested_type: {
+      name: "Seat"
+    }
+    enum_type: {
+      name: "State"
+      value: {
+        name: "STATE_UNSPECIFIED"
+        number: 0
+      }
+    }
+    oneof_decl: {
+      name: "target"
+    }
+  }
+  enum_type: {
+    name: "Kind"
+    value: {
+      name: "KIND_UNSPECIFIED"
+      number: 0
+    }
+  }
   service: {
     name: "Echo"
     method: {
       name: "Ping"
       input_type: ".grpcproc.protocgen.test.v1.Ping"
+      output_type: ".grpcproc.protocgen.test.v1.Pong"
+    }
+    method: {
+      name: "Count"
+      input_type: ".grpcproc.protocgen.test.v1.Count"
       output_type: ".grpcproc.protocgen.test.v1.Pong"
     }
     method: {
@@ -48,6 +97,24 @@ file: {
         [grpcproc.v1.send]: true
       }
     }
+    method: {
+      name: "Clear"
+      input_type: ".grpcproc.protocgen.test.v1.Clear"
+      output_type: ".google.protobuf.Empty"
+      options: {
+        [grpcproc.v1.send]: true
+      }
+    }
+    method: {
+      name: "Stats"
+      input_type: ".google.protobuf.Empty"
+      output_type: ".grpcproc.protocgen.test.v1.Pong"
+      options: {
+        [grpcproc.v1.topic]: {
+          name: "echo-stats"
+        }
+      }
+    }
     options: {
       [grpcproc.v1.process]: {
         name: "echo"
@@ -55,11 +122,38 @@ file: {
     }
   }
   service: {
-    name: "Room"
+    name: "RoomProcess"
     method: {
       name: "Bounce"
       input_type: ".grpcproc.protocgen.test.v1.Ping"
       output_type: ".grpcproc.protocgen.test.v1.Pong"
+    }
+    method: {
+      name: "Events"
+      input_type: ".google.protobuf.Empty"
+      output_type: ".grpcproc.protocgen.test.v1.Note"
+      options: {
+        [grpcproc.v1.topic]: {
+          name: "events"
+        }
+      }
+    }
+    options: {
+      [grpcproc.v1.process]: {
+        prefix: "room:"
+        go_name: "Room"
+      }
+    }
+  }
+  service: {
+    name: "Sink"
+    method: {
+      name: "Flush"
+      input_type: ".grpcproc.protocgen.test.v1.Clear"
+      output_type: ".google.protobuf.Empty"
+      options: {
+        [grpcproc.v1.send]: true
+      }
     }
     options: {
       [grpcproc.v1.process]: {}
@@ -80,7 +174,7 @@ file: {
     location: {
       span: 2
       span: 0
-      span: 43
+      span: 94
       span: 1
     }
     location: {
@@ -88,7 +182,7 @@ file: {
       span: 2
       span: 0
       span: 18
-      leading_comments: " What protoc-gen-grpcproc is tested on: a process registered under a\n name, with a call and a send, and one named per instance.\n"
+      leading_comments: " What protoc-gen-grpcproc is tested on: a process registered under a\n name, with calls, sends and a topic, and one named per instance.\n"
     }
     location: {
       path: 2
@@ -289,11 +383,89 @@ file: {
       span: 17
     }
     location: {
-      path: 6
+      path: 5
       path: 0
       span: 24
       span: 0
-      span: 33
+      span: 26
+      span: 1
+      leading_comments: " Kind is an enum of the file's own, whose Go name is taken too.\n"
+    }
+    location: {
+      path: 5
+      path: 0
+      path: 1
+      span: 24
+      span: 5
+      span: 9
+    }
+    location: {
+      path: 5
+      path: 0
+      path: 2
+      path: 0
+      path: 1
+      span: 25
+      span: 2
+      span: 18
+    }
+    location: {
+      path: 5
+      path: 0
+      path: 2
+      path: 0
+      span: 25
+      span: 2
+      span: 23
+    }
+    location: {
+      path: 5
+      path: 0
+      path: 2
+      path: 0
+      path: 2
+      span: 25
+      span: 21
+      span: 22
+    }
+    location: {
+      path: 4
+      path: 3
+      span: 29
+      span: 0
+      span: 16
+      leading_comments: " Count asks how many notes were kept: a request with no fields.\n"
+    }
+    location: {
+      path: 4
+      path: 3
+      path: 1
+      span: 29
+      span: 8
+      span: 13
+    }
+    location: {
+      path: 4
+      path: 4
+      span: 32
+      span: 0
+      span: 16
+      leading_comments: " Clear forgets the notes: a send with no fields.\n"
+    }
+    location: {
+      path: 4
+      path: 4
+      path: 1
+      span: 32
+      span: 8
+      span: 13
+    }
+    location: {
+      path: 6
+      path: 0
+      span: 35
+      span: 0
+      span: 52
       span: 1
       leading_comments: " Echo answers pings, and takes notes.\n"
     }
@@ -301,7 +473,7 @@ file: {
       path: 6
       path: 0
       path: 1
-      span: 24
+      span: 35
       span: 8
       span: 12
     }
@@ -309,7 +481,7 @@ file: {
       path: 6
       path: 0
       path: 3
-      span: 25
+      span: 36
       span: 2
       span: 48
     }
@@ -318,7 +490,7 @@ file: {
       path: 0
       path: 3
       path: 51001
-      span: 25
+      span: 36
       span: 9
       span: 47
     }
@@ -328,7 +500,7 @@ file: {
       path: 3
       path: 51001
       path: 1
-      span: 25
+      span: 36
       span: 34
       span: 46
     }
@@ -337,7 +509,7 @@ file: {
       path: 0
       path: 2
       path: 0
-      span: 28
+      span: 39
       span: 2
       span: 59
       leading_comments: " Ping is answered with a Pong of the same n. The message's name is the\n rpc's, so it is qualified.\n"
@@ -348,7 +520,7 @@ file: {
       path: 2
       path: 0
       path: 1
-      span: 28
+      span: 39
       span: 6
       span: 10
     }
@@ -358,7 +530,7 @@ file: {
       path: 2
       path: 0
       path: 2
-      span: 28
+      span: 39
       span: 11
       span: 42
     }
@@ -368,7 +540,7 @@ file: {
       path: 2
       path: 0
       path: 3
-      span: 28
+      span: 39
       span: 53
       span: 57
     }
@@ -377,9 +549,48 @@ file: {
       path: 0
       path: 2
       path: 1
-      span: 30
+      span: 40
       span: 2
-      span: 32
+      span: 61
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 1
+      path: 1
+      span: 40
+      span: 6
+      span: 11
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 1
+      path: 2
+      span: 40
+      span: 12
+      span: 44
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 1
+      path: 3
+      span: 40
+      span: 55
+      span: 59
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 2
+      span: 42
+      span: 2
+      span: 44
       span: 3
       leading_comments: " Note is kept; nothing answers it.\n"
     }
@@ -387,9 +598,9 @@ file: {
       path: 6
       path: 0
       path: 2
+      path: 2
       path: 1
-      path: 1
-      span: 30
+      span: 42
       span: 6
       span: 10
     }
@@ -397,9 +608,9 @@ file: {
       path: 6
       path: 0
       path: 2
-      path: 1
       path: 2
-      span: 30
+      path: 2
+      span: 42
       span: 11
       span: 42
     }
@@ -407,9 +618,9 @@ file: {
       path: 6
       path: 0
       path: 2
-      path: 1
+      path: 2
       path: 3
-      span: 30
+      span: 42
       span: 53
       span: 74
     }
@@ -417,9 +628,9 @@ file: {
       path: 6
       path: 0
       path: 2
-      path: 1
+      path: 2
       path: 4
-      span: 31
+      span: 43
       span: 4
       span: 37
     }
@@ -427,52 +638,210 @@ file: {
       path: 6
       path: 0
       path: 2
-      path: 1
+      path: 2
       path: 4
       path: 51001
-      span: 31
+      span: 43
       span: 4
       span: 37
     }
     location: {
       path: 6
-      path: 1
-      span: 35
-      span: 0
-      span: 38
-      span: 1
-    }
-    location: {
-      path: 6
-      path: 1
-      path: 1
-      span: 35
-      span: 8
-      span: 12
-    }
-    location: {
-      path: 6
-      path: 1
+      path: 0
+      path: 2
       path: 3
-      span: 36
+      span: 45
       span: 2
-      span: 36
+      span: 47
+      span: 3
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 3
+      path: 1
+      span: 45
+      span: 6
+      span: 11
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 3
+      path: 2
+      span: 45
+      span: 12
+      span: 44
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 3
+      path: 3
+      span: 45
+      span: 55
+      span: 76
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 3
+      path: 4
+      span: 46
+      span: 4
+      span: 37
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 3
+      path: 4
+      path: 51001
+      span: 46
+      span: 4
+      span: 37
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 4
+      span: 49
+      span: 2
+      span: 51
+      span: 3
+      leading_comments: " Stats is the topic the echo publishes a Pong to for each ping.\n"
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 4
+      path: 1
+      span: 49
+      span: 6
+      span: 11
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 4
+      path: 2
+      span: 49
+      span: 12
+      span: 33
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 4
+      path: 3
+      span: 49
+      span: 44
+      span: 48
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 4
+      path: 4
+      span: 50
+      span: 4
+      span: 54
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 4
+      path: 4
+      path: 51002
+      span: 50
+      span: 11
+      span: 53
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 4
+      path: 4
+      path: 51002
+      path: 1
+      span: 50
+      span: 34
+      span: 52
+    }
+    location: {
+      path: 6
+      path: 1
+      span: 56
+      span: 0
+      span: 65
+      span: 1
+      leading_comments: " RoomProcess is a room, named per instance: \"room:\" + id. Its Go name is\n Room, which the message of that name keeps it from being in the proto.\n"
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 1
+      span: 56
+      span: 8
+      span: 19
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 3
+      span: 57
+      span: 2
+      span: 60
+      span: 4
     }
     location: {
       path: 6
       path: 1
       path: 3
       path: 51001
-      span: 36
+      span: 57
       span: 9
-      span: 35
+      span: 60
+      span: 3
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 3
+      path: 51001
+      path: 2
+      span: 58
+      span: 4
+      span: 19
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 3
+      path: 51001
+      path: 3
+      span: 59
+      span: 4
+      span: 19
     }
     location: {
       path: 6
       path: 1
       path: 2
       path: 0
-      span: 37
+      span: 61
       span: 2
       span: 34
     }
@@ -482,7 +851,7 @@ file: {
       path: 2
       path: 0
       path: 1
-      span: 37
+      span: 61
       span: 6
       span: 12
     }
@@ -492,7 +861,7 @@ file: {
       path: 2
       path: 0
       path: 2
-      span: 37
+      span: 61
       span: 13
       span: 17
     }
@@ -502,54 +871,335 @@ file: {
       path: 2
       path: 0
       path: 3
-      span: 37
+      span: 61
       span: 28
       span: 32
     }
     location: {
       path: 6
-      path: 2
-      span: 41
-      span: 0
-      span: 43
-      span: 1
-      leading_comments: " Plain is a gRPC service: not a process, and left alone.\n"
-    }
-    location: {
-      path: 6
+      path: 1
       path: 2
       path: 1
-      span: 41
-      span: 8
-      span: 13
-    }
-    location: {
-      path: 6
-      path: 2
-      path: 2
-      path: 0
-      span: 42
+      span: 62
       span: 2
-      span: 34
+      span: 64
+      span: 3
     }
     location: {
       path: 6
-      path: 2
-      path: 2
-      path: 0
       path: 1
-      span: 42
+      path: 2
+      path: 1
+      path: 1
+      span: 62
       span: 6
       span: 12
     }
     location: {
       path: 6
+      path: 1
+      path: 2
+      path: 1
+      path: 2
+      span: 62
+      span: 13
+      span: 34
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 2
+      path: 1
+      path: 3
+      span: 62
+      span: 45
+      span: 49
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 2
+      path: 1
+      path: 4
+      span: 63
+      span: 4
+      span: 50
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 2
+      path: 1
+      path: 4
+      path: 51002
+      span: 63
+      span: 11
+      span: 49
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 2
+      path: 1
+      path: 4
+      path: 51002
+      path: 1
+      span: 63
+      span: 34
+      span: 48
+    }
+    location: {
+      path: 4
+      path: 5
+      span: 67
+      span: 0
+      span: 79
+      span: 1
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 1
+      span: 67
+      span: 8
+      span: 12
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 2
+      path: 0
+      path: 5
+      span: 68
+      span: 2
+      span: 8
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 2
+      path: 0
+      span: 68
+      span: 2
+      span: 16
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 2
+      path: 0
+      path: 1
+      span: 68
+      span: 9
+      span: 11
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 2
+      path: 0
+      path: 3
+      span: 68
+      span: 14
+      span: 15
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 8
+      path: 0
+      span: 70
+      span: 2
+      span: 72
+      span: 3
+      leading_comments: " A oneof's wrappers are Go types of their own, Room_Addr here.\n"
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 8
+      path: 0
+      path: 1
+      span: 70
+      span: 8
+      span: 14
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 2
+      path: 1
+      path: 5
+      span: 71
+      span: 4
+      span: 10
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 2
+      path: 1
+      span: 71
+      span: 4
+      span: 20
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 2
+      path: 1
+      path: 1
+      span: 71
+      span: 11
+      span: 15
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 2
+      path: 1
+      path: 3
+      span: 71
+      span: 18
+      span: 19
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 3
+      path: 0
+      span: 75
+      span: 2
+      span: 17
+      leading_comments: " Seat and State are nested, which the generator's own names may not\n clash with either.\n"
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 3
+      path: 0
+      path: 1
+      span: 75
+      span: 10
+      span: 14
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 4
+      path: 0
+      span: 76
+      span: 2
+      span: 78
+      span: 3
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 4
+      path: 0
+      path: 1
+      span: 76
+      span: 7
+      span: 12
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 4
+      path: 0
+      path: 2
+      path: 0
+      path: 1
+      span: 77
+      span: 4
+      span: 21
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 4
+      path: 0
+      path: 2
+      path: 0
+      span: 77
+      span: 4
+      span: 26
+    }
+    location: {
+      path: 4
+      path: 5
+      path: 4
+      path: 0
+      path: 2
+      path: 0
+      path: 2
+      span: 77
+      span: 24
+      span: 25
+    }
+    location: {
+      path: 6
+      path: 2
+      span: 84
+      span: 0
+      span: 89
+      span: 1
+      leading_comments: " Sink takes a Clear and nothing else: a process with no name and no\n prefix, addressed by PID or by a name of the application's, with a send\n only, whose request has no fields.\n"
+    }
+    location: {
+      path: 6
+      path: 2
+      path: 1
+      span: 84
+      span: 8
+      span: 12
+    }
+    location: {
+      path: 6
+      path: 2
+      path: 3
+      span: 85
+      span: 2
+      span: 36
+    }
+    location: {
+      path: 6
+      path: 2
+      path: 3
+      path: 51001
+      span: 85
+      span: 9
+      span: 35
+    }
+    location: {
+      path: 6
+      path: 2
+      path: 2
+      path: 0
+      span: 86
+      span: 2
+      span: 88
+      span: 3
+    }
+    location: {
+      path: 6
+      path: 2
+      path: 2
+      path: 0
+      path: 1
+      span: 86
+      span: 6
+      span: 11
+    }
+    location: {
+      path: 6
       path: 2
       path: 2
       path: 0
       path: 2
-      span: 42
-      span: 13
+      span: 86
+      span: 12
       span: 17
     }
     location: {
@@ -558,7 +1208,84 @@ file: {
       path: 2
       path: 0
       path: 3
-      span: 42
+      span: 86
+      span: 28
+      span: 49
+    }
+    location: {
+      path: 6
+      path: 2
+      path: 2
+      path: 0
+      path: 4
+      span: 87
+      span: 4
+      span: 37
+    }
+    location: {
+      path: 6
+      path: 2
+      path: 2
+      path: 0
+      path: 4
+      path: 51001
+      span: 87
+      span: 4
+      span: 37
+    }
+    location: {
+      path: 6
+      path: 3
+      span: 92
+      span: 0
+      span: 94
+      span: 1
+      leading_comments: " Plain is a gRPC service: not a process, and left alone.\n"
+    }
+    location: {
+      path: 6
+      path: 3
+      path: 1
+      span: 92
+      span: 8
+      span: 13
+    }
+    location: {
+      path: 6
+      path: 3
+      path: 2
+      path: 0
+      span: 93
+      span: 2
+      span: 34
+    }
+    location: {
+      path: 6
+      path: 3
+      path: 2
+      path: 0
+      path: 1
+      span: 93
+      span: 6
+      span: 12
+    }
+    location: {
+      path: 6
+      path: 3
+      path: 2
+      path: 0
+      path: 2
+      span: 93
+      span: 13
+      span: 17
+    }
+    location: {
+      path: 6
+      path: 3
+      path: 2
+      path: 0
+      path: 3
+      span: 93
       span: 28
       span: 32
     }

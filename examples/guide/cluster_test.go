@@ -115,7 +115,7 @@ func TestCluster(t *testing.T) {
 	// GPU nodes: to the sandbox, their processes do not exist.
 	denied := make(chan error, 2)
 	if _, err := apps["sandbox"].Get[*grpcproc.Node]().Spawn(func(p *grpcproc.Process[proto.Message]) error {
-		_, err := conversationsv1.ConversationAt("gateway", "1").Say(p.Context(), p, "let me in")
+		_, err := conversationsv1.NewConversation("gateway", "1").Say(p.Context(), p, "let me in")
 		denied <- err
 		// Nor a GPU node's scheduler, which would publish where it is told.
 		_, err = modelsv1.SchedulerAt("gpu-2").Generate(p.Context(), p, &modelsv1.Generate{})

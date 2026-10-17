@@ -80,39 +80,128 @@ func TestGenerate(t *testing.T) {
 		t.Fatalf("generated code differs from testpb/gen_grpcproc.pb.go: run buf generate\n%s", got)
 	}
 	code := resp.File[0].GetContent()
-	for _, want := range []string{"const EchoProcess = \"echo\"", "func EchoAt(node string) EchoAddr", "func RoomAddrOf(", "func (c EchoAddr) Note(", "case *Note:"} {
+	for _, want := range []string{
+		"const EchoProcess = \"echo\"", "func EchoAt(node string) EchoAddr", "func EchoGlobal() EchoAddr",
+		"func (c EchoAddr) Note(", "case *Note:", "func (c EchoAddr) NoteAfter[M proto.Message](p *grpcproc.Process[M], d time.Duration, req *Note) *grpcproc.Timer",
+		"func (c EchoAddr) Count(ctx context.Context, from grpcproc.Caller) (*Pong, error)", "func (c EchoAddr) Clear(ctx context.Context, from grpcproc.Caller) error",
+		"func (c EchoAddr) ClearAfter[M proto.Message](p *grpcproc.Process[M], d time.Duration) *grpcproc.Timer",
+		"Count(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) (*Pong, error)",
+		"const EchoStatsTopic = \"echo-stats\"", "func EchoStatsAt(node string) pubsub.Topic[*Pong]",
+		"type UnimplementedEchoHandler struct{}", "func (UnimplementedEchoHandler) Ping(",
+		"func RoomProcess(id string) string { return \"room:\" + id }", "func RoomAt(node, id string) RoomAddr", "func RoomGlobal(id string) RoomAddr",
+		"func RoomEventsTopic(id string) string { return RoomProcess(id) + \"/events\" }", "func RoomEventsAt(node, id string) pubsub.Topic[*Note]",
+		"func RoomAddrOf(", "func SinkAddrOf(",
+		"func HandleSinkCall(s SinkHandler, p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) (proto.Message, error) {\n\treturn nil, grpcproc.ErrType",
+		"switch m.Body.(type) {\n\tcase *Clear:\n\t\treturn s.Flush(p, m)", "func (c SinkAddr) FlushAfter[M proto.Message](p *grpcproc.Process[M], d time.Duration) *grpcproc.Timer",
+		"func (UnimplementedEchoHandler) Ping(*grpcproc.Process[proto.Message], grpcproc.Msg[proto.Message], *Ping) (*Pong, error)",
+		"// EchoStatsAt is the Stats topic of the Echo service on node, whose events are Pong.\n//\n// Stats is the topic",
+	} {
 		if !strings.Contains(code, want) {
 			t.Errorf("missing %q", want)
 		}
 	}
-	if strings.Contains(code, "Plain") || strings.Contains(code, "RoomAt(") {
-		t.Error("a gRPC service, or an At for a process with no name, was generated")
+	for _, wrong := range []string{"Plain", "RoomProcessAddr", "Stats(ctx", "Events(ctx", "SinkAt(", "SinkProcess", "SinkGlobal", "_ = req", "_, _ = p, m"} {
+		if strings.Contains(code, wrong) {
+			t.Errorf("generated %q: a gRPC service, the proto name of a renamed one, or a topic as a method", wrong)
+		}
+	}
+}
+
+// What the rules leave alone: a topic named as a method of Addr, since it
+// becomes no method; a call beside a send named after it with After, since
+// only a send has a timer; and a request with an extension range, which
+// carries something though it has no fields.
+func TestGenerateAllows(t *testing.T) {
+	resp := run(t, request(t, func(f *descriptorpb.FileDescriptorProto) {
+		method(t, f, "Stats").Name = proto.String("Name")
+		after := &descriptorpb.MethodDescriptorProto{Name: proto.String("CountAfter"), InputType: proto.String(".grpcproc.protocgen.test.v1.Ping"), OutputType: proto.String(".google.protobuf.Empty"), Options: &descriptorpb.MethodOptions{}}
+		proto.SetExtension(after.Options, grpcprocv1.E_Send, true)
+		f.Service[0].Method = append(f.Service[0].Method, after)
+		f.Syntax = proto.String("proto2") // where an extension range may be declared
+		for _, m := range f.MessageType {
+			if m.GetName() == "Clear" {
+				m.ExtensionRange = append(m.ExtensionRange, &descriptorpb.DescriptorProto_ExtensionRange{Start: proto.Int32(100), End: proto.Int32(200)})
+			}
+		}
+	}))
+	if resp.Error != nil {
+		t.Fatal(resp.GetError())
+	}
+	code := resp.File[0].GetContent()
+	for _, want := range []string{"func EchoNameAt(node string)", "func (c EchoAddr) CountAfter(ctx", "func (c EchoAddr) Clear(ctx context.Context, from grpcproc.Caller, req *Clear) error"} {
+		if !strings.Contains(code, want) {
+			t.Errorf("missing %q", want)
+		}
 	}
 }
 
 // A streaming rpc, and a send that returns something, are refused with the
 // rpc's name.
-func TestGenerateRefuses(t *testing.T) {
-	method := func(f *descriptorpb.FileDescriptorProto, name string) *descriptorpb.MethodDescriptorProto {
-		for _, s := range f.Service {
-			for _, m := range s.Method {
-				if m.GetName() == name {
-					return m
-				}
+// method is the rpc named name, in whichever service of f has it.
+func method(t *testing.T, f *descriptorpb.FileDescriptorProto, name string) *descriptorpb.MethodDescriptorProto {
+	t.Helper()
+	for _, s := range f.Service {
+		for _, m := range s.Method {
+			if m.GetName() == name {
+				return m
 			}
 		}
-		t.Fatalf("no rpc %s", name)
-		return nil
 	}
+	t.Fatalf("no rpc %s", name)
+	return nil
+}
+
+func TestGenerateRefuses(t *testing.T) {
 	for _, tc := range []struct {
 		edit func(*descriptorpb.FileDescriptorProto)
 		want string
 	}{
-		{func(f *descriptorpb.FileDescriptorProto) { method(f, "Bounce").ServerStreaming = proto.Bool(true) }, "Room.Bounce: a process takes messages and answers calls: no streaming"},
+		{func(f *descriptorpb.FileDescriptorProto) { method(t, f, "Bounce").ServerStreaming = proto.Bool(true) }, "RoomProcess.Bounce: a process takes messages and answers calls: no streaming"},
 		{func(f *descriptorpb.FileDescriptorProto) {
-			method(f, "Note").OutputType = proto.String(".grpcproc.protocgen.test.v1.Pong")
+			method(t, f, "Note").OutputType = proto.String(".grpcproc.protocgen.test.v1.Pong")
 		}, "Echo.Note: a send answers nothing: it returns google.protobuf.Empty, not grpcproc.protocgen.test.v1.Pong"},
-		{func(f *descriptorpb.FileDescriptorProto) { method(f, "Bounce").Name = proto.String("Send") }, "Room.Send: an rpc may not be named as a method of grpcproc.Addr"},
+		{func(f *descriptorpb.FileDescriptorProto) { method(t, f, "Bounce").Name = proto.String("Send") }, "RoomProcess.Send: an rpc may not be named as a method of grpcproc.Addr or of an actor"},
+		{func(f *descriptorpb.FileDescriptorProto) { method(t, f, "Bounce").Name = proto.String("Init") }, "RoomProcess.Init: an rpc may not be named"},
+		{func(f *descriptorpb.FileDescriptorProto) {
+			proto.SetExtension(f.Service[0].Options, grpcprocv1.E_Process, &grpcprocv1.ProcessOptions{Name: "echo", Prefix: "echo:"})
+		}, "Echo: a process has a name or a prefix, not both"},
+		{func(f *descriptorpb.FileDescriptorProto) {
+			proto.SetExtension(method(t, f, "Stats").Options, grpcprocv1.E_Topic, &grpcprocv1.TopicOptions{})
+		}, "Echo.Stats: a topic needs a name"},
+		{func(f *descriptorpb.FileDescriptorProto) {
+			method(t, f, "Stats").InputType = proto.String(".grpcproc.protocgen.test.v1.Ping")
+		}, "Echo.Stats: a topic takes google.protobuf.Empty and returns its events: it takes grpcproc.protocgen.test.v1.Ping"},
+		{func(f *descriptorpb.FileDescriptorProto) {
+			proto.SetExtension(f.Service[1].Options, grpcprocv1.E_Process, &grpcprocv1.ProcessOptions{GoName: "Room"})
+		}, "RoomProcess.Events: a topic is named after its process, which has no name and no prefix"},
+		{func(f *descriptorpb.FileDescriptorProto) { method(t, f, "Bounce").Name = proto.String("Addr") }, "RoomProcess.Addr: an rpc may not be named"},
+		{func(f *descriptorpb.FileDescriptorProto) {
+			s := f.Service[0]
+			s.Method = append(s.Method, &descriptorpb.MethodDescriptorProto{Name: proto.String("NoteAfter"), InputType: proto.String(".grpcproc.protocgen.test.v1.Ping"), OutputType: proto.String(".grpcproc.protocgen.test.v1.Pong")})
+		}, "Echo.NoteAfter: it would generate the method NoteAfter, which Note does too"},
+		{func(f *descriptorpb.FileDescriptorProto) {
+			f.MessageType = append(f.MessageType, &descriptorpb.DescriptorProto{Name: proto.String("EchoStatsTopic")})
+		}, "Echo: it would generate EchoStatsTopic, which message grpcproc.protocgen.test.v1.EchoStatsTopic is named already"},
+		{func(f *descriptorpb.FileDescriptorProto) {
+			load := &descriptorpb.MethodDescriptorProto{Name: proto.String("Load"), InputType: proto.String(".google.protobuf.Empty"), OutputType: proto.String(".grpcproc.protocgen.test.v1.Note"), Options: &descriptorpb.MethodOptions{}}
+			proto.SetExtension(load.Options, grpcprocv1.E_Topic, &grpcprocv1.TopicOptions{Name: "echo-stats"})
+			f.Service[0].Method = append(f.Service[0].Method, load)
+		}, "Echo.Load: Stats is the topic \"echo-stats\" too"},
+		{func(f *descriptorpb.FileDescriptorProto) {
+			proto.SetExtension(f.Service[1].Options, grpcprocv1.E_Process, &grpcprocv1.ProcessOptions{Prefix: "room:", GoName: "room"})
+		}, "RoomProcess: go_name \"room\" is not an exported Go identifier"},
+		{func(f *descriptorpb.FileDescriptorProto) {
+			proto.SetExtension(f.Service[1].Options, grpcprocv1.E_Process, &grpcprocv1.ProcessOptions{Prefix: "room:", GoName: "Room_"})
+		}, "RoomProcess: it would generate Room_Addr, which oneof field grpcproc.protocgen.test.v1.Room.addr is named already"},
+		{func(f *descriptorpb.FileDescriptorProto) {
+			proto.SetExtension(method(t, f, "Stats").Options, grpcprocv1.E_Send, true)
+		}, "Echo.Stats: a topic is not a send: one option or the other"},
+		{func(f *descriptorpb.FileDescriptorProto) {
+			proto.SetExtension(method(t, f, "Stats").Options, grpcprocv1.E_Topic, &grpcprocv1.TopicOptions{Name: "echo"})
+		}, "Echo: the Stats topic of Echo registers as \"echo\", which the Echo process does too"},
+		{func(f *descriptorpb.FileDescriptorProto) {
+			proto.SetExtension(f.Service[2].Options, grpcprocv1.E_Process, &grpcprocv1.ProcessOptions{Name: "echo"})
+		}, "Sink: the Sink process registers as \"echo\", which the Echo process does too"},
 		{func(f *descriptorpb.FileDescriptorProto) {
 			s := f.Service[0]
 			s.Method = append(s.Method, &descriptorpb.MethodDescriptorProto{Name: proto.String("Again"), InputType: proto.String(".grpcproc.protocgen.test.v1.Ping"), OutputType: proto.String(".grpcproc.protocgen.test.v1.Pong")})

@@ -6,7 +6,9 @@ package testpb
 import (
 	context "context"
 	grpcproc "github.com/floatdrop/grpcproc"
+	pubsub "github.com/floatdrop/grpcproc/pubsub"
 	proto "google.golang.org/protobuf/proto"
+	time "time"
 )
 
 // EchoProcess is the name a process of the Echo service is registered under on its node.
@@ -27,10 +29,30 @@ func EchoAt(node string) EchoAddr {
 	return EchoAddrOf(grpcproc.Name{Node: node, Name: EchoProcess})
 }
 
+// EchoGlobal addresses the process of the Echo service that holds the global name EchoProcess, wherever it runs.
+func EchoGlobal() EchoAddr {
+	return EchoAddrOf(grpcproc.Global{Name: EchoProcess})
+}
+
+// EchoStatsTopic is the name the Stats topic of the Echo service is registered under on its process's node.
+const EchoStatsTopic = "echo-stats"
+
+// EchoStatsAt is the Stats topic of the Echo service on node, whose events are Pong.
+//
+// Stats is the topic the echo publishes a Pong to for each ping.
+func EchoStatsAt(node string) pubsub.Topic[*Pong] {
+	return pubsub.Named[*Pong](node, EchoStatsTopic)
+}
+
 // Ping is answered with a Pong of the same n. The message's name is the
 // rpc's, so it is qualified.
 func (c EchoAddr) Ping(ctx context.Context, from grpcproc.Caller, req *Ping) (*Pong, error) {
 	return c.Call[*Pong](ctx, from, req)
+}
+
+// Count calls the process with a Count and waits for its Pong.
+func (c EchoAddr) Count(ctx context.Context, from grpcproc.Caller) (*Pong, error) {
+	return c.Call[*Pong](ctx, from, &Count{})
 }
 
 // Note is kept; nothing answers it.
@@ -38,12 +60,30 @@ func (c EchoAddr) Note(ctx context.Context, from grpcproc.Caller, req *Note) err
 	return c.Send(ctx, from, req)
 }
 
+// NoteAfter sends req to the process after d, from p; the timer can stop it.
+func (c EchoAddr) NoteAfter[M proto.Message](p *grpcproc.Process[M], d time.Duration, req *Note) *grpcproc.Timer {
+	return p.SendAfter(d, c.Addr, proto.Message(req))
+}
+
+// Clear sends a Clear to the process, which answers nothing.
+func (c EchoAddr) Clear(ctx context.Context, from grpcproc.Caller) error {
+	return c.Send(ctx, from, &Clear{})
+}
+
+// ClearAfter sends a Clear to the process after d, from p; the timer can stop it.
+func (c EchoAddr) ClearAfter[M proto.Message](p *grpcproc.Process[M], d time.Duration) *grpcproc.Timer {
+	return p.SendAfter(d, c.Addr, proto.Message(&Clear{}))
+}
+
 // EchoHandler is what a process of the Echo service does with what it is
 // sent: a method per call, whose result is the reply, as actor.CallHandler's
-// is, and one per send. HandleEchoCall and HandleEchoMessage dispatch to it.
+// is, and one per send. HandleEchoCall and HandleEchoMessage dispatch to it;
+// UnimplementedEchoHandler answers for the methods an implementation leaves out.
 type EchoHandler interface {
 	Ping(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message], req *Ping) (*Pong, error)
+	Count(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) (*Pong, error)
 	Note(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message], req *Note) error
+	Clear(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) error
 }
 
 // HandleEchoCall answers a call to a process of the Echo service through s,
@@ -53,28 +93,79 @@ func HandleEchoCall(s EchoHandler, p *grpcproc.Process[proto.Message], m grpcpro
 	switch req := m.Body.(type) {
 	case *Ping:
 		return s.Ping(p, m, req)
+	case *Count:
+		return s.Count(p, m)
 	}
 	return nil, grpcproc.ErrType
 }
 
 // HandleEchoMessage takes a send to a process of the Echo service through s,
 // for an actor.Handler's HandleMessage; a message of another type is logged
-// and dropped, as actor.CallsOnly drops one.
+// and dropped, as actor.CallsOnly drops one. A message the process takes
+// from elsewhere, a topic's events say, is declared as a send too.
 func HandleEchoMessage(s EchoHandler, p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) error {
 	switch req := m.Body.(type) {
 	case *Note:
 		return s.Note(p, m, req)
+	case *Clear:
+		return s.Clear(p, m)
 	}
 	p.Log().Warn("echo: dropped a message that is not one of its sends", "from", m.From, "type", proto.MessageName(m.Body))
 	return nil
 }
 
+// UnimplementedEchoHandler answers grpcproc.ErrType to every call and drops every send,
+// for an implementation to embed and override what it handles.
+type UnimplementedEchoHandler struct{}
+
+func (UnimplementedEchoHandler) Ping(*grpcproc.Process[proto.Message], grpcproc.Msg[proto.Message], *Ping) (*Pong, error) {
+	return nil, grpcproc.ErrType
+}
+
+func (UnimplementedEchoHandler) Count(*grpcproc.Process[proto.Message], grpcproc.Msg[proto.Message]) (*Pong, error) {
+	return nil, grpcproc.ErrType
+}
+
+func (UnimplementedEchoHandler) Note(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message], req *Note) error {
+	p.Log().Warn("echo: dropped Note, which is not implemented", "from", m.From)
+	return nil
+}
+
+func (UnimplementedEchoHandler) Clear(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) error {
+	p.Log().Warn("echo: dropped Clear, which is not implemented", "from", m.From)
+	return nil
+}
+
+// RoomProcess is the name the process of the Room service for id is registered under on its node.
+func RoomProcess(id string) string { return "room:" + id }
+
 // RoomAddr addresses a process of the Room service; its methods are its rpcs.
+//
+// RoomProcess is a room, named per instance: "room:" + id. Its Go name is
+// Room, which the message of that name keeps it from being in the proto.
 type RoomAddr struct{ grpcproc.Addr[proto.Message] }
 
 // RoomAddrOf addresses t, a PID, a Name or a global name, as a process of the Room service.
 func RoomAddrOf(t grpcproc.Target) RoomAddr {
 	return RoomAddr{grpcproc.AddrOf[proto.Message](t)}
+}
+
+// RoomAt addresses the process of the Room service for id on node, registered as RoomProcess(id).
+func RoomAt(node, id string) RoomAddr {
+	return RoomAddrOf(grpcproc.Name{Node: node, Name: RoomProcess(id)})
+}
+
+// RoomGlobal addresses the process of the Room service that holds the global name RoomProcess(id), wherever it runs.
+func RoomGlobal(id string) RoomAddr {
+	return RoomAddrOf(grpcproc.Global{Name: RoomProcess(id)})
+}
+
+// RoomEventsTopic is the name the Events topic of the Room service's process for id is registered under on its node.
+func RoomEventsTopic(id string) string { return RoomProcess(id) + "/events" }
+
+// RoomEventsAt is the Events topic of the Room service's process for id on node, whose events are Note.
+func RoomEventsAt(node, id string) pubsub.Topic[*Note] {
+	return pubsub.Named[*Note](node, RoomEventsTopic(id))
 }
 
 // Bounce calls the process with req and waits for its Pong.
@@ -84,7 +175,8 @@ func (c RoomAddr) Bounce(ctx context.Context, from grpcproc.Caller, req *Ping) (
 
 // RoomHandler is what a process of the Room service does with what it is
 // sent: a method per call, whose result is the reply, as actor.CallHandler's
-// is, and one per send. HandleRoomCall and HandleRoomMessage dispatch to it.
+// is, and one per send. HandleRoomCall and HandleRoomMessage dispatch to it;
+// UnimplementedRoomHandler answers for the methods an implementation leaves out.
 type RoomHandler interface {
 	Bounce(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message], req *Ping) (*Pong, error)
 }
@@ -102,8 +194,76 @@ func HandleRoomCall(s RoomHandler, p *grpcproc.Process[proto.Message], m grpcpro
 
 // HandleRoomMessage takes a send to a process of the Room service through s,
 // for an actor.Handler's HandleMessage; a message of another type is logged
-// and dropped, as actor.CallsOnly drops one.
+// and dropped, as actor.CallsOnly drops one. A message the process takes
+// from elsewhere, a topic's events say, is declared as a send too.
 func HandleRoomMessage(s RoomHandler, p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) error {
 	p.Log().Warn("room: dropped a message that is not one of its sends", "from", m.From, "type", proto.MessageName(m.Body))
+	return nil
+}
+
+// UnimplementedRoomHandler answers grpcproc.ErrType to every call and drops every send,
+// for an implementation to embed and override what it handles.
+type UnimplementedRoomHandler struct{}
+
+func (UnimplementedRoomHandler) Bounce(*grpcproc.Process[proto.Message], grpcproc.Msg[proto.Message], *Ping) (*Pong, error) {
+	return nil, grpcproc.ErrType
+}
+
+// SinkAddr addresses a process of the Sink service; its methods are its rpcs.
+//
+// Sink takes a Clear and nothing else: a process with no name and no
+// prefix, addressed by PID or by a name of the application's, with a send
+// only, whose request has no fields.
+type SinkAddr struct{ grpcproc.Addr[proto.Message] }
+
+// SinkAddrOf addresses t, a PID, a Name or a global name, as a process of the Sink service.
+func SinkAddrOf(t grpcproc.Target) SinkAddr {
+	return SinkAddr{grpcproc.AddrOf[proto.Message](t)}
+}
+
+// Flush sends a Clear to the process, which answers nothing.
+func (c SinkAddr) Flush(ctx context.Context, from grpcproc.Caller) error {
+	return c.Send(ctx, from, &Clear{})
+}
+
+// FlushAfter sends a Clear to the process after d, from p; the timer can stop it.
+func (c SinkAddr) FlushAfter[M proto.Message](p *grpcproc.Process[M], d time.Duration) *grpcproc.Timer {
+	return p.SendAfter(d, c.Addr, proto.Message(&Clear{}))
+}
+
+// SinkHandler is what a process of the Sink service does with what it is
+// sent: a method per call, whose result is the reply, as actor.CallHandler's
+// is, and one per send. HandleSinkCall and HandleSinkMessage dispatch to it;
+// UnimplementedSinkHandler answers for the methods an implementation leaves out.
+type SinkHandler interface {
+	Flush(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) error
+}
+
+// HandleSinkCall answers a call to a process of the Sink service through s,
+// for an actor.CallHandler's HandleCall; a call of another type is answered
+// grpcproc.ErrType.
+func HandleSinkCall(s SinkHandler, p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) (proto.Message, error) {
+	return nil, grpcproc.ErrType
+}
+
+// HandleSinkMessage takes a send to a process of the Sink service through s,
+// for an actor.Handler's HandleMessage; a message of another type is logged
+// and dropped, as actor.CallsOnly drops one. A message the process takes
+// from elsewhere, a topic's events say, is declared as a send too.
+func HandleSinkMessage(s SinkHandler, p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) error {
+	switch m.Body.(type) {
+	case *Clear:
+		return s.Flush(p, m)
+	}
+	p.Log().Warn("sink: dropped a message that is not one of its sends", "from", m.From, "type", proto.MessageName(m.Body))
+	return nil
+}
+
+// UnimplementedSinkHandler answers grpcproc.ErrType to every call and drops every send,
+// for an implementation to embed and override what it handles.
+type UnimplementedSinkHandler struct{}
+
+func (UnimplementedSinkHandler) Flush(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) error {
+	p.Log().Warn("sink: dropped Flush, which is not implemented", "from", m.From)
 	return nil
 }

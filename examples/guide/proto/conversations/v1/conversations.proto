@@ -5,20 +5,27 @@ syntax = "proto3";
 
 package conversations.v1;
 
+import "google/protobuf/empty.proto";
 import "grpcproc/v1/options.proto";
 import "guide/proto/tools/v1/tools.proto";
 
 option go_package = "github.com/floatdrop/grpcproc/examples/guide/proto/conversations/v1;conversationsv1";
 
-// Conversation is one conversation's process, named after its id: what it
-// accepts. protoc-gen-grpcproc writes its address from this; address.go
-// adds what every caller does first, opening it.
+// Conversation is one conversation's process, registered as "conversation/"
+// and its id: what it accepts, and the topic it publishes on.
+// protoc-gen-grpcproc writes its address from this; address.go adds what
+// every caller does first, opening it.
 service Conversation {
-  option (grpcproc.v1.process) = {};
+  option (grpcproc.v1.process) = {prefix: "conversation/"};
   // Say tells the conversation what the user said, and returns once its
   // turn has begun: after the turns before it. The answer is published to
   // whoever follows the conversation.
   rpc Say(conversations.v1.Say) returns (Said);
+  // Events is the conversation's topic: what the user says, every token of
+  // its answers, the tools it calls, and the end of each turn.
+  rpc Events(google.protobuf.Empty) returns (Event) {
+    option (grpcproc.v1.topic) = {name: "events"};
+  }
 }
 
 // Open is what the conversations supervisor starts a conversation from.
