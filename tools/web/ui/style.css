@@ -184,9 +184,9 @@ input[type='number'] {
 	width: 80px;
 }
 
-/* The node picker: names as long as a pod's. */
+/* The node picker: names as long as a pod's, yarco-moq-control-7d9f8b6c5-abcde. */
 #node {
-	width: 220px;
+	width: 320px;
 }
 
 input[type='checkbox'] {
@@ -782,7 +782,7 @@ td.wrap {
 
 .map .node text {
 	fill: var(--g-color-text-primary);
-	font-size: 12px;
+	font-size: 11px; /* a line of MAP_CHARS fits the circle */
 	font-weight: var(--g-text-accent-font-weight);
 	text-anchor: middle;
 	pointer-events: none;

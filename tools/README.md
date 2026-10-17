@@ -198,7 +198,10 @@ through the same Inspector and refreshes every second:
   map of the links between them with messages per second on each. Grouped
   by a key of the nodes' metadata, a data center or a shard, it adds each
   group up and maps what goes between groups, up to 24; a group, or a
-  filter by name or `key=value`, lists its nodes. Pages share a walk over
+  filter by name or `key=value`, lists its nodes. What every name begins
+  with, as the pods of one chart share `yarco-moq-`, is left off the map
+  and the peers and dimmed in the table: the rest tells the nodes apart.
+  Pages share a walk over
   the cluster, which asks 32 nodes at a time: a large cluster is walked
   again once five times as long as the last walk took has passed, and at
   most 15 seconds. The node picker at the top filters as you type.
