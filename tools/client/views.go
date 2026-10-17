@@ -130,7 +130,7 @@ type NameView struct {
 // EventView is something that happened on a node.
 type EventView struct {
 	Time    string       `json:"time"`
-	Kind    string       `json:"kind" jsonschema:"spawn, exit, link-up, link-down or dead-letter"`
+	Kind    string       `json:"kind" jsonschema:"spawn, exit, link-up, link-down, dead-letter, member-up or member-down"`
 	Missed  uint64       `json:"missed,omitzero" jsonschema:"events lost before this one"`
 	Process *ProcessView `json:"process,omitempty"`
 	Reason  string       `json:"reason,omitempty"`
@@ -139,6 +139,7 @@ type EventView struct {
 	From    string       `json:"from,omitempty"`
 	To      string       `json:"to,omitempty"`
 	Type    string       `json:"type,omitempty" jsonschema:"message type of a dead letter"`
+	Member  *MemberView  `json:"member,omitempty" jsonschema:"the member listed, or listed no more"`
 }
 
 // short renders a duration for people: whole seconds past a minute,
@@ -211,5 +212,12 @@ func (c *Client) eventView(e grpcproc.Event) EventView {
 	if e.Peer.Name != "" {
 		v.Peer = e.Peer.String()
 	}
+	if e.Kind == grpcproc.EventMemberUp || e.Kind == grpcproc.EventMemberDown {
+		v.Member = new(memberView(e.Member))
+	}
 	return v
+}
+
+func memberView(m grpcproc.Member) MemberView {
+	return MemberView{Name: m.Name, Incarnation: m.Incarnation, Addr: m.Addr, Metadata: m.Metadata}
 }

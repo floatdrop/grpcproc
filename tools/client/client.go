@@ -100,7 +100,7 @@ func ParseKinds(names []string) ([]string, error) {
 
 var kinds = func() []string {
 	var out []string
-	for k := grpcproc.EventSpawn; k <= grpcproc.EventDeadLetter; k++ {
+	for k := grpcproc.EventSpawn; k <= grpcproc.EventMemberDown; k++ {
 		out = append(out, k.String())
 	}
 	return out
@@ -130,7 +130,7 @@ func (c *Client) node(ctx context.Context, req *inspectv1.GetNodeRequest, member
 		peers = append(peers, l.Peer.Name)
 	}
 	for _, m := range inspect.Members(resp.GetNode()) {
-		v.Members = append(v.Members, MemberView{Name: m.Name, Incarnation: m.Incarnation, Addr: m.Addr, Metadata: m.Metadata})
+		v.Members = append(v.Members, memberView(m))
 		peers = append(peers, m.Name)
 	}
 	totals := inspect.Totals(resp)

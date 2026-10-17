@@ -296,6 +296,14 @@ func TestMetrics(t *testing.T) {
 	if got := intValue(collect(t, e.reader), "grpcproc.links.down", grpcprocotel.AttrPeer.String("b")); got < 1 {
 		t.Errorf("links down = %d", got)
 	}
+	// Members come and go as the node's Membership says; the test cluster
+	// has none, so the hooks are told as it would.
+	e.hooks.OnMemberUp(grpcproc.Member{Name: "m", Incarnation: 1})
+	e.hooks.OnMemberDown(grpcproc.Member{Name: "m", Incarnation: 1})
+	rm = collect(t, e.reader)
+	if up, down := intValue(rm, "grpcproc.members.up", grpcprocotel.AttrPeer.String("m")), intValue(rm, "grpcproc.members.down", grpcprocotel.AttrPeer.String("m")); up != 1 || down != 1 {
+		t.Errorf("members up = %d, down = %d", up, down)
+	}
 }
 
 // The link counters add up the traffic of every link to a peer: a link that

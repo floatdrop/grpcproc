@@ -63,6 +63,7 @@ message type) is the unit, and every other attribute is bounded.
 | `grpcproc.processes.exited` | counter | `grpcproc.label`, `grpcproc.reason` (`normal`, `shutdown`, `killed`, `noproc`, `noconnection`, `type`, `name lost`, `name conflict`; `max restarts` from actor, `timeout` and `replaced` from cron, `demoted` from leader; `panic`, `error`) |
 | `grpcproc.dead_letters` | counter | `grpcproc.reason`, `grpcproc.message.type` |
 | `grpcproc.links.up`, `grpcproc.links.down` | counter | `grpcproc.peer` — sessions with the peer begun and ended (`OnLinkUp`, `OnLinkDown`) |
+| `grpcproc.members.up`, `grpcproc.members.down` | counter | `grpcproc.peer` — the member `Members` lists anew or changed, or lists no more (`OnMemberUp`, `OnMemberDown`) |
 | `grpcproc.processes` | gauge (Observe) | `grpcproc.label` |
 | `grpcproc.mailbox.depth` | gauge (Observe) | `grpcproc.label`, summed |
 | `grpcproc.mailbox.oldest` | gauge (Observe), s | `grpcproc.label`, maximum |

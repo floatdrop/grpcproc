@@ -18,6 +18,7 @@
 	--c3: var(--g-color-text-positive);
 	--c4: var(--g-color-text-utility);
 	--c5: var(--g-color-text-danger);
+	--c6: var(--g-color-text-misc);
 
 	--top: 56px;
 	color-scheme: light;

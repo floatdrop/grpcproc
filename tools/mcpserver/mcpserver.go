@@ -232,7 +232,7 @@ type watchIn struct {
 	Node      string   `json:"node,omitempty" jsonschema:"node to watch; empty for the node serving the Inspector"`
 	Seconds   int      `json:"seconds,omitempty" jsonschema:"how long to collect, 1 to 60; default 5"`
 	MaxEvents uint     `json:"max_events,omitempty" jsonschema:"stop after this many; default 100"`
-	Kinds     []string `json:"kinds,omitempty" jsonschema:"only these kinds: spawn, exit, link-up, link-down, dead-letter"`
+	Kinds     []string `json:"kinds,omitempty" jsonschema:"only these kinds: spawn, exit, link-up, link-down, dead-letter, member-up, member-down"`
 }
 
 type watchOut struct {

@@ -582,7 +582,7 @@ func cmdWatch(ctx context.Context, a *app, args []string) error {
 	var count int
 	if _, err := a.flags("watch", args, func(fs *flag.FlagSet) {
 		fs.StringVar(&node, "node", "", "node to watch")
-		fs.StringVar(&kinds, "kind", "", "only these kinds, comma separated: spawn, exit, link-up, link-down, dead-letter")
+		fs.StringVar(&kinds, "kind", "", "only these kinds, comma separated: spawn, exit, link-up, link-down, dead-letter, member-up, member-down")
 		fs.IntVar(&count, "count", 0, "stop after this many events (0 or less: until interrupted)")
 	}); err != nil {
 		return err
@@ -624,7 +624,14 @@ func eventLine(e client.EventView) string {
 			parts = append(parts, "name="+e.Process.Name)
 		}
 	}
-	for _, kv := range [][2]string{{"peer", e.Peer}, {"from", e.From}, {"to", e.To}, {"type", e.Type}, {"reason", e.Reason}, {"error", e.Error}} {
+	var member, addr string
+	if e.Member != nil {
+		member, addr = e.Member.Name, e.Member.Addr
+		if e.Member.Incarnation != 0 {
+			member += "#" + u(e.Member.Incarnation)
+		}
+	}
+	for _, kv := range [][2]string{{"member", member}, {"addr", addr}, {"peer", e.Peer}, {"from", e.From}, {"to", e.To}, {"type", e.Type}, {"reason", e.Reason}, {"error", e.Error}} {
 		if kv[1] != "" {
 			parts = append(parts, kv[0]+"="+strconv.Quote(kv[1]))
 		}

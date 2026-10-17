@@ -14,6 +14,13 @@ func TestEventLine(t *testing.T) {
 	if got != `not a time exit <a.1.2> label=order name=orders reason="boom" missed=3` {
 		t.Fatal(got)
 	}
+	got = eventLine(client.EventView{Time: "t", Kind: "member-down", Member: &client.MemberView{Name: "b", Incarnation: 2, Addr: "b:1"}})
+	if got != `t member-down member="b#2" addr="b:1"` {
+		t.Fatal(got)
+	}
+	if got = eventLine(client.EventView{Time: "t", Kind: "member-up", Member: &client.MemberView{Name: "c"}}); got != `t member-up member="c"` {
+		t.Fatal(got)
+	}
 }
 
 func TestBusy(t *testing.T) {

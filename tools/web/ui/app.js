@@ -215,7 +215,7 @@ const LABEL_THEME = {
 	leader: 'success', follower: 'info', candidate: 'warning', unclustered: 'unknown',
 	active: 'info', stuck: 'danger', done: 'unknown',
 	synced: 'success', syncing: 'warning', absent: 'unknown', unreachable: 'danger',
-	spawn: 'success', exit: 'unknown', 'link-up': 'info', 'link-down': 'warning', 'dead-letter': 'danger',
+	spawn: 'success', exit: 'unknown', 'link-up': 'info', 'link-down': 'warning', 'dead-letter': 'danger', 'member-up': 'info', 'member-down': 'warning',
 	info: 'info', bad: 'danger', warn: 'warning',
 };
 const pill = (text, kind, title) => h('span', { class: `label label_${LABEL_THEME[kind ?? text] || 'unknown'}`, title }, text);
@@ -1165,7 +1165,7 @@ function treePage(node, params) {
 	return page;
 }
 
-const KINDS = ['spawn', 'exit', 'link-up', 'link-down', 'dead-letter'];
+const KINDS = ['spawn', 'exit', 'link-up', 'link-down', 'dead-letter', 'member-up', 'member-down'];
 
 function eventsPage(node) {
 	const b = banner();
@@ -1181,18 +1181,20 @@ function eventsPage(node) {
 		return { k, btn, n };
 	});
 	const pause = h('button', { type: 'button', onclick: () => ((paused = !paused), (held = 0), (pause.textContent = paused ? 'Resume' : 'Pause'), paused || redraw()) }, 'Pause');
-	const chart = new Chart('Events / s', [['spawns', '--c3'], ['exits', '--c2'], ['dead letters', '--c5'], ['links', '--c4']]);
+	const chart = new Chart('Events / s', [['spawns', '--c3'], ['exits', '--c2'], ['dead letters', '--c5'], ['links', '--c4'], ['members', '--c6']]);
 	const matches = (e) => on.has(e.kind) && (!text || JSON.stringify(e).toLowerCase().includes(text));
 
 	function evRow(e, fresh) {
-		const p = e.process;
+		const p = e.process, m = e.member;
 		const detail = [];
-		for (const [k, v] of [['reason', e.reason], ['peer', e.peer], ['type', e.type], ['error', e.error]]) if (v) detail.push(`${k}: ${v}`);
+		for (const [k, v] of [['reason', e.reason], ['peer', e.peer], ['addr', m?.addr], ['metadata', m?.metadata && metadata(m.metadata)], ['type', e.type], ['error', e.error]]) if (v) detail.push(`${k}: ${v}`);
 		const who = p
 			? [pidLink(p.pid), ' ', h('span', { class: 'muted' }, p.name || p.label)]
-			: e.kind === 'dead-letter'
-				? [pidLink(e.from) || h('span', { class: 'muted' }, 'outside'), ' → ', pidLink(e.to) || '?']
-				: '';
+			: m
+				? [nameEl(m.name, true), m.incarnation ? h('span', { class: 'muted' }, `#${m.incarnation}`) : null]
+				: e.kind === 'dead-letter'
+					? [pidLink(e.from) || h('span', { class: 'muted' }, 'outside'), ' → ', pidLink(e.to) || '?']
+					: '';
 		return h(
 			'tr',
 			{ class: fresh ? 'fresh' : '' },
@@ -1257,7 +1259,7 @@ function eventsPage(node) {
 			const now = performance.now(), dt = (now - at) / 1000;
 			const d = (k) => (counts[k] - prev[k]) / dt;
 			if (dt > 0.2) {
-				chart.push(d('spawn'), d('exit'), d('dead-letter'), d('link-up') + d('link-down'));
+				chart.push(d('spawn'), d('exit'), d('dead-letter'), d('link-up') + d('link-down'), d('member-up') + d('member-down'));
 				prev = { ...counts };
 				at = now;
 			}

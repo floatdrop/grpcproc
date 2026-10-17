@@ -131,13 +131,18 @@ func TestFailuresAndOddities(t *testing.T) {
 	if err := c.Watch(ctx, "", func(EventView) bool { return true }); !errors.Is(err, errFake) {
 		t.Fatal(err)
 	}
-	// A stream that breaks is an error; a link-up event names its peer.
-	c.rpc = &fake{events: []*inspectv1.Event{{Time: timestamppb.Now(), Kind: &inspectv1.Event_LinkUp{LinkUp: &inspectv1.NodeID{Name: "b", Incarnation: 2}}}}}
+	// A stream that breaks is an error; a link-up event names its peer, a
+	// member event carries the member.
+	c.rpc = &fake{events: []*inspectv1.Event{
+		{Time: timestamppb.Now(), Kind: &inspectv1.Event_LinkUp{LinkUp: &inspectv1.NodeID{Name: "b", Incarnation: 2}}},
+		{Time: timestamppb.Now(), Kind: &inspectv1.Event_MemberDown{MemberDown: &inspectv1.Member{Id: &inspectv1.NodeID{Name: "c", Incarnation: 4}, Addr: "c:1"}}},
+	}}
 	var got []EventView
 	if err := c.Watch(ctx, "", func(e EventView) bool { got = append(got, e); return true }); !errors.Is(err, errFake) {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].Kind != "link-up" || got[0].Peer != "b#2" {
+	if len(got) != 2 || got[0].Kind != "link-up" || got[0].Peer != "b#2" || got[0].Member != nil ||
+		got[1].Kind != "member-down" || got[1].Member == nil || got[1].Member.Name != "c" || got[1].Member.Incarnation != 4 || got[1].Member.Addr != "c:1" {
 		t.Fatalf("%+v", got)
 	}
 	// A stream the Inspector ends cleanly is a clean end; a watch that

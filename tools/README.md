@@ -73,7 +73,7 @@ monitors:              2
 | `inspect <pid\|name>` | one process, with what it says about itself: `--node`, `--wait` |
 | `names [name]` | [global names](https://floatdrop.github.io/grpcproc/concepts/addressing/#global): who holds one, or a list: `--node`, `--prefix`, `--limit` |
 | `groups [group]` | a [grpcproc/groups](../groups/README.md) scope's groups, with their members on every node and on this one, and the scope's other nodes and their states; or one group's members: `--node`, `--scope`, `--prefix`, `--limit` |
-| `watch` | stream spawns, exits, links, dead letters: `--node`, `--kind`, `--count` |
+| `watch` | stream spawns, exits, links, members, dead letters: `--node`, `--kind`, `--count` |
 | `exit <pid\|name> [reason]` | ask a process to exit |
 | `loglevel <pid\|name> <level>` | change one process's log level |
 | `leader [status] <cluster>` | a [grpcproc/leader](../leader/README.md) election, as each node that takes part sees it |

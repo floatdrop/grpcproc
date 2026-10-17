@@ -78,8 +78,8 @@ type Hooks struct {
 	tracer trace.Tracer
 	prop   propagation.TextMapPropagator
 
-	sent, received, spawned, exited, deadLetters, linksUp, linksDown metric.Int64Counter
-	mailboxWait, handling, callDuration                              metric.Float64Histogram
+	sent, received, spawned, exited, deadLetters, linksUp, linksDown, membersUp, membersDown metric.Int64Counter
+	mailboxWait, handling, callDuration                                                      metric.Float64Histogram
 }
 
 var _ grpcproc.Hooks = (*Hooks)(nil)
@@ -115,6 +115,8 @@ func New(opts ...Option) (*Hooks, error) {
 	h.deadLetters = counter("grpcproc.dead_letters", "Messages that could not be delivered, by reason and message type.", "{message}")
 	h.linksUp = counter("grpcproc.links.up", "Links established, by peer.", "{link}")
 	h.linksDown = counter("grpcproc.links.down", "Links lost, by peer.", "{link}")
+	h.membersUp = counter("grpcproc.members.up", "Members listed anew or changed, by name.", "{member}")
+	h.membersDown = counter("grpcproc.members.down", "Members listed no more, by name.", "{member}")
 	h.mailboxWait = seconds("grpcproc.mailbox.wait", "How long a message waited in the mailbox.")
 	h.handling = seconds("grpcproc.process.duration", "How long a process spent on one message, until its next Receive.")
 	h.callDuration = seconds("grpcproc.call.duration", "Call latency seen by the caller, with error.type on failure.")
@@ -251,6 +253,14 @@ func (h *Hooks) OnLinkUp(peer grpcproc.NodeID) {
 
 func (h *Hooks) OnLinkDown(peer grpcproc.NodeID, _ error) {
 	h.linksDown.Add(context.Background(), 1, metric.WithAttributes(AttrPeer.String(peer.Name)))
+}
+
+func (h *Hooks) OnMemberUp(m grpcproc.Member) {
+	h.membersUp.Add(context.Background(), 1, metric.WithAttributes(AttrPeer.String(m.Name)))
+}
+
+func (h *Hooks) OnMemberDown(m grpcproc.Member) {
+	h.membersDown.Add(context.Background(), 1, metric.WithAttributes(AttrPeer.String(m.Name)))
 }
 
 // ReasonClass maps an exit reason to a bounded set, for metrics: the
