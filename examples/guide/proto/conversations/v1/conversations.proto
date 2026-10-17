@@ -5,21 +5,25 @@ syntax = "proto3";
 
 package conversations.v1;
 
+import "grpcproc/v1/options.proto";
 import "guide/proto/tools/v1/tools.proto";
 
 option go_package = "github.com/floatdrop/grpcproc/examples/guide/proto/conversations/v1;conversationsv1";
 
+// Conversation is one conversation's process, named after its id: what it
+// accepts. protoc-gen-grpcproc writes its address from this; address.go
+// adds what every caller does first, opening it.
+service Conversation {
+  option (grpcproc.v1.process) = {};
+  // Say tells the conversation what the user said, and returns once its
+  // turn has begun: after the turns before it. The answer is published to
+  // whoever follows the conversation.
+  rpc Say(conversations.v1.Say) returns (Said);
+}
+
 // Open is what the conversations supervisor starts a conversation from.
 message Open {
   string id = 1;
-}
-
-// Request is everything a conversation's process accepts.
-message Request {
-  oneof op {
-    // A call, answered with Said.
-    Say say = 1;
-  }
 }
 
 // Say is what the user said. It is answered as its turn begins; the answer

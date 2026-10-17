@@ -1,0 +1,627 @@
+file: {
+  name: "protocgen/testpb/gen.proto"
+  package: "grpcproc.protocgen.test.v1"
+  dependency: "google/protobuf/empty.proto"
+  dependency: "grpcproc/v1/options.proto"
+  message_type: {
+    name: "Ping"
+    field: {
+      name: "n"
+      number: 1
+      label: LABEL_OPTIONAL
+      type: TYPE_INT64
+      json_name: "n"
+    }
+  }
+  message_type: {
+    name: "Pong"
+    field: {
+      name: "n"
+      number: 1
+      label: LABEL_OPTIONAL
+      type: TYPE_INT64
+      json_name: "n"
+    }
+  }
+  message_type: {
+    name: "Note"
+    field: {
+      name: "text"
+      number: 1
+      label: LABEL_OPTIONAL
+      type: TYPE_STRING
+      json_name: "text"
+    }
+  }
+  service: {
+    name: "Echo"
+    method: {
+      name: "Ping"
+      input_type: ".grpcproc.protocgen.test.v1.Ping"
+      output_type: ".grpcproc.protocgen.test.v1.Pong"
+    }
+    method: {
+      name: "Note"
+      input_type: ".grpcproc.protocgen.test.v1.Note"
+      output_type: ".google.protobuf.Empty"
+      options: {
+        [grpcproc.v1.send]: true
+      }
+    }
+    options: {
+      [grpcproc.v1.process]: {
+        name: "echo"
+      }
+    }
+  }
+  service: {
+    name: "Room"
+    method: {
+      name: "Bounce"
+      input_type: ".grpcproc.protocgen.test.v1.Ping"
+      output_type: ".grpcproc.protocgen.test.v1.Pong"
+    }
+    options: {
+      [grpcproc.v1.process]: {}
+    }
+  }
+  service: {
+    name: "Plain"
+    method: {
+      name: "Bounce"
+      input_type: ".grpcproc.protocgen.test.v1.Ping"
+      output_type: ".grpcproc.protocgen.test.v1.Pong"
+    }
+  }
+  options: {
+    go_package: "github.com/floatdrop/grpcproc/internal/protocgen/testpb;testpb"
+  }
+  source_code_info: {
+    location: {
+      span: 2
+      span: 0
+      span: 43
+      span: 1
+    }
+    location: {
+      path: 12
+      span: 2
+      span: 0
+      span: 18
+      leading_comments: " What protoc-gen-grpcproc is tested on: a process registered under a\n name, with a call and a send, and one named per instance.\n"
+    }
+    location: {
+      path: 2
+      span: 4
+      span: 0
+      span: 35
+    }
+    location: {
+      path: 3
+      path: 0
+      span: 6
+      span: 0
+      span: 37
+    }
+    location: {
+      path: 3
+      path: 1
+      span: 7
+      span: 0
+      span: 35
+    }
+    location: {
+      path: 8
+      span: 9
+      span: 0
+      span: 85
+    }
+    location: {
+      path: 8
+      path: 11
+      span: 9
+      span: 0
+      span: 85
+    }
+    location: {
+      path: 4
+      path: 0
+      span: 11
+      span: 0
+      span: 13
+      span: 1
+    }
+    location: {
+      path: 4
+      path: 0
+      path: 1
+      span: 11
+      span: 8
+      span: 12
+    }
+    location: {
+      path: 4
+      path: 0
+      path: 2
+      path: 0
+      path: 5
+      span: 12
+      span: 2
+      span: 7
+    }
+    location: {
+      path: 4
+      path: 0
+      path: 2
+      path: 0
+      span: 12
+      span: 2
+      span: 14
+    }
+    location: {
+      path: 4
+      path: 0
+      path: 2
+      path: 0
+      path: 1
+      span: 12
+      span: 8
+      span: 9
+    }
+    location: {
+      path: 4
+      path: 0
+      path: 2
+      path: 0
+      path: 3
+      span: 12
+      span: 12
+      span: 13
+    }
+    location: {
+      path: 4
+      path: 1
+      span: 15
+      span: 0
+      span: 17
+      span: 1
+    }
+    location: {
+      path: 4
+      path: 1
+      path: 1
+      span: 15
+      span: 8
+      span: 12
+    }
+    location: {
+      path: 4
+      path: 1
+      path: 2
+      path: 0
+      path: 5
+      span: 16
+      span: 2
+      span: 7
+    }
+    location: {
+      path: 4
+      path: 1
+      path: 2
+      path: 0
+      span: 16
+      span: 2
+      span: 14
+    }
+    location: {
+      path: 4
+      path: 1
+      path: 2
+      path: 0
+      path: 1
+      span: 16
+      span: 8
+      span: 9
+    }
+    location: {
+      path: 4
+      path: 1
+      path: 2
+      path: 0
+      path: 3
+      span: 16
+      span: 12
+      span: 13
+    }
+    location: {
+      path: 4
+      path: 2
+      span: 19
+      span: 0
+      span: 21
+      span: 1
+    }
+    location: {
+      path: 4
+      path: 2
+      path: 1
+      span: 19
+      span: 8
+      span: 12
+    }
+    location: {
+      path: 4
+      path: 2
+      path: 2
+      path: 0
+      path: 5
+      span: 20
+      span: 2
+      span: 8
+    }
+    location: {
+      path: 4
+      path: 2
+      path: 2
+      path: 0
+      span: 20
+      span: 2
+      span: 18
+    }
+    location: {
+      path: 4
+      path: 2
+      path: 2
+      path: 0
+      path: 1
+      span: 20
+      span: 9
+      span: 13
+    }
+    location: {
+      path: 4
+      path: 2
+      path: 2
+      path: 0
+      path: 3
+      span: 20
+      span: 16
+      span: 17
+    }
+    location: {
+      path: 6
+      path: 0
+      span: 24
+      span: 0
+      span: 33
+      span: 1
+      leading_comments: " Echo answers pings, and takes notes.\n"
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 1
+      span: 24
+      span: 8
+      span: 12
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 3
+      span: 25
+      span: 2
+      span: 48
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 3
+      path: 51001
+      span: 25
+      span: 9
+      span: 47
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 3
+      path: 51001
+      path: 1
+      span: 25
+      span: 34
+      span: 46
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 0
+      span: 28
+      span: 2
+      span: 59
+      leading_comments: " Ping is answered with a Pong of the same n. The message's name is the\n rpc's, so it is qualified.\n"
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 0
+      path: 1
+      span: 28
+      span: 6
+      span: 10
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 0
+      path: 2
+      span: 28
+      span: 11
+      span: 42
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 0
+      path: 3
+      span: 28
+      span: 53
+      span: 57
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 1
+      span: 30
+      span: 2
+      span: 32
+      span: 3
+      leading_comments: " Note is kept; nothing answers it.\n"
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 1
+      path: 1
+      span: 30
+      span: 6
+      span: 10
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 1
+      path: 2
+      span: 30
+      span: 11
+      span: 42
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 1
+      path: 3
+      span: 30
+      span: 53
+      span: 74
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 1
+      path: 4
+      span: 31
+      span: 4
+      span: 37
+    }
+    location: {
+      path: 6
+      path: 0
+      path: 2
+      path: 1
+      path: 4
+      path: 51001
+      span: 31
+      span: 4
+      span: 37
+    }
+    location: {
+      path: 6
+      path: 1
+      span: 35
+      span: 0
+      span: 38
+      span: 1
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 1
+      span: 35
+      span: 8
+      span: 12
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 3
+      span: 36
+      span: 2
+      span: 36
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 3
+      path: 51001
+      span: 36
+      span: 9
+      span: 35
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 2
+      path: 0
+      span: 37
+      span: 2
+      span: 34
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 2
+      path: 0
+      path: 1
+      span: 37
+      span: 6
+      span: 12
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 2
+      path: 0
+      path: 2
+      span: 37
+      span: 13
+      span: 17
+    }
+    location: {
+      path: 6
+      path: 1
+      path: 2
+      path: 0
+      path: 3
+      span: 37
+      span: 28
+      span: 32
+    }
+    location: {
+      path: 6
+      path: 2
+      span: 41
+      span: 0
+      span: 43
+      span: 1
+      leading_comments: " Plain is a gRPC service: not a process, and left alone.\n"
+    }
+    location: {
+      path: 6
+      path: 2
+      path: 1
+      span: 41
+      span: 8
+      span: 13
+    }
+    location: {
+      path: 6
+      path: 2
+      path: 2
+      path: 0
+      span: 42
+      span: 2
+      span: 34
+    }
+    location: {
+      path: 6
+      path: 2
+      path: 2
+      path: 0
+      path: 1
+      span: 42
+      span: 6
+      span: 12
+    }
+    location: {
+      path: 6
+      path: 2
+      path: 2
+      path: 0
+      path: 2
+      span: 42
+      span: 13
+      span: 17
+    }
+    location: {
+      path: 6
+      path: 2
+      path: 2
+      path: 0
+      path: 3
+      span: 42
+      span: 28
+      span: 32
+    }
+  }
+  syntax: "proto3"
+}
+file: {
+  name: "protocgen/testpb/nosvc.proto"
+  package: "grpcproc.protocgen.test.v1"
+  message_type: {
+    name: "Nothing"
+  }
+  options: {
+    go_package: "github.com/floatdrop/grpcproc/internal/protocgen/testpb;testpb"
+  }
+  source_code_info: {
+    location: {
+      span: 1
+      span: 0
+      span: 7
+      span: 18
+    }
+    location: {
+      path: 12
+      span: 1
+      span: 0
+      span: 18
+      leading_comments: " A file with no process in it, for which nothing is generated.\n"
+    }
+    location: {
+      path: 2
+      span: 3
+      span: 0
+      span: 35
+    }
+    location: {
+      path: 8
+      span: 5
+      span: 0
+      span: 85
+    }
+    location: {
+      path: 8
+      path: 11
+      span: 5
+      span: 0
+      span: 85
+    }
+    location: {
+      path: 4
+      path: 0
+      span: 7
+      span: 0
+      span: 18
+    }
+    location: {
+      path: 4
+      path: 0
+      path: 1
+      span: 7
+      span: 8
+      span: 15
+    }
+  }
+  syntax: "proto3"
+}

@@ -125,6 +125,11 @@ your `*grpc.Server` next to your other services, start and stop.
   of processes on any node, after Erlang's `pg`, which every node lists from
   its own copy and any process can watch.
   [Guide](https://floatdrop.github.io/grpcproc/guides/groups/)
+- **Contracts as proto services**: a service marked `grpcproc.v1.process`
+  is what a process answers and takes, and `protoc-gen-grpcproc`, run by
+  `buf generate`, writes its address with a method per rpc and the handler
+  that dispatches to it, as gRPC's stubs are written.
+  [Addressing](https://floatdrop.github.io/grpcproc/concepts/addressing/)
 - **An Inspector** and [`grpcprocctl`](tools/README.md): every process, its
   mailbox and what it says about itself, from a terminal or an AI agent over
   MCP. [Guide](https://floatdrop.github.io/grpcproc/guides/inspector/)

@@ -11,6 +11,7 @@ package modelsv1
 
 import (
 	v1 "github.com/floatdrop/grpcproc/examples/guide/proto/tools/v1"
+	_ "github.com/floatdrop/grpcproc/proto/grpcproc/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -294,7 +295,7 @@ var File_guide_proto_models_v1_models_proto protoreflect.FileDescriptor
 
 const file_guide_proto_models_v1_models_proto_rawDesc = "" +
 	"\n" +
-	"\"guide/proto/models/v1/models.proto\x12\tmodels.v1\x1a guide/proto/tools/v1/tools.proto\"b\n" +
+	"\"guide/proto/models/v1/models.proto\x12\tmodels.v1\x1a\x19grpcproc/v1/options.proto\x1a guide/proto/tools/v1/tools.proto\"b\n" +
 	"\x04Turn\x12#\n" +
 	"\x04role\x18\x01 \x01(\x0e2\x0f.models.v1.RoleR\x04role\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\x12!\n" +
@@ -314,7 +315,10 @@ const file_guide_proto_models_v1_models_proto_rawDesc = "" +
 	"\x10ROLE_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tROLE_USER\x10\x01\x12\x12\n" +
 	"\x0eROLE_ASSISTANT\x10\x02\x12\r\n" +
-	"\tROLE_TOOL\x10\x03BGZEgithub.com/floatdrop/grpcproc/examples/guide/proto/models/v1;modelsv1b\x06proto3"
+	"\tROLE_TOOL\x10\x032P\n" +
+	"\tScheduler\x125\n" +
+	"\bGenerate\x12\x13.models.v1.Generate\x1a\x14.models.v1.Generated\x1a\f\xca\xf3\x18\b\n" +
+	"\x06modelsBGZEgithub.com/floatdrop/grpcproc/examples/guide/proto/models/v1;modelsv1b\x06proto3"
 
 var (
 	file_guide_proto_models_v1_models_proto_rawDescOnce sync.Once
@@ -342,8 +346,10 @@ var file_guide_proto_models_v1_models_proto_depIdxs = []int32{
 	4, // 1: models.v1.Turn.tool:type_name -> tools.v1.Run
 	1, // 2: models.v1.Generate.history:type_name -> models.v1.Turn
 	4, // 3: models.v1.Generated.tool:type_name -> tools.v1.Run
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
+	2, // 4: models.v1.Scheduler.Generate:input_type -> models.v1.Generate
+	3, // 5: models.v1.Scheduler.Generate:output_type -> models.v1.Generated
+	5, // [5:6] is the sub-list for method output_type
+	4, // [4:5] is the sub-list for method input_type
 	4, // [4:4] is the sub-list for extension type_name
 	4, // [4:4] is the sub-list for extension extendee
 	0, // [0:4] is the sub-list for field type_name
@@ -362,7 +368,7 @@ func file_guide_proto_models_v1_models_proto_init() {
 			NumEnums:      1,
 			NumMessages:   3,
 			NumExtensions: 0,
-			NumServices:   0,
+			NumServices:   1,
 		},
 		GoTypes:           file_guide_proto_models_v1_models_proto_goTypes,
 		DependencyIndexes: file_guide_proto_models_v1_models_proto_depIdxs,

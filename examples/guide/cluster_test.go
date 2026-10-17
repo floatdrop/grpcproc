@@ -70,9 +70,9 @@ func TestCluster(t *testing.T) {
 			cfg.Placement = map[string]string{toolsv1.Service: "sandbox"}
 			cfg.Untrusted = []string{"sandbox"}
 		case "sandbox":
-			cfg.Export = []string{toolsv1.RunnerName}
+			cfg.Export = []string{toolsv1.RunnerProcess}
 		default:
-			cfg.Export = []string{modelsv1.SchedulerName}
+			cfg.Export = []string{modelsv1.SchedulerProcess}
 			cfg.Untrusted = []string{"sandbox"}
 		}
 		n.app = compose(cfg, n.services, n.more...)
@@ -115,10 +115,10 @@ func TestCluster(t *testing.T) {
 	// GPU nodes: to the sandbox, their processes do not exist.
 	denied := make(chan error, 2)
 	if _, err := apps["sandbox"].Get[*grpcproc.Node]().Spawn(func(p *grpcproc.Process[proto.Message]) error {
-		_, err := conversationsv1.Conversation("gateway", "1").Say(p.Context(), p, "let me in")
+		_, err := conversationsv1.ConversationAt("gateway", "1").Say(p.Context(), p, "let me in")
 		denied <- err
 		// Nor a GPU node's scheduler, which would publish where it is told.
-		_, err = modelsv1.Scheduler("gpu-2").Generate(p.Context(), p, &modelsv1.Generate{})
+		_, err = modelsv1.SchedulerAt("gpu-2").Generate(p.Context(), p, &modelsv1.Generate{})
 		denied <- err
 		return nil
 	}); err != nil {

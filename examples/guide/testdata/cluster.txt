@@ -14,7 +14,7 @@ gpu-1
 │   └── ·           groups relay
 └── root            supervisor
     └── models-sup  supervisor
-        └── models  *modelsv1.Generate
+        └── models  scheduler
             └── ·   generation
 
 gpu-2
@@ -23,9 +23,9 @@ gpu-2
 │   └── ·           groups relay
 └── root            supervisor
     └── models-sup  supervisor
-        └── models  *modelsv1.Generate
+        └── models  scheduler
 
 sandbox
 └── root           supervisor
     └── tools-sup  supervisor
-        └── tools  *toolsv1.Run
+        └── tools  runner

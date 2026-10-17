@@ -3,6 +3,14 @@ plugins:
   - local: protoc-gen-go
     out: .
     opt: module=github.com/floatdrop/grpcproc
+  # gRPC stubs for the node protocol and the Inspector only: a service
+  # marked as a process is protoc-gen-grpcproc's.
   - local: protoc-gen-go-grpc
+    out: .
+    opt: module=github.com/floatdrop/grpcproc
+    types:
+      - grpcproc.v1.Node
+      - grpcproc.inspect.v1.Inspector
+  - local: ["go", "run", "./cmd/protoc-gen-grpcproc"]
     out: .
     opt: module=github.com/floatdrop/grpcproc

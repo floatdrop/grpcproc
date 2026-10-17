@@ -24,7 +24,9 @@ error types), `queue.go` (the mailbox and link queue), `admit.go` (`Policy`,
 `Export`), `names.go` (global names), `hooks.go`, `events.go`, `info.go`
 (the inspection types, and the pprof label keys). Packages of the core
 module: `grpcproctest` (clusters over bufconn), `inspect` (the Inspector
-service), `actor`
+service), `cmd/protoc-gen-grpcproc` over `internal/protocgen` (the protoc
+plugin that writes a process's address and handler from a service marked
+`grpcproc.v1.process`, `proto/grpcproc/v1/options.proto`), `actor`
 (handler loop, supervisor, `Workers`), `pubsub`, `groups` (process
 groups, a scope per node and a relay per peer), `cron`, `leader`, `saga`
 (durable sagas behind a `Store`; `saga/sagatest` checks a store). Nested modules:
@@ -75,7 +77,8 @@ go vet ./... && golangci-lint run ./...              # lint (config in .golangci
 test -z "$(gofmt -l .)"                              # formatting gate
 go run github.com/campoy/embedmd@v1.0.0 -d README.md # README in sync with examples/?
 go run github.com/campoy/embedmd@v1.0.0 -w README.md # re-embed after editing an example
-buf lint && buf generate                             # after editing a .proto
+buf lint && buf generate                             # after editing a .proto; runs protoc-gen-grpcproc too
+buf build --as-file-descriptor-set --exclude-imports --path internal/protocgen/testpb -o internal/protocgen/testdata/image.txtpb  # after editing the plugin's test protos
 go test -run '^$' -fuzz '^FuzzScenario$' -fuzztime 5m .        # FuzzDispatch, FuzzServeLink too
 go test -run '^$' -fuzz '^FuzzParse$' -fuzztime 5m ./cron
 go test -race -count=25 -cpu=1,2,4,8 -timeout=80m ./...  # the nightly stress, for a concurrency change
@@ -101,13 +104,13 @@ the core's API can break it, `go vet ./... && golangci-lint run ./... &&
 go test -run '^$' -bench . -benchtime=50ms ./...`.
 
 Then coverage, which must stay at 100% for each package CI lists — in the
-root `. ./inspect ./actor ./pubsub ./groups ./cron ./leader ./saga`, in `otel` and `etcd`
+root `. ./inspect ./actor ./pubsub ./groups ./cron ./leader ./saga ./internal/protocgen`, in `otel` and `etcd`
 `.`, in `tools` `./client ./dot ./cli ./mcpserver ./web`, and `saga/postgres`
 from `saga/postgres/integration`
 (`go test -coverpkg=github.com/floatdrop/grpcproc/saga/postgres .`):
 
 ```sh
-for pkg in . ./inspect ./actor ./pubsub ./groups ./cron ./leader ./saga; do
+for pkg in . ./inspect ./actor ./pubsub ./groups ./cron ./leader ./saga ./internal/protocgen; do
   go test -count=1 -coverprofile=coverage.out -coverpkg=$pkg $pkg >/dev/null
   echo "$pkg $(go tool cover -func=coverage.out | awk '/^total:/ {print $3}')"
 done
@@ -350,7 +353,12 @@ works on a newer one's runs. A store must pass `sagatest.Store`.
   pinning. Never tag, or `go get`, a version of this repository that is not
   meant to exist: the module proxy caches it for good.
 - **Generated code is generated.** `.pb.go` files come from `buf generate`
-  (`buf.yaml`, `buf.gen.yaml`); CI regenerates them and fails on a diff.
+  (`buf.yaml`, `buf.gen.yaml`), the `_grpcproc.pb.go` ones from this
+  repository's own `protoc-gen-grpcproc`, which `buf generate` runs with
+  `go run`; CI regenerates them, and the plugin's test image
+  (`internal/protocgen/testdata`), and fails on a diff. gRPC stubs are
+  generated for the node protocol and the Inspector only: a service marked
+  `grpcproc.v1.process` is a process's contract, not a gRPC service.
 - **README code is embedded** from `examples/` with embedmd markers;
   `gofmt -w` the example before re-embedding.
 - **`site/`** is the documentation at <https://floatdrop.github.io/grpcproc/>;

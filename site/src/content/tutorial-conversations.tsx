@@ -63,7 +63,7 @@ export const tutorialConversations: Doc = {
 						opened once more.
 					</p>
 					<Code caption="proto/conversations/v1/address.go">
-						{region(address, /^\/\/ open starts the conversation's process/, /^}/) + '\n\n' + region(address, /^\/\/ ask opens the conversation/, /^}/)}
+						{region(address, /^\/\/ open starts the conversation's process/, /^}/) + '\n\n' + region(address, /^\/\/ Say tells the conversation/, /^}/)}
 					</Code>
 					<p>
 						A conversation is <C>Transient</C>: its supervisor starts it again if it crashes, and

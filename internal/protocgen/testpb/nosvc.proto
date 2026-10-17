@@ -1,0 +1,8 @@
+// A file with no process in it, for which nothing is generated.
+syntax = "proto3";
+
+package grpcproc.protocgen.test.v1;
+
+option go_package = "github.com/floatdrop/grpcproc/internal/protocgen/testpb;testpb";
+
+message Nothing {}

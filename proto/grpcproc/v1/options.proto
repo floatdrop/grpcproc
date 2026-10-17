@@ -1,0 +1,31 @@
+// Options that make a service the contract of a process, which
+// protoc-gen-grpcproc writes the client and the server of. See
+// cmd/protoc-gen-grpcproc.
+syntax = "proto3";
+
+package grpcproc.v1;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/floatdrop/grpcproc/proto/grpcproc/v1;grpcprocv1";
+
+// ProcessOptions says a service is what a process accepts and answers: each
+// rpc a call, answered with its response, or a send (see send). A service
+// without it is left alone: a gRPC service, say.
+message ProcessOptions {
+  // The name the process is registered under on its node, for a
+  // <Service>At(node) constructor and a <Service>Process constant. Empty
+  // for a process named per instance, as a room or a conversation is.
+  string name = 1;
+}
+
+extend google.protobuf.ServiceOptions {
+  // process marks the service as a process's contract.
+  ProcessOptions process = 51001;
+}
+
+extend google.protobuf.MethodOptions {
+  // send marks an rpc as a send: the process takes the message and
+  // answers nothing. It must return google.protobuf.Empty.
+  bool send = 51001;
+}

@@ -39,29 +39,34 @@ type Slots int
 // when the model is done. So the scheduler is never busy generating, and a
 // generation that fails takes down nothing else.
 type scheduler struct {
-	actor.CallsOnly[*modelsv1.Generate]
+	actor.CallsOnly[proto.Message]
 	model Model
 	slots Slots
 	scope *groups.Scope
 	// running is the calls being answered, by the monitor of the process
 	// that answers each.
-	running map[grpcproc.Ref]grpcproc.Msg[*modelsv1.Generate]
+	running map[grpcproc.Ref]grpcproc.Msg[proto.Message]
 }
 
 // Init joins the scheduler to the models group, where the conversations
 // find it: it is in it until it exits, and a restart joins again.
-func (s *scheduler) Init(p *grpcproc.Process[*modelsv1.Generate]) error {
+func (s *scheduler) Init(p *grpcproc.Process[proto.Message]) error {
 	return s.scope.Join(p.Context(), p, modelsv1.Group, p.PID())
 }
 
-func (s *scheduler) HandleCall(p *grpcproc.Process[*modelsv1.Generate], m grpcproc.Msg[*modelsv1.Generate]) (proto.Message, error) {
+// HandleCall hands a call to the Scheduler service's method for it: Generate.
+func (s *scheduler) HandleCall(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) (proto.Message, error) {
+	return modelsv1.HandleSchedulerCall(s, p, m)
+}
+
+func (s *scheduler) Generate(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message], req *modelsv1.Generate) (*modelsv1.Generated, error) {
 	if len(s.running) >= int(s.slots) {
 		return &modelsv1.Generated{Busy: true}, nil
 	}
 	// Monitored from before it runs, and linked to the scheduler, which
 	// takes its generations with it if it ends.
 	_, ref, err := p.SpawnMonitor(func(g *grpcproc.Process[proto.Message]) error {
-		return generate(g, s.model, m)
+		return generate(g, s.model, m, req)
 	}, grpcproc.WithLabel("generation"), grpcproc.LinkParent())
 	if err != nil {
 		return nil, err
@@ -72,7 +77,7 @@ func (s *scheduler) HandleCall(p *grpcproc.Process[*modelsv1.Generate], m grpcpr
 
 // HandleDown frees the slot of a generation that ended. One that ended
 // without answering, by an error or a panic, has its call answered here.
-func (s *scheduler) HandleDown(_ *grpcproc.Process[*modelsv1.Generate], d grpcproc.Down) error {
+func (s *scheduler) HandleDown(_ *grpcproc.Process[proto.Message], d grpcproc.Down) error {
 	m := s.running[d.Ref]
 	delete(s.running, d.Ref)
 	if d.Reason != grpcproc.ReasonNormal {
@@ -86,16 +91,16 @@ func (s *scheduler) HandleDown(_ *grpcproc.Process[*modelsv1.Generate], d grpcpr
 // holds its message. Its tokens go straight to the topic the request names,
 // and its answer after them on the same link, so a subscriber has every
 // token before whoever called has the answer.
-func generate(p *grpcproc.Process[proto.Message], model Model, m grpcproc.Msg[*modelsv1.Generate]) error {
+func generate(p *grpcproc.Process[proto.Message], model Model, m grpcproc.Msg[proto.Message], req *modelsv1.Generate) error {
 	// The caller's deadline is the generation's, and so is an exit.
 	ctx, cancel := m.Context(p.Context())
 	defer cancel()
-	topic := pubsub.Named[*conversationsv1.Event](m.Body.TopicNode, m.Body.Topic)
+	topic := pubsub.Named[*conversationsv1.Event](req.TopicNode, req.Topic)
 	var text string
-	tool, err := model.Generate(ctx, m.Body.History, func(token string) error {
+	tool, err := model.Generate(ctx, req.History, func(token string) error {
 		text += token
 		return topic.Publish(ctx, p, &conversationsv1.Event{
-			Turn: m.Body.Turn, Attempt: m.Body.Attempt, Kind: &conversationsv1.Event_Token{Token: token},
+			Turn: req.Turn, Attempt: req.Attempt, Kind: &conversationsv1.Event_Token{Token: token},
 		})
 	})
 	if err != nil {
@@ -109,9 +114,9 @@ func generate(p *grpcproc.Process[proto.Message], model Model, m grpcproc.Msg[*m
 func tree(model Model, slots Slots, scope *groups.Scope) actor.ChildSpec {
 	return actor.ChildSupervisor(modelsv1.Service+"-sup", actor.Spec{
 		Children: []actor.ChildSpec{
-			actor.Child(modelsv1.SchedulerName, func() *scheduler {
-				return &scheduler{model: model, slots: slots, scope: scope, running: map[grpcproc.Ref]grpcproc.Msg[*modelsv1.Generate]{}}
-			}),
+			actor.Child(modelsv1.SchedulerProcess, func() *scheduler {
+				return &scheduler{model: model, slots: slots, scope: scope, running: map[grpcproc.Ref]grpcproc.Msg[proto.Message]{}}
+			}, grpcproc.WithLabel("scheduler")),
 		},
 	})
 }
@@ -126,6 +131,6 @@ func Module(s *di.Scope) {
 }
 
 var (
-	_ actor.DownHandler[*modelsv1.Generate] = (*scheduler)(nil)
-	_ actor.Initializer[*modelsv1.Generate] = (*scheduler)(nil)
+	_ actor.DownHandler[proto.Message] = (*scheduler)(nil)
+	_ actor.Initializer[proto.Message] = (*scheduler)(nil)
 )

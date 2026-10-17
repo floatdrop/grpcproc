@@ -23,7 +23,7 @@ jobs:
       matrix:
         include:
           - module: .
-            cover: . ./inspect ./actor ./pubsub ./groups ./cron ./leader ./saga
+            cover: . ./inspect ./actor ./pubsub ./groups ./cron ./leader ./saga ./internal/protocgen
           - module: otel
             cover: .
           - module: etcd
@@ -98,4 +98,5 @@ jobs:
         run: |
           buf lint
           buf generate
-          git diff --exit-code -- '*.pb.go' || (echo "generated code is stale: run buf generate" && exit 1)
+          buf build --as-file-descriptor-set --exclude-imports --path internal/protocgen/testpb -o internal/protocgen/testdata/image.txtpb
+          git diff --exit-code -- '*.pb.go' internal/protocgen/testdata || (echo "generated code is stale: run buf generate, and buf build for the plugin's test image (see CLAUDE.md)" && exit 1)

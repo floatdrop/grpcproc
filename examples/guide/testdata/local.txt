@@ -2,9 +2,9 @@ local
 ├── groups/default                     groups
 ├── root                               supervisor
 │   ├── models-sup                     supervisor
-│   │   └── models                     *modelsv1.Generate
+│   │   └── models                     scheduler
 │   ├── tools-sup                      supervisor
-│   │   └── tools                      *toolsv1.Run
+│   │   └── tools                      runner
 │   └── conversations                  supervisor
 │       └── conversation/1             conversation
 │           └── conversation/1/events  pubsub.topic

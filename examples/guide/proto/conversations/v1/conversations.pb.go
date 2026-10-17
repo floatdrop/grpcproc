@@ -12,6 +12,7 @@ package conversationsv1
 
 import (
 	v1 "github.com/floatdrop/grpcproc/examples/guide/proto/tools/v1"
+	_ "github.com/floatdrop/grpcproc/proto/grpcproc/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -71,74 +72,6 @@ func (x *Open) GetId() string {
 	return ""
 }
 
-// Request is everything a conversation's process accepts.
-type Request struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Op:
-	//
-	//	*Request_Say
-	Op            isRequest_Op `protobuf_oneof:"op"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Request) Reset() {
-	*x = Request{}
-	mi := &file_guide_proto_conversations_v1_conversations_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Request) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Request) ProtoMessage() {}
-
-func (x *Request) ProtoReflect() protoreflect.Message {
-	mi := &file_guide_proto_conversations_v1_conversations_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Request.ProtoReflect.Descriptor instead.
-func (*Request) Descriptor() ([]byte, []int) {
-	return file_guide_proto_conversations_v1_conversations_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *Request) GetOp() isRequest_Op {
-	if x != nil {
-		return x.Op
-	}
-	return nil
-}
-
-func (x *Request) GetSay() *Say {
-	if x != nil {
-		if x, ok := x.Op.(*Request_Say); ok {
-			return x.Say
-		}
-	}
-	return nil
-}
-
-type isRequest_Op interface {
-	isRequest_Op()
-}
-
-type Request_Say struct {
-	// A call, answered with Said.
-	Say *Say `protobuf:"bytes,1,opt,name=say,proto3,oneof"`
-}
-
-func (*Request_Say) isRequest_Op() {}
-
 // Say is what the user said. It is answered as its turn begins; the answer
 // itself is published, as it comes, on the conversation's topic.
 type Say struct {
@@ -150,7 +83,7 @@ type Say struct {
 
 func (x *Say) Reset() {
 	*x = Say{}
-	mi := &file_guide_proto_conversations_v1_conversations_proto_msgTypes[2]
+	mi := &file_guide_proto_conversations_v1_conversations_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -162,7 +95,7 @@ func (x *Say) String() string {
 func (*Say) ProtoMessage() {}
 
 func (x *Say) ProtoReflect() protoreflect.Message {
-	mi := &file_guide_proto_conversations_v1_conversations_proto_msgTypes[2]
+	mi := &file_guide_proto_conversations_v1_conversations_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -175,7 +108,7 @@ func (x *Say) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Say.ProtoReflect.Descriptor instead.
 func (*Say) Descriptor() ([]byte, []int) {
-	return file_guide_proto_conversations_v1_conversations_proto_rawDescGZIP(), []int{2}
+	return file_guide_proto_conversations_v1_conversations_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Say) GetText() string {
@@ -195,7 +128,7 @@ type Said struct {
 
 func (x *Said) Reset() {
 	*x = Said{}
-	mi := &file_guide_proto_conversations_v1_conversations_proto_msgTypes[3]
+	mi := &file_guide_proto_conversations_v1_conversations_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -207,7 +140,7 @@ func (x *Said) String() string {
 func (*Said) ProtoMessage() {}
 
 func (x *Said) ProtoReflect() protoreflect.Message {
-	mi := &file_guide_proto_conversations_v1_conversations_proto_msgTypes[3]
+	mi := &file_guide_proto_conversations_v1_conversations_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -220,7 +153,7 @@ func (x *Said) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Said.ProtoReflect.Descriptor instead.
 func (*Said) Descriptor() ([]byte, []int) {
-	return file_guide_proto_conversations_v1_conversations_proto_rawDescGZIP(), []int{3}
+	return file_guide_proto_conversations_v1_conversations_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Said) GetTurn() uint64 {
@@ -253,7 +186,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_guide_proto_conversations_v1_conversations_proto_msgTypes[4]
+	mi := &file_guide_proto_conversations_v1_conversations_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -265,7 +198,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_guide_proto_conversations_v1_conversations_proto_msgTypes[4]
+	mi := &file_guide_proto_conversations_v1_conversations_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -278,7 +211,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_guide_proto_conversations_v1_conversations_proto_rawDescGZIP(), []int{4}
+	return file_guide_proto_conversations_v1_conversations_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Event) GetTurn() uint64 {
@@ -422,12 +355,9 @@ var File_guide_proto_conversations_v1_conversations_proto protoreflect.FileDescr
 
 const file_guide_proto_conversations_v1_conversations_proto_rawDesc = "" +
 	"\n" +
-	"0guide/proto/conversations/v1/conversations.proto\x12\x10conversations.v1\x1a guide/proto/tools/v1/tools.proto\"\x16\n" +
+	"0guide/proto/conversations/v1/conversations.proto\x12\x10conversations.v1\x1a\x19grpcproc/v1/options.proto\x1a guide/proto/tools/v1/tools.proto\"\x16\n" +
 	"\x04Open\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\":\n" +
-	"\aRequest\x12)\n" +
-	"\x03say\x18\x01 \x01(\v2\x15.conversations.v1.SayH\x00R\x03sayB\x04\n" +
-	"\x02op\"\x19\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x19\n" +
 	"\x03Say\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\"\x1a\n" +
 	"\x04Said\x12\x12\n" +
@@ -442,7 +372,9 @@ const file_guide_proto_conversations_v1_conversations_proto_rawDesc = "" +
 	"\bretrying\x18\x05 \x01(\tH\x00R\bretrying\x12\x14\n" +
 	"\x04done\x18\x06 \x01(\bH\x00R\x04done\x12\x18\n" +
 	"\x06failed\x18\a \x01(\tH\x00R\x06failedB\x06\n" +
-	"\x04kindBUZSgithub.com/floatdrop/grpcproc/examples/guide/proto/conversations/v1;conversationsv1b\x06proto3"
+	"\x04kind2J\n" +
+	"\fConversation\x124\n" +
+	"\x03Say\x12\x15.conversations.v1.Say\x1a\x16.conversations.v1.Said\x1a\x04\xca\xf3\x18\x00BUZSgithub.com/floatdrop/grpcproc/examples/guide/proto/conversations/v1;conversationsv1b\x06proto3"
 
 var (
 	file_guide_proto_conversations_v1_conversations_proto_rawDescOnce sync.Once
@@ -456,25 +388,25 @@ func file_guide_proto_conversations_v1_conversations_proto_rawDescGZIP() []byte 
 	return file_guide_proto_conversations_v1_conversations_proto_rawDescData
 }
 
-var file_guide_proto_conversations_v1_conversations_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_guide_proto_conversations_v1_conversations_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_guide_proto_conversations_v1_conversations_proto_goTypes = []any{
-	(*Open)(nil),    // 0: conversations.v1.Open
-	(*Request)(nil), // 1: conversations.v1.Request
-	(*Say)(nil),     // 2: conversations.v1.Say
-	(*Said)(nil),    // 3: conversations.v1.Said
-	(*Event)(nil),   // 4: conversations.v1.Event
-	(*v1.Run)(nil),  // 5: tools.v1.Run
-	(*v1.Ran)(nil),  // 6: tools.v1.Ran
+	(*Open)(nil),   // 0: conversations.v1.Open
+	(*Say)(nil),    // 1: conversations.v1.Say
+	(*Said)(nil),   // 2: conversations.v1.Said
+	(*Event)(nil),  // 3: conversations.v1.Event
+	(*v1.Run)(nil), // 4: tools.v1.Run
+	(*v1.Ran)(nil), // 5: tools.v1.Ran
 }
 var file_guide_proto_conversations_v1_conversations_proto_depIdxs = []int32{
-	2, // 0: conversations.v1.Request.say:type_name -> conversations.v1.Say
-	5, // 1: conversations.v1.Event.tool:type_name -> tools.v1.Run
-	6, // 2: conversations.v1.Event.ran:type_name -> tools.v1.Ran
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 0: conversations.v1.Event.tool:type_name -> tools.v1.Run
+	5, // 1: conversations.v1.Event.ran:type_name -> tools.v1.Ran
+	1, // 2: conversations.v1.Conversation.Say:input_type -> conversations.v1.Say
+	2, // 3: conversations.v1.Conversation.Say:output_type -> conversations.v1.Said
+	3, // [3:4] is the sub-list for method output_type
+	2, // [2:3] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_guide_proto_conversations_v1_conversations_proto_init() }
@@ -482,10 +414,7 @@ func file_guide_proto_conversations_v1_conversations_proto_init() {
 	if File_guide_proto_conversations_v1_conversations_proto != nil {
 		return
 	}
-	file_guide_proto_conversations_v1_conversations_proto_msgTypes[1].OneofWrappers = []any{
-		(*Request_Say)(nil),
-	}
-	file_guide_proto_conversations_v1_conversations_proto_msgTypes[4].OneofWrappers = []any{
+	file_guide_proto_conversations_v1_conversations_proto_msgTypes[3].OneofWrappers = []any{
 		(*Event_Said)(nil),
 		(*Event_Token)(nil),
 		(*Event_Tool)(nil),
@@ -500,9 +429,9 @@ func file_guide_proto_conversations_v1_conversations_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_guide_proto_conversations_v1_conversations_proto_rawDesc), len(file_guide_proto_conversations_v1_conversations_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   4,
 			NumExtensions: 0,
-			NumServices:   0,
+			NumServices:   1,
 		},
 		GoTypes:           file_guide_proto_conversations_v1_conversations_proto_goTypes,
 		DependencyIndexes: file_guide_proto_conversations_v1_conversations_proto_depIdxs,

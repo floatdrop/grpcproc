@@ -1,4 +1,5 @@
 import conversationsAddress from '../../../examples/guide/proto/conversations/v1/address.go?raw';
+import conversationsGenerated from '../../../examples/guide/proto/conversations/v1/conversations_grpcproc.pb.go?raw';
 import quickstart from '../../../examples/quickstart/main.go?raw';
 
 import { Code, region } from '../code.tsx';
@@ -193,25 +194,36 @@ r, err := grpcproc.AddrOf[*roomspb.Command](grpcproc.Global{Name: "room:42"}).
 					<p>
 						A typed send or call goes through the address, which takes the sender as an argument, a{' '}
 						<C>Caller</C>: the <C>*Node</C>, or a <C>*Process</C> from inside a handler. Every call
-						site names its reply, <C>stock.Call[*shoppb.Reserved](ctx, node, req)</C>, and wraps the
-						request in the mailbox's oneof. The package that owns the process can do both once,
-						wrapping <C>Call</C> and <C>Send</C> in a method per operation on an address type of its
-						own:
+						site names its reply, <C>stock.Call[*shoppb.Reserved](ctx, node, req)</C>. The package
+						that owns the process can name it once, by declaring the protocol as a proto service
+						marked <C>grpcproc.v1.process</C>; <C>protoc-gen-grpcproc</C> then writes an address
+						type with a method per rpc, a <C>Call</C> that names the reply, or a <C>Send</C> for an
+						rpc marked <C>grpcproc.v1.send</C>:
+					</p>
+					<Code caption="examples/guide/proto/conversations/v1/conversations_grpcproc.pb.go">
+						{`${region(conversationsGenerated, /^\/\/ ConversationAddr addresses/, /^}/)}
+
+${region(conversationsGenerated, /^\/\/ Say tells the conversation/, /^}/)}`}
+					</Code>
+					<p>
+						A caller then writes <C>c.Say(ctx, p, req)</C> from a handler, or{' '}
+						<C>c.Say(ctx, node, req)</C> from anywhere else, and names no reply. The package adds,
+						by hand, what every caller must do first, around the generated type: the guide's
+						conversation starts its process if none runs.
 					</p>
 					<Code caption="examples/guide/proto/conversations/v1/address.go">
-						{`${region(conversationsAddress, /^\/\/ ConversationAddr addresses/, /^}/)}
+						{`${region(conversationsAddress, /^\/\/ Conversation is one conversation/, /^}/)}
 
 ${region(conversationsAddress, /^\/\/ Say tells the conversation/, /^}/)}`}
 					</Code>
 					<p>
-						A caller then writes <C>c.Say(ctx, p, text)</C> from a handler, or{' '}
-						<C>c.Say(ctx, node, text)</C> from anywhere else, and names neither the reply nor
-						the oneof. A method is also the place for what every caller must do first: this one
-						starts the conversation's process if none runs. The sender is an argument rather than part of the address because who sends
-						matters: a process's call carries the metadata of the message it is handling, and an
-						actor keeps its addresses in fields but has its process only inside a handler. The type
-						embeds <C>Addr</C>, so it is still a <C>Target</C> with its raw <C>Call</C> and{' '}
-						<C>Send</C>.{' '}
+						The sender is an argument rather than part of the address because who sends matters: a
+						process's call carries the metadata of the message it is handling, and an actor keeps
+						its addresses in fields but has its process only inside a handler. The type embeds{' '}
+						<C>Addr</C>, so it is still a <C>Target</C> with its raw <C>Call</C> and <C>Send</C>.
+						The same service gives the process its side: a <C>ConversationHandler</C> interface
+						with a method per rpc, and <C>HandleConversationCall</C>, which dispatches a call to it
+						from an actor's <C>HandleCall</C> and answers <C>ErrType</C> for any other message.{' '}
 						<A to="tutorial/#contracts">The tutorial</A>'s contracts are written this way.
 					</p>
 				</>

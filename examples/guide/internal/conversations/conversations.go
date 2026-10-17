@@ -19,6 +19,8 @@ import (
 
 	"golang.yandex/di"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/floatdrop/grpcproc"
 	"github.com/floatdrop/grpcproc/actor"
 	"github.com/floatdrop/grpcproc/examples/guide/internal/platform"
@@ -84,7 +86,7 @@ type conversation struct {
 // run is the conversation's process: a receive loop, since all it takes is
 // what the user says, one thing at a time. With nothing said for a while it
 // returns, and the process ends; its history stays, for the next one.
-func (c *conversation) run(p *grpcproc.Process[*conversationsv1.Request]) (err error) {
+func (c *conversation) run(p *grpcproc.Process[proto.Message]) (err error) {
 	if c.turns, err = c.history.Load(p.Context(), c.id); err != nil {
 		return err
 	}
@@ -108,24 +110,31 @@ func (c *conversation) run(p *grpcproc.Process[*conversationsv1.Request]) (err e
 		return err
 	}
 	c.replay(p)
+	idle := time.Now().Add(c.limits.Idle)
 	for {
-		m, err := p.ReceiveTimeout(c.limits.Idle)
+		m, err := p.ReceiveTimeout(time.Until(idle))
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil // idle: a normal end, so the supervisor leaves it at that
 		}
 		if err != nil {
 			return err
 		}
-		if m.Body.GetSay().GetText() == "" { // a Down too: nothing here waits for one
+		say, ok := m.Body.(*conversationsv1.Say)
+		if !ok { // a message of another type, or a Down: nothing here waits for one
+			_ = m.Reply(nil, grpcproc.ErrType)
+			continue
+		}
+		if say.GetText() == "" {
 			_ = m.Reply(nil, errors.New("conversations: nothing was said"))
 			continue
 		}
 		// Answered as the turn begins: the caller is told its place, and
 		// does not wait for the model. What is said meanwhile waits in the
 		// mailbox, and is answered in its turn.
+		idle = time.Now().Add(c.limits.Idle)
 		c.turn++
 		_ = m.Reply(&conversationsv1.Said{Turn: c.turn}, nil)
-		if err := c.answer(p, m.Body.GetSay().GetText()); err != nil {
+		if err := c.answer(p, say.GetText()); err != nil {
 			return err
 		}
 	}
@@ -135,7 +144,7 @@ func (c *conversation) run(p *grpcproc.Process[*conversationsv1.Request]) (err e
 // new, and whoever follows it is sent the conversation so far. It counts the
 // turns as it goes: one for each thing the user said. A turn the history has
 // no answer for failed, or was cut short with its process.
-func (c *conversation) replay(p *grpcproc.Process[*conversationsv1.Request]) {
+func (c *conversation) replay(p *grpcproc.Process[proto.Message]) {
 	c.turn = 0 // a process started again runs this conversation again
 	for i, t := range c.turns {
 		switch t.Role {
@@ -169,7 +178,7 @@ func (c *conversation) replay(p *grpcproc.Process[*conversationsv1.Request]) {
 // tool, the tool is run and the model answers again. A turn that cannot be
 // finished is published as failed, and the conversation goes on; an error is
 // the history's, and ends the process.
-func (c *conversation) answer(p *grpcproc.Process[*conversationsv1.Request], text string) error {
+func (c *conversation) answer(p *grpcproc.Process[proto.Message], text string) error {
 	if err := c.said(p, &modelsv1.Turn{Role: modelsv1.Role_ROLE_USER, Text: text}); err != nil {
 		return err
 	}
@@ -208,7 +217,7 @@ func (c *conversation) answer(p *grpcproc.Process[*conversationsv1.Request], tex
 // of the conversation's list, so the next answer is asked of one that did
 // not. With every node busy, it waits for a slot, for as long as a model is
 // given to answer.
-func (c *conversation) generate(p *grpcproc.Process[*conversationsv1.Request]) (*modelsv1.Generated, error) {
+func (c *conversation) generate(p *grpcproc.Process[proto.Message]) (*modelsv1.Generated, error) {
 	waited := time.Now().Add(c.limits.Generate)
 	lost := "" // the node that took the request and did not finish
 	for {
@@ -233,7 +242,7 @@ func (c *conversation) generate(p *grpcproc.Process[*conversationsv1.Request]) (
 				Turn: c.turn, Attempt: c.attempt,
 			}
 			ctx, cancel := context.WithTimeout(p.Context(), c.limits.Generate)
-			out, err := modelsv1.Scheduler(node).Generate(ctx, p, req)
+			out, err := modelsv1.SchedulerAt(node).Generate(ctx, p, req)
 			cancel()
 			switch {
 			case err != nil:
@@ -283,7 +292,7 @@ func (c *conversation) nodes() []string {
 // call runs the tool the model asked for, and says what came of it. A tool
 // that fails, or a sandbox that does not answer in time, is an answer too:
 // the model is told, and says so.
-func (c *conversation) call(p *grpcproc.Process[*conversationsv1.Request], tool *toolsv1.Run) *toolsv1.Ran {
+func (c *conversation) call(p *grpcproc.Process[proto.Message], tool *toolsv1.Run) *toolsv1.Ran {
 	_ = c.publish(p, &conversationsv1.Event{Kind: &conversationsv1.Event_Tool{Tool: tool}})
 	ctx, cancel := context.WithTimeout(p.Context(), c.limits.Tool)
 	defer cancel()
@@ -299,7 +308,7 @@ func (c *conversation) call(p *grpcproc.Process[*conversationsv1.Request], tool 
 }
 
 // said adds a turn to the history, and to what the model is shown.
-func (c *conversation) said(p *grpcproc.Process[*conversationsv1.Request], turn *modelsv1.Turn) error {
+func (c *conversation) said(p *grpcproc.Process[proto.Message], turn *modelsv1.Turn) error {
 	if err := c.history.Append(p.Context(), c.id, turn); err != nil {
 		return err
 	}
@@ -309,7 +318,7 @@ func (c *conversation) said(p *grpcproc.Process[*conversationsv1.Request], turn 
 
 // publish sends an event of this turn to the topic, and so to whoever
 // follows the conversation.
-func (c *conversation) publish(p *grpcproc.Process[*conversationsv1.Request], e *conversationsv1.Event) error {
+func (c *conversation) publish(p *grpcproc.Process[proto.Message], e *conversationsv1.Event) error {
 	e.Turn = c.turn
 	return c.events.Publish(p.Context(), p, e)
 }
@@ -327,12 +336,12 @@ func tree(cfg platform.Config, history History, limits Limits, scope *groups.Sco
 				}
 				c := &conversation{
 					id: open.Id, node: cfg.Node, history: history, limits: limits, scope: scope,
-					tools: toolsv1.Runner(cfg.Where(toolsv1.Service)),
+					tools: toolsv1.RunnerAt(cfg.Where(toolsv1.Service)),
 				}
 				inspect := grpcproc.WithInspect(func() map[string]string {
 					return map[string]string{"turns": strconv.FormatUint(c.turn, 10), "said": strconv.Itoa(len(c.turns))}
 				})
-				name := conversationsv1.Conversation(cfg.Node, open.Id).Name()
+				name := conversationsv1.ConversationAt(cfg.Node, open.Id).Name()
 				return actor.ChildFunc(name, c.run, inspect, grpcproc.WithLabel("conversation")).WithRestart(actor.Transient), nil
 			}),
 		},

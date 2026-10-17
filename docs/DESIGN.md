@@ -270,6 +270,81 @@ a panic (`panic: …`, with the stack logged), `goexit` for a function that
 called `runtime.Goexit` (`t.FailNow`, say), or the error string the
 function returned.
 
+### Contracts as services
+
+A process's protocol is a proto `service` marked with an option, and the
+Go of it is generated, as gRPC's stubs are:
+
+```proto
+import "google/protobuf/empty.proto";
+import "grpcproc/v1/options.proto";
+
+service Runner {
+  option (grpcproc.v1.process) = {name: "tools"};
+  rpc Run(tools.v1.Run) returns (Ran);                 // a call, answered with Ran
+  rpc Note(Note) returns (google.protobuf.Empty) {     // a send: nothing answers it
+    option (grpcproc.v1.send) = true;
+  }
+}
+```
+
+`protoc-gen-grpcproc`, a command of the core module (`cmd/protoc-gen-grpcproc`,
+over `internal/protocgen`), writes `tools_grpcproc.pb.go` beside
+`protoc-gen-go`'s file: `RunnerAddr`, an address with a method per rpc that
+names the reply once (`Run(ctx, from, *Run) (*Ran, error)`, `Note(ctx, from,
+*Note) error`), `RunnerAddrOf(Target)` and, for a service with a name,
+`RunnerProcess` and `RunnerAt(node)`; and the process's side,
+`RunnerHandler`, an interface with a method per rpc, with
+`HandleRunnerCall` and `HandleRunnerMessage` dispatching a message to it
+from an actor's `HandleCall` and `HandleMessage`. A call of a type the
+service has no rpc for is answered `ErrType`; a send of one is logged and
+dropped, as `actor.CallsOnly` drops a message. A service without the
+option is left alone, so a gRPC service and a process can share a file.
+
+Why a service and not a message with a `oneof` of operations, which is how
+the guide and yarco began: a service already states each request with its
+reply, which is exactly what a hand-written address repeats and gets out of
+step with; `buf lint` and every proto tool understand it; and it has a
+server side, so a forgotten rpc is a compile error in the handler rather
+than a case missing from a switch. The cost is that the process's mailbox
+is `proto.Message`: each request travels as its own message, and the type
+check moves from the node's delivery, which checked the mailbox's one type,
+to the generated dispatch, which answers `ErrType` for a stranger. What a
+caller sees is the same. What the service cannot say, the package writes by
+hand around the generated type: the guide's conversation is addressed by
+node and id, and opened before it is called.
+
+The plugin is installed as a tool dependency of the application, pinned in
+its `go.mod` to the core's version, since generated code targets the core's
+API; `buf generate` runs it from there, so the build is the same on every
+machine:
+
+```sh
+go get -tool github.com/floatdrop/grpcproc/cmd/protoc-gen-grpcproc@v0.15.0
+```
+
+```yaml
+# buf.gen.yaml
+plugins:
+  - local: protoc-gen-go
+    out: .
+    opt: module=example.com/app
+  - local: ["go", "tool", "protoc-gen-grpcproc"]
+    out: .
+    opt: module=example.com/app
+```
+
+The options come from `proto/grpcproc/v1/options.proto`, which an
+application's protos import. buf resolves imports from the Buf Schema
+Registry, where this repository does not publish yet, so an application
+copies the file into its proto tree: one file, importing only
+`descriptor.proto`. The extension numbers are not registered in protobuf's
+global extension registry. The plugin itself is
+tested without protoc: `internal/protocgen/testdata/image.txtpb` is the
+test protos' descriptors as `buf build` wrote them, comments included, and
+the test runs the generator over them and compares with the checked-in
+output, which `buf generate` keeps current.
+
 ### Wire protocol
 
 One gRPC service, one method:

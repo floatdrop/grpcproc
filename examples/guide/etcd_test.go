@@ -72,9 +72,9 @@ func TestEtcd(t *testing.T) {
 			cfg.Placement = map[string]string{toolsv1.Service: "sandbox"}
 			cfg.Untrusted = []string{"sandbox"}
 		case "sandbox":
-			cfg.Export = []string{toolsv1.RunnerName}
+			cfg.Export = []string{toolsv1.RunnerProcess}
 		default:
-			cfg.Export = []string{modelsv1.SchedulerName}
+			cfg.Export = []string{modelsv1.SchedulerProcess}
 			cfg.Untrusted = []string{"sandbox"}
 		}
 		app := compose(cfg, services, more...)

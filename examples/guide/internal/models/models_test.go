@@ -40,7 +40,7 @@ func TestASchedulerWithNoSlotFreeSaysSo(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := s.Get[*grpcproc.Node]()
-	scheduler := modelsv1.Scheduler("local")
+	scheduler := modelsv1.SchedulerAt("local")
 
 	for _, failure := range []error{nil, errors.New("out of memory")} {
 		answered := make(chan error, 1)

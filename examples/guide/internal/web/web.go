@@ -44,13 +44,13 @@ func newFront(n *grpcproc.Node, cfg platform.Config, log *slog.Logger) *front {
 
 // conversation addresses the conversation a request names, or answers 404
 // for an id that cannot name one.
-func (f *front) conversation(w http.ResponseWriter, r *http.Request) (conversationsv1.ConversationAddr, bool) {
+func (f *front) conversation(w http.ResponseWriter, r *http.Request) (conversationsv1.Conversation, bool) {
 	id := r.PathValue("id")
 	if !conversationsv1.ValidID(id) {
 		http.Error(w, "no such conversation", http.StatusNotFound)
-		return conversationsv1.ConversationAddr{}, false
+		return conversationsv1.Conversation{}, false
 	}
-	return conversationsv1.Conversation(f.where, id), true
+	return conversationsv1.ConversationAt(f.where, id), true
 }
 
 // say is POST /conversations/{id}: the body is what the user says. It

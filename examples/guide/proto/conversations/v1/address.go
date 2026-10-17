@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/protobuf/proto"
-
 	"github.com/floatdrop/grpcproc"
 	"github.com/floatdrop/grpcproc/actor"
 	"github.com/floatdrop/grpcproc/pubsub"
@@ -21,11 +19,12 @@ const (
 	Factory = "conversation"
 )
 
-// ConversationAddr addresses one conversation: its process, by the name it
-// is registered under, and the supervisor that starts it. Say and Follow are
-// its protocol; each starts the conversation's process if none runs.
-type ConversationAddr struct {
-	grpcproc.Addr[*Request]
+// Conversation is one conversation as a caller reaches it: its process, by
+// the name it is registered under, and the supervisor that starts it. The
+// generated ConversationAddr is its protocol; Say and Follow add what every
+// caller does first, starting the conversation's process if none runs.
+type Conversation struct {
+	ConversationAddr
 	node, id string
 }
 
@@ -39,17 +38,17 @@ func ValidID(id string) bool {
 	return id != "" && len(id) <= 64 && strings.IndexFunc(id, func(r rune) bool { return !ok(r) }) < 0
 }
 
-// Conversation addresses the conversation id on node, the node that runs
+// ConversationAt addresses the conversation id on node, the node that runs
 // the conversations service. A conversation is registered under a name made
 // from its id, for as long as its process runs.
-func Conversation(node, id string) ConversationAddr {
-	return ConversationAddr{Addr: grpcproc.Named[*Request](node, "conversation/"+id), node: node, id: id}
+func ConversationAt(node, id string) Conversation {
+	return Conversation{ConversationAddr: ConversationAddrOf(grpcproc.Name{Node: node, Name: "conversation/" + id}), node: node, id: id}
 }
 
 // open starts the conversation's process, unless it runs already. A
 // conversation that has been idle ends its process; opening it again starts
 // one, with what was said before.
-func (c ConversationAddr) open(ctx context.Context, from grpcproc.Caller) error {
+func (c Conversation) open(ctx context.Context, from grpcproc.Caller) error {
 	sup := grpcproc.Name{Node: c.node, Name: Service}
 	_, _, err := actor.StartChildFrom(ctx, from, sup, Factory, &Open{Id: c.id})
 	if errors.Is(err, actor.ErrAlreadyStarted) {
@@ -58,25 +57,20 @@ func (c ConversationAddr) open(ctx context.Context, from grpcproc.Caller) error 
 	return err
 }
 
-// ask opens the conversation and calls it. A process that was idle may end
-// between the two: it is then opened again, once.
-func (c ConversationAddr) ask[R proto.Message](ctx context.Context, from grpcproc.Caller, req *Request) (r R, err error) {
+// Say tells the conversation what the user said, and returns once its turn
+// has begun: after the turns before it. The answer is published to whoever
+// follows the conversation. A process that was idle may end between its
+// opening and the call: it is then opened again, once.
+func (c Conversation) Say(ctx context.Context, from grpcproc.Caller, text string) (said *Said, err error) {
 	for range 2 {
 		if err = c.open(ctx, from); err != nil {
-			return r, err
+			return nil, err
 		}
-		if r, err = c.Call[R](ctx, from, req); !errors.Is(err, grpcproc.ErrNoProc) {
+		if said, err = c.ConversationAddr.Say(ctx, from, &Say{Text: text}); !errors.Is(err, grpcproc.ErrNoProc) {
 			break
 		}
 	}
-	return r, err
-}
-
-// Say tells the conversation what the user said, and returns once its turn
-// has begun: after the turns before it. The answer is published to whoever
-// follows the conversation.
-func (c ConversationAddr) Say(ctx context.Context, from grpcproc.Caller, text string) (*Said, error) {
-	return c.ask[*Said](ctx, from, &Request{Op: &Request_Say{Say: &Say{Text: text}}})
+	return said, err
 }
 
 // Follow subscribes p to the conversation's events: what the user says,
@@ -88,7 +82,7 @@ func (c ConversationAddr) Say(ctx context.Context, from grpcproc.Caller, text st
 // is in a turn answers nothing until the turn is over. So Follow asks the
 // conversation nothing: it subscribes, and again for a moment while there is
 // no topic.
-func (c ConversationAddr) Follow(ctx context.Context, p *grpcproc.Process[*Event]) (pubsub.Subscription, error) {
+func (c Conversation) Follow(ctx context.Context, p *grpcproc.Process[*Event]) (pubsub.Subscription, error) {
 	if err := c.open(ctx, p); err != nil {
 		return pubsub.Subscription{}, err
 	}

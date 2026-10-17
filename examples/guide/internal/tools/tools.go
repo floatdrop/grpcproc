@@ -75,21 +75,26 @@ func sleep(ctx context.Context, args string) (string, error) {
 // tool that failed is part of the answer, since the model is told of it,
 // and so is one that panicked: the worker answers with the panic.
 type runner struct {
-	actor.CallsOnly[*toolsv1.Run]
+	actor.CallsOnly[proto.Message]
 	tools   Tools
 	workers *actor.Workers
 }
 
-func (r *runner) HandleCall(p *grpcproc.Process[*toolsv1.Run], m grpcproc.Msg[*toolsv1.Run]) (proto.Message, error) {
-	tool, ok := r.tools[m.Body.Name]
+// HandleCall hands a call to the Runner service's method for it: Run.
+func (r *runner) HandleCall(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message]) (proto.Message, error) {
+	return toolsv1.HandleRunnerCall(r, p, m)
+}
+
+func (r *runner) Run(p *grpcproc.Process[proto.Message], m grpcproc.Msg[proto.Message], run *toolsv1.Run) (*toolsv1.Ran, error) {
+	tool, ok := r.tools[run.Name]
 	if !ok {
-		return &toolsv1.Ran{Failed: "no tool named " + m.Body.Name}, nil
+		return &toolsv1.Ran{Failed: "no tool named " + run.Name}, nil
 	}
-	return nil, r.workers.Label("tool:"+m.Body.Name).ReplyLater(p, m, func(ctx context.Context, _ *grpcproc.Process[proto.Message]) (*toolsv1.Ran, error) {
+	return nil, r.workers.Label("tool:"+run.Name).ReplyLater(p, m, func(ctx context.Context, _ *grpcproc.Process[proto.Message]) (*toolsv1.Ran, error) {
 		// The caller's deadline is the tool's. A goroutine cannot be
 		// killed: a tool that does not watch ctx runs on after it, in its
 		// worker's place.
-		out, err := tool(ctx, m.Body.Args)
+		out, err := tool(ctx, run.Args)
 		if err != nil {
 			return &toolsv1.Ran{Failed: err.Error()}, nil
 		}
@@ -105,9 +110,9 @@ const running = 16
 func tree(tools Tools) actor.ChildSpec {
 	return actor.ChildSupervisor(toolsv1.Service+"-sup", actor.Spec{
 		Children: []actor.ChildSpec{
-			actor.Child(toolsv1.RunnerName, func() *runner {
+			actor.Child(toolsv1.RunnerProcess, func() *runner {
 				return &runner{tools: tools, workers: actor.NewWorkers(running)}
-			}),
+			}, grpcproc.WithLabel("runner")),
 		},
 	})
 }

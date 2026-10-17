@@ -4,9 +4,21 @@ syntax = "proto3";
 
 package models.v1;
 
+import "grpcproc/v1/options.proto";
 import "guide/proto/tools/v1/tools.proto";
 
 option go_package = "github.com/floatdrop/grpcproc/examples/guide/proto/models/v1;modelsv1";
+
+// Scheduler is a GPU node's process, registered as "models": it hands each
+// generation to a slot, or says it is busy.
+service Scheduler {
+  option (grpcproc.v1.process) = {name: "models"};
+  // Generate has the model answer, and returns once it is done; the tokens
+  // are published meanwhile on the topic the request names. A node with no
+  // slot free answers Busy; an error means no answer: the node is gone, or
+  // ctx ended.
+  rpc Generate(models.v1.Generate) returns (Generated);
+}
 
 // Role is who said a turn of a conversation.
 enum Role {

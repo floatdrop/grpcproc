@@ -1,0 +1,44 @@
+// What protoc-gen-grpcproc is tested on: a process registered under a
+// name, with a call and a send, and one named per instance.
+syntax = "proto3";
+
+package grpcproc.protocgen.test.v1;
+
+import "google/protobuf/empty.proto";
+import "grpcproc/v1/options.proto";
+
+option go_package = "github.com/floatdrop/grpcproc/internal/protocgen/testpb;testpb";
+
+message Ping {
+  int64 n = 1;
+}
+
+message Pong {
+  int64 n = 1;
+}
+
+message Note {
+  string text = 1;
+}
+
+// Echo answers pings, and takes notes.
+service Echo {
+  option (grpcproc.v1.process) = {name: "echo"};
+  // Ping is answered with a Pong of the same n. The message's name is the
+  // rpc's, so it is qualified.
+  rpc Ping(grpcproc.protocgen.test.v1.Ping) returns (Pong);
+  // Note is kept; nothing answers it.
+  rpc Note(grpcproc.protocgen.test.v1.Note) returns (google.protobuf.Empty) {
+    option (grpcproc.v1.send) = true;
+  }
+}
+
+service Room {
+  option (grpcproc.v1.process) = {};
+  rpc Bounce(Ping) returns (Pong);
+}
+
+// Plain is a gRPC service: not a process, and left alone.
+service Plain {
+  rpc Bounce(Ping) returns (Pong);
+}

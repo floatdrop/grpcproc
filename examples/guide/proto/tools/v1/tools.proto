@@ -4,7 +4,21 @@ syntax = "proto3";
 
 package tools.v1;
 
+import "grpcproc/v1/options.proto";
+
 option go_package = "github.com/floatdrop/grpcproc/examples/guide/proto/tools/v1;toolsv1";
+
+// Runner is the process that runs the tools, registered as "tools" on the
+// node that runs the service. protoc-gen-grpcproc writes its address and
+// its handler from this.
+service Runner {
+  option (grpcproc.v1.process) = {name: "tools"};
+  // Run calls a tool, and waits for it no longer than ctx allows. A tool
+  // that fails is part of the answer, in Failed, and one that panics is
+  // answered with an error of the panic's text; actor.ErrWorkersBusy, with
+  // every place taken, and any other error mean no answer.
+  rpc Run(tools.v1.Run) returns (Ran);
+}
 
 // Run asks for one call of a tool. It is a call, answered with Ran, and its
 // deadline is the tool's.

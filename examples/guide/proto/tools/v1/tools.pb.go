@@ -10,6 +10,7 @@
 package toolsv1
 
 import (
+	_ "github.com/floatdrop/grpcproc/proto/grpcproc/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -140,13 +141,16 @@ var File_guide_proto_tools_v1_tools_proto protoreflect.FileDescriptor
 
 const file_guide_proto_tools_v1_tools_proto_rawDesc = "" +
 	"\n" +
-	" guide/proto/tools/v1/tools.proto\x12\btools.v1\"-\n" +
+	" guide/proto/tools/v1/tools.proto\x12\btools.v1\x1a\x19grpcproc/v1/options.proto\"-\n" +
 	"\x03Run\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04args\x18\x02 \x01(\tR\x04args\"5\n" +
 	"\x03Ran\x12\x16\n" +
 	"\x06output\x18\x01 \x01(\tR\x06output\x12\x16\n" +
-	"\x06failed\x18\x02 \x01(\tR\x06failedBEZCgithub.com/floatdrop/grpcproc/examples/guide/proto/tools/v1;toolsv1b\x06proto3"
+	"\x06failed\x18\x02 \x01(\tR\x06failed2:\n" +
+	"\x06Runner\x12#\n" +
+	"\x03Run\x12\r.tools.v1.Run\x1a\r.tools.v1.Ran\x1a\v\xca\xf3\x18\a\n" +
+	"\x05toolsBEZCgithub.com/floatdrop/grpcproc/examples/guide/proto/tools/v1;toolsv1b\x06proto3"
 
 var (
 	file_guide_proto_tools_v1_tools_proto_rawDescOnce sync.Once
@@ -166,8 +170,10 @@ var file_guide_proto_tools_v1_tools_proto_goTypes = []any{
 	(*Ran)(nil), // 1: tools.v1.Ran
 }
 var file_guide_proto_tools_v1_tools_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
+	0, // 0: tools.v1.Runner.Run:input_type -> tools.v1.Run
+	1, // 1: tools.v1.Runner.Run:output_type -> tools.v1.Ran
+	1, // [1:2] is the sub-list for method output_type
+	0, // [0:1] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -186,7 +192,7 @@ func file_guide_proto_tools_v1_tools_proto_init() {
 			NumEnums:      0,
 			NumMessages:   2,
 			NumExtensions: 0,
-			NumServices:   0,
+			NumServices:   1,
 		},
 		GoTypes:           file_guide_proto_tools_v1_tools_proto_goTypes,
 		DependencyIndexes: file_guide_proto_tools_v1_tools_proto_depIdxs,

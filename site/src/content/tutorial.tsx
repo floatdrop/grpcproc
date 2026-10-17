@@ -1,4 +1,5 @@
 import conversationsAddress from '../../../examples/guide/proto/conversations/v1/address.go?raw';
+import conversationsGenerated from '../../../examples/guide/proto/conversations/v1/conversations_grpcproc.pb.go?raw';
 import conversationsProto from '../../../examples/guide/proto/conversations/v1/conversations.proto?raw';
 import modelsProto from '../../../examples/guide/proto/models/v1/models.proto?raw';
 import chat from '../../../examples/guide/testdata/chat.txt?raw';
@@ -122,8 +123,9 @@ export const tutorial: Doc = {
 			body: (
 				<>
 					<p>
-						A contract is a protobuf package. A mailbox holds one message type, so a conversation
-						takes a <C>Request</C> whose oneof carries each operation. What it publishes is part of
+						A contract is a protobuf package: the messages, and a service marked{' '}
+						<C>grpcproc.v1.process</C>, whose rpcs are what the process answers, each a call with
+						its reply, or takes, an rpc marked <C>grpcproc.v1.send</C>. What it publishes is part of
 						its contract too: an <C>Event</C> is what the user said, a token, a tool being called,
 						what the tool returned, or the end of a turn.
 					</p>
@@ -131,17 +133,32 @@ export const tutorial: Doc = {
 						{conversationsProto}
 					</Code>
 					<p>
-						The package exports the address as a type of its own. It embeds{' '}
-						<C>Addr[*Request]</C>, so the compiler checks every send to it, wherever the process
-						runs, and its methods are the protocol: the <C>Request</C> around each operation is
-						wrapped here, once. Each takes its sender, a node or a process, as a{' '}
-						<C>grpcproc.Caller</C>. <A to="tutorial/conversations/">The next page</A> has what{' '}
+						<C>buf generate</C> runs <C>protoc-gen-grpcproc</C> beside <C>protoc-gen-go</C>, and
+						the service becomes Go: <C>ConversationAddr</C>, an address with a method per rpc that
+						names the reply once, and <C>ConversationHandler</C>, an interface with a method per
+						rpc, with <C>HandleConversationCall</C> to dispatch a call to it from an actor's{' '}
+						<C>HandleCall</C>. The tools runner and the models scheduler are actors and answer
+						through theirs; the conversation is a receive loop that takes its one message itself.
+						Each address method takes its sender, a node or a process, as a{' '}
+						<C>grpcproc.Caller</C>.
+					</p>
+					<Code caption="proto/conversations/v1/conversations_grpcproc.pb.go">
+						{`${region(conversationsGenerated, /^\/\/ ConversationAddr addresses/, /^}/)}
+
+${region(conversationsGenerated, /^\/\/ Say tells the conversation/, /^}/)}
+
+${region(conversationsGenerated, /^\/\/ ConversationHandler is what/, /^}/)}`}
+					</Code>
+					<p>
+						The package writes by hand only what the service cannot say: the type a caller holds,
+						which wraps the generated address with the conversation's node and id, and what every
+						caller does first. <A to="tutorial/conversations/">The next page</A> has what{' '}
 						<C>open</C> and <C>Follow</C> do.
 					</p>
 					<Code caption="proto/conversations/v1/address.go">
-						{`${region(conversationsAddress, /^\/\/ ConversationAddr addresses/, /^}/)}
+						{`${region(conversationsAddress, /^\/\/ Conversation is one conversation/, /^}/)}
 
-${region(conversationsAddress, /^\/\/ Conversation addresses the conversation/, /^}/)}
+${region(conversationsAddress, /^\/\/ ConversationAt addresses the conversation/, /^}/)}
 
 ${region(conversationsAddress, /^\/\/ Say tells the conversation/, /^}/)}`}
 					</Code>
