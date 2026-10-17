@@ -200,7 +200,8 @@ through the same Inspector and refreshes every second:
   group up and maps what goes between groups, up to 24; a group, or a
   filter by name or `key=value`, lists its nodes. What every name begins
   with, as the pods of one chart share `yarco-moq-`, is left off the map
-  and the peers and dimmed in the table: the rest tells the nodes apart.
+  and the peers and dimmed wherever a node or a PID is named, on every
+  page: the rest tells the nodes apart.
   Pages share a walk over
   the cluster, which asks 32 nodes at a time: a large cluster is walked
   again once five times as long as the last walk took has passed, and at

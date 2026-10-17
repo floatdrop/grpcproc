@@ -97,10 +97,11 @@ function pidParts(pid) {
 const nodeOf = (pid) => pidParts(pid)?.node || '';
 
 // pidText shortens a pid for a table: the incarnation, which only tells a
-// node's restarts apart, is left out. The full pid is its title.
+// node's restarts apart, is left out, and the node's prefix is dimmed, as
+// nameEl dims it. The full pid is its title.
 function pidText(pid) {
 	const p = pidParts(pid);
-	return p ? `<${p.node}.….${p.id}>` : pid;
+	return p ? ['<', nameEl(p.node), `.….${p.id}>`] : pid;
 }
 // rel says how far a time is from now, as in 3m or 2h ago; its title is the
 // time itself.
@@ -676,11 +677,18 @@ function shortName(name) {
 	return twoParts(rest) ? rest : name;
 }
 
+// nameList lists node names, each with its prefix dimmed, commas between.
+const nameList = (list) => (list || []).flatMap((n, i) => [i ? ', ' : null, nameEl(n)]);
+
+// nodeLink opens node's page, its prefix dimmed; a click on it goes nowhere
+// else, whatever row it is in.
+const nodeLink = (node) => h('a', { href: href('node', { node }), onclick: (e) => e.stopPropagation() }, nameEl(node));
+
 // nameEl shows a name with its prefix dimmed.
 function nameEl(name, strong) {
 	const short = shortName(name);
 	const rest = strong ? h('b', null, short) : short;
-	return short === name ? rest : h('span', null, h('span', { class: 'muted' }, app.prefix), rest);
+	return short === name ? rest : h('span', null, h('span', { class: 'prefix' }, app.prefix), rest);
 }
 
 // MAP_CHARS is the most characters a line of a node's label on the map holds.
@@ -836,7 +844,7 @@ function nodePage(node, params) {
 	);
 	const linkKey = (l) => `${l.peer}>${l.direction}`;
 	const cols = [
-		{ key: 'peer', t: 'Peer', get: (l) => [h('a', { href: href('node', { node: l.peer }), onclick: (e) => e.stopPropagation() }, nameEl(l.peer)), l.incarnation ? null : h('span', { class: 'muted' }, ' never reached')], sort: (l) => l.peer },
+		{ key: 'peer', t: 'Peer', get: (l) => [nodeLink(l.peer), l.incarnation ? null : h('span', { class: 'muted' }, ' never reached')], sort: (l) => l.peer },
 		{ key: 'dir', t: 'Dir', get: (l) => (l.direction === 'out' ? '→ out' : '← in'), sort: (l) => l.direction },
 		{ key: 'state', t: 'State', get: (l) => pill(l.state), sort: (l) => l.state },
 		{ key: 'age', t: 'Age', num: true, get: (l) => l.age, sort: (l) => parseDur(l.age) },
@@ -1288,7 +1296,7 @@ function cronPage(_node, params) {
 		list.replaceChildren(
 			table(
 				[
-					{ t: 'Node', get: (x) => x.c.node },
+					{ t: 'Node', get: (x) => nodeLink(x.c.node) },
 					{ t: 'Cron', get: (x) => pidLink(x.c.pid, x.c.process) },
 					{ t: 'Job', get: (x) => (x.j ? h('b', null, x.j.name) : '') },
 					{ t: 'Spec', get: (x) => (x.j ? h('span', { class: 'mono' }, x.j.spec) : '') },
@@ -1385,7 +1393,6 @@ function groupsPage(node, params) {
 	const members = h('div');
 	const peers = h('div');
 	let scopes = '';
-	const nodeLink = (n) => h('a', { href: href('node', { node: n }), onclick: (e) => e.stopPropagation() }, n);
 	const page = {
 		every: 2000,
 		el: h(
@@ -1492,8 +1499,8 @@ function election(e, moveTo) {
 	const cordoned = new Set(e.electors.flatMap((v) => v.cordoned || []));
 	const head = [
 		h('span', { class: 't' }, e.cluster),
-		e.leading ? pill(`${e.leading} leads, term ${top}`, 'leader') : pill('no leader', 'bad'),
-		leaders.size > 1 ? pill(`split: nodes follow ${[...leaders].join(', ')}`, 'bad') : answered.length && answered.every((v) => v.leader === e.leading) ? pill('all agree', 'up') : null,
+		e.leading ? pill(`${shortName(e.leading)} leads, term ${top}`, 'leader', e.leading) : pill('no leader', 'bad'),
+		leaders.size > 1 ? pill(['split: nodes follow ', nameList([...leaders])], 'bad') : answered.length && answered.every((v) => v.leader === e.leading) ? pill('all agree', 'up') : null,
 		answered.some((v) => v.term < top) ? pill('some nodes a term behind', 'warn') : null,
 	];
 	if (app.info.allow_writes && e.leading) {
@@ -1501,7 +1508,7 @@ function election(e, moveTo) {
 			'select',
 			{ value: moveTo.get(e.cluster) || '', onchange: (ev) => moveTo.set(e.cluster, ev.target.value) },
 			h('option', { value: '' }, 'to the most up-to-date follower'),
-			answered.filter((v) => v.node !== e.leading).map((v) => h('option', { value: v.node }, `to ${v.node}`)),
+			answered.filter((v) => v.node !== e.leading).map((v) => h('option', { value: v.node }, `to ${shortName(v.node)}`)),
 		);
 		head.push(
 			h('span', { class: 'spacer' }),
@@ -1514,16 +1521,16 @@ function election(e, moveTo) {
 		);
 	}
 	const cols = [
-		{ t: 'Node', get: (v) => h('a', { href: href('node', { node: v.node }), onclick: (ev) => ev.stopPropagation() }, v.node) },
+		{ t: 'Node', get: (v) => nodeLink(v.node) },
 		{ t: 'Role', get: (v) => (v.role ? pill(v.role) : '') },
 		{ t: 'Term', num: true, get: (v) => [v.term || '', v.term && v.term < top ? h('span', { class: 'muted' }, ' behind') : null] },
-		{ t: 'Follows', get: (v) => v.leader },
-		{ t: 'Voted for', get: (v) => v.voted_for },
-		{ t: 'View', get: (v) => (v.view || []).join(', ') },
+		{ t: 'Follows', get: (v) => (v.leader ? nameEl(v.leader) : '') },
+		{ t: 'Voted for', get: (v) => (v.voted_for ? nameEl(v.voted_for) : '') },
+		{ t: 'View', get: (v) => nameList(v.view) },
 		{ t: 'Quorum', num: true, get: (v) => v.quorum || '' },
 		{ t: 'State', get: (v) => h('span', { class: 'mono' }, v.state) },
-		{ t: 'Cordoned', get: (v) => (v.cordoned || []).join(', ') },
-		{ t: 'Unreachable', get: (v) => (v.unreachable || []).map((n) => pill(n, 'bad')) },
+		{ t: 'Cordoned', get: (v) => nameList(v.cordoned) },
+		{ t: 'Unreachable', get: (v) => (v.unreachable || []).map((n) => pill(shortName(n), 'bad', n)) },
 		{ t: 'Singleton', get: (v) => (v.singleton?.startsWith('<') ? pidLink(v.singleton) : v.singleton) },
 		{ t: 'Backoff', get: (v) => v.backoff },
 		{ t: 'Error', wrap: true, get: (v) => v.error },
@@ -1575,7 +1582,7 @@ function sagasPage(_node, params) {
 		{ t: 'Signals', num: true, get: (r) => (r.waiting ? fmtInt(r.waiting) : '') },
 		{ t: 'Due', get: (r) => (r.status !== 'active' ? '' : r.retry_at ? ['retry ', rel(r.retry_at)] : r.effect_done && !r.deadline ? h('span', { class: 'muted' }, 'on a signal') : rel(r.wake)) },
 		{ t: 'Deadline', get: (r) => rel(r.deadline) },
-		{ t: 'Owner', get: (r) => (r.owner ? h('a', { href: href('node', { node: r.owner }), onclick: (e) => e.stopPropagation() }, r.owner) : '') },
+		{ t: 'Owner', get: (r) => (r.owner ? nodeLink(r.owner) : '') },
 		{ t: 'Error', wrap: true, get: (r) => [r.error ? (r.status === 'stuck' ? pill(r.error, 'bad') : r.error) : '', r.cause ? h('div', { class: 'muted' }, `left its way: ${r.cause}`) : null] },
 		{ t: 'Updated', get: (r) => rel(r.updated) },
 	];
@@ -1643,7 +1650,7 @@ function sagasPage(_node, params) {
 			engines.replaceChildren(
 				table(
 					[
-						{ t: 'Node', get: (e) => h('a', { href: href('node', { node: e.node }), onclick: (ev) => ev.stopPropagation() }, e.node) },
+						{ t: 'Node', get: (e) => nodeLink(e.node) },
 						{ t: 'Engine', get: (e) => pidLink(e.pid, e.process) },
 						{ t: 'Sagas', get: (e) => h('span', { class: 'row' }, e.sagas.map((s) => h('a', { href: href('sagas', { saga: sagaName(s), on: e.node, status: p.status }), onclick: (ev) => ev.stopPropagation() }, s))) },
 						{ t: 'Working on', num: true, get: (e) => (e.error ? '' : fmtInt(e.working)) },
@@ -1858,7 +1865,7 @@ function runDrawer(saga, id, on) {
 					['due', r.status === 'active' ? rel(r.wake) : null],
 					['retry at', rel(r.retry_at)],
 					['deadline', rel(r.deadline)],
-					['owner', r.owner ? h('a', { href: href('node', { node: r.owner }) }, r.owner) : null],
+					['owner', r.owner ? nodeLink(r.owner) : null],
 					['lease until', rel(r.lease_until)],
 					['created', rel(r.created)],
 					['updated', rel(r.updated)],

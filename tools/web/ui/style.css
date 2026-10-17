@@ -77,6 +77,12 @@ code {
 	color: var(--g-color-text-secondary);
 }
 
+/* The prefix every node name shares (nameEl): dimmed in whatever colour
+   the name has, a link's or a muted row's. */
+.prefix {
+	opacity: 0.55;
+}
+
 .spacer {
 	flex: 1;
 }
