@@ -1,7 +1,7 @@
 github.com/floatdrop/fsm v0.8.0 h1:jzK/vv5BYLrlT2/UJ7Hr8SsCxEtOOvVv/CzOoCwclUE=
 github.com/floatdrop/fsm v0.8.0/go.mod h1:omx7JkDDk097D1d1WkBuafEi8sDEJq+15cR++gnuyS4=
-github.com/floatdrop/grpcproc v0.13.3-0.20261017083032-4d567d4c7ae6 h1:RlX8zE6A3oO3KFLkYCXzz6lorP07GPpBwQ1LgPiK/AE=
-github.com/floatdrop/grpcproc v0.13.3-0.20261017083032-4d567d4c7ae6/go.mod h1:BERDv3Ikxz+R+UB1x+1Yiu52u3WIcigwhNensEufiuQ=
+github.com/floatdrop/grpcproc v0.14.0 h1:ZekgR3Wq2+ds1+HAL8NXz4Oy/kwVw//ydj5oCI/K25M=
+github.com/floatdrop/grpcproc v0.14.0/go.mod h1:BERDv3Ikxz+R+UB1x+1Yiu52u3WIcigwhNensEufiuQ=
 github.com/golang-jwt/jwt/v5 v5.3.1 h1:kYf81DTWFe7t+1VvL7eS+jKFVWaUnK9cB1qbwn63YCY=
 github.com/golang-jwt/jwt/v5 v5.3.1/go.mod h1:fxCRLWMO43lRc8nhHWY6LGqRcf+1gQWArsqaEUEa5bE=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
