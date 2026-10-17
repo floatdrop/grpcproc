@@ -136,7 +136,8 @@ return m.Reply(&roomspb.Placed{Peer: peer.PID().Proto()}, nil)`}</Code>
 					<p>
 						<C>p.Exit(target, reason)</C> asks a process anywhere to stop, with a reason of the
 						caller's choosing; <C>node.Exit(ctx, target, reason)</C> does the same from outside a
-						process. The target's context is cancelled with the reason as its cause, its next{' '}
+						process, and <C>node.Wait(ctx, target)</C> returns the exit reason of a process of
+						this node once it is gone. The target's context is cancelled with the reason as its cause, its next{' '}
 						<C>Receive</C> returns an <C>*ExitError</C>, and it returns. Its watchers get a{' '}
 						<C>Down</C> with that reason, its supervisor decides from the reason whether to start it
 						again, and the node stops its processes this way, with <C>shutdown</C>.

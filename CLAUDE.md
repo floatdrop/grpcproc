@@ -14,7 +14,7 @@ other frameworks do. This file is the working detail behind it; the two are
 edited together.
 
 Core: `node.go` (`Config`, `Node`, `NewNode`, `Start`, `Stop`, `Disconnect`,
-discovery interfaces, `dispatch`, `Query`), `link.go` (outbound and inbound links,
+discovery interfaces, `dispatch`, `Query`, `Wait`), `link.go` (outbound and inbound links,
 dialing and backoff, the handshake, sessions: `supersede`, `admit`,
 `outLost`, `inLost`, `takeLinks`), `process.go` (`Process`, `Msg`, spawn
 options, `WithInspect` and `WithQuery` among them, mailbox, monitors and
@@ -178,7 +178,18 @@ peer goes in, either way (`began`), `linkDown` when the peer is declared
 down. `announcing` counts the link-ups decided and not yet published, and
 `linkDown` waits for it, so a session's end is never announced before its
 start; `Stop` waits for it too, so no hook runs once it returns. `Stop`
-announces no session's end.
+announces no session's end. Member hooks and events (`memberChanged`) run
+on the goroutine reading the `Membership`, after `recordMember` changed
+`Members` and the member's links were judged (`memberEvent`); an event that
+changed nothing announces nothing. `Stop` waits for that goroutine to end
+(`watched`), which the `Membership` does once its ctx is, so no member hook
+runs after `Stop` returns either.
+
+**`Wait` is a watch without a process.** It puts a watcher whose PID is the
+node's own (ID 0) on a process of this node, and `deliverDown` answers the
+waiter (`waiters`, under the leaf `waitersMu`) instead of looking a process
+up. It is local only: a `Down` to the node's PID over a link would have no
+process to carry it.
 
 **Lock order.** An inbound link's `mu` is outermost: it is held while a frame
 is dispatched and while the link closes, and dispatch takes `n.mu`, process

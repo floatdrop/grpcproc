@@ -2297,6 +2297,8 @@ type Event struct {
 	//	*Event_LinkUp
 	//	*Event_LinkDown
 	//	*Event_DeadLetter
+	//	*Event_MemberUp
+	//	*Event_MemberDown
 	Kind          isEvent_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2398,6 +2400,24 @@ func (x *Event) GetDeadLetter() *DeadLetter {
 	return nil
 }
 
+func (x *Event) GetMemberUp() *Member {
+	if x != nil {
+		if x, ok := x.Kind.(*Event_MemberUp); ok {
+			return x.MemberUp
+		}
+	}
+	return nil
+}
+
+func (x *Event) GetMemberDown() *Member {
+	if x != nil {
+		if x, ok := x.Kind.(*Event_MemberDown); ok {
+			return x.MemberDown
+		}
+	}
+	return nil
+}
+
 type isEvent_Kind interface {
 	isEvent_Kind()
 }
@@ -2422,6 +2442,15 @@ type Event_DeadLetter struct {
 	DeadLetter *DeadLetter `protobuf:"bytes,7,opt,name=dead_letter,json=deadLetter,proto3,oneof"`
 }
 
+type Event_MemberUp struct {
+	// Members lists the member, or lists it no more.
+	MemberUp *Member `protobuf:"bytes,8,opt,name=member_up,json=memberUp,proto3,oneof"`
+}
+
+type Event_MemberDown struct {
+	MemberDown *Member `protobuf:"bytes,9,opt,name=member_down,json=memberDown,proto3,oneof"`
+}
+
 func (*Event_Spawned) isEvent_Kind() {}
 
 func (*Event_Exited) isEvent_Kind() {}
@@ -2431,6 +2460,10 @@ func (*Event_LinkUp) isEvent_Kind() {}
 func (*Event_LinkDown) isEvent_Kind() {}
 
 func (*Event_DeadLetter) isEvent_Kind() {}
+
+func (*Event_MemberUp) isEvent_Kind() {}
+
+func (*Event_MemberDown) isEvent_Kind() {}
 
 type Exited struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2787,7 +2820,7 @@ const file_grpcproc_inspect_v1_inspect_proto_rawDesc = "" +
 	"\x04node\x18\x01 \x01(\tR\x04node\x12\x16\n" +
 	"\x06buffer\x18\x02 \x01(\rR\x06buffer\"A\n" +
 	"\rWatchResponse\x120\n" +
-	"\x05event\x18\x01 \x01(\v2\x1a.grpcproc.inspect.v1.EventR\x05event\"\x86\x03\n" +
+	"\x05event\x18\x01 \x01(\v2\x1a.grpcproc.inspect.v1.EventR\x05event\"\x82\x04\n" +
 	"\x05Event\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x16\n" +
 	"\x06missed\x18\x02 \x01(\x04R\x06missed\x12<\n" +
@@ -2796,7 +2829,10 @@ const file_grpcproc_inspect_v1_inspect_proto_rawDesc = "" +
 	"\alink_up\x18\x05 \x01(\v2\x1b.grpcproc.inspect.v1.NodeIDH\x00R\x06linkUp\x12<\n" +
 	"\tlink_down\x18\x06 \x01(\v2\x1d.grpcproc.inspect.v1.LinkDownH\x00R\blinkDown\x12B\n" +
 	"\vdead_letter\x18\a \x01(\v2\x1f.grpcproc.inspect.v1.DeadLetterH\x00R\n" +
-	"deadLetterB\x06\n" +
+	"deadLetter\x12:\n" +
+	"\tmember_up\x18\b \x01(\v2\x1b.grpcproc.inspect.v1.MemberH\x00R\bmemberUp\x12>\n" +
+	"\vmember_down\x18\t \x01(\v2\x1b.grpcproc.inspect.v1.MemberH\x00R\n" +
+	"memberDownB\x06\n" +
 	"\x04kind\"\\\n" +
 	"\x06Exited\x12:\n" +
 	"\aprocess\x18\x01 \x01(\v2 .grpcproc.inspect.v1.ProcessInfoR\aprocess\x12\x16\n" +
@@ -2945,37 +2981,39 @@ var file_grpcproc_inspect_v1_inspect_proto_depIdxs = []int32{
 	2,  // 45: grpcproc.inspect.v1.Event.link_up:type_name -> grpcproc.inspect.v1.NodeID
 	35, // 46: grpcproc.inspect.v1.Event.link_down:type_name -> grpcproc.inspect.v1.LinkDown
 	36, // 47: grpcproc.inspect.v1.Event.dead_letter:type_name -> grpcproc.inspect.v1.DeadLetter
-	7,  // 48: grpcproc.inspect.v1.Exited.process:type_name -> grpcproc.inspect.v1.ProcessInfo
-	2,  // 49: grpcproc.inspect.v1.LinkDown.peer:type_name -> grpcproc.inspect.v1.NodeID
-	42, // 50: grpcproc.inspect.v1.DeadLetter.from:type_name -> grpcproc.v1.PID
-	42, // 51: grpcproc.inspect.v1.DeadLetter.to:type_name -> grpcproc.v1.PID
-	14, // 52: grpcproc.inspect.v1.Inspector.GetNode:input_type -> grpcproc.inspect.v1.GetNodeRequest
-	17, // 53: grpcproc.inspect.v1.Inspector.ListProcesses:input_type -> grpcproc.inspect.v1.ListProcessesRequest
-	19, // 54: grpcproc.inspect.v1.Inspector.GetProcess:input_type -> grpcproc.inspect.v1.GetProcessRequest
-	21, // 55: grpcproc.inspect.v1.Inspector.SetLogLevel:input_type -> grpcproc.inspect.v1.SetLogLevelRequest
-	23, // 56: grpcproc.inspect.v1.Inspector.Send:input_type -> grpcproc.inspect.v1.SendRequest
-	25, // 57: grpcproc.inspect.v1.Inspector.Call:input_type -> grpcproc.inspect.v1.CallRequest
-	27, // 58: grpcproc.inspect.v1.Inspector.Query:input_type -> grpcproc.inspect.v1.QueryRequest
-	29, // 59: grpcproc.inspect.v1.Inspector.Exit:input_type -> grpcproc.inspect.v1.ExitRequest
-	31, // 60: grpcproc.inspect.v1.Inspector.Watch:input_type -> grpcproc.inspect.v1.WatchRequest
-	9,  // 61: grpcproc.inspect.v1.Inspector.LookupName:input_type -> grpcproc.inspect.v1.LookupNameRequest
-	11, // 62: grpcproc.inspect.v1.Inspector.ListNames:input_type -> grpcproc.inspect.v1.ListNamesRequest
-	15, // 63: grpcproc.inspect.v1.Inspector.GetNode:output_type -> grpcproc.inspect.v1.GetNodeResponse
-	18, // 64: grpcproc.inspect.v1.Inspector.ListProcesses:output_type -> grpcproc.inspect.v1.ListProcessesResponse
-	20, // 65: grpcproc.inspect.v1.Inspector.GetProcess:output_type -> grpcproc.inspect.v1.GetProcessResponse
-	22, // 66: grpcproc.inspect.v1.Inspector.SetLogLevel:output_type -> grpcproc.inspect.v1.SetLogLevelResponse
-	24, // 67: grpcproc.inspect.v1.Inspector.Send:output_type -> grpcproc.inspect.v1.SendResponse
-	26, // 68: grpcproc.inspect.v1.Inspector.Call:output_type -> grpcproc.inspect.v1.CallResponse
-	28, // 69: grpcproc.inspect.v1.Inspector.Query:output_type -> grpcproc.inspect.v1.QueryResponse
-	30, // 70: grpcproc.inspect.v1.Inspector.Exit:output_type -> grpcproc.inspect.v1.ExitResponse
-	32, // 71: grpcproc.inspect.v1.Inspector.Watch:output_type -> grpcproc.inspect.v1.WatchResponse
-	10, // 72: grpcproc.inspect.v1.Inspector.LookupName:output_type -> grpcproc.inspect.v1.LookupNameResponse
-	13, // 73: grpcproc.inspect.v1.Inspector.ListNames:output_type -> grpcproc.inspect.v1.ListNamesResponse
-	63, // [63:74] is the sub-list for method output_type
-	52, // [52:63] is the sub-list for method input_type
-	52, // [52:52] is the sub-list for extension type_name
-	52, // [52:52] is the sub-list for extension extendee
-	0,  // [0:52] is the sub-list for field type_name
+	5,  // 48: grpcproc.inspect.v1.Event.member_up:type_name -> grpcproc.inspect.v1.Member
+	5,  // 49: grpcproc.inspect.v1.Event.member_down:type_name -> grpcproc.inspect.v1.Member
+	7,  // 50: grpcproc.inspect.v1.Exited.process:type_name -> grpcproc.inspect.v1.ProcessInfo
+	2,  // 51: grpcproc.inspect.v1.LinkDown.peer:type_name -> grpcproc.inspect.v1.NodeID
+	42, // 52: grpcproc.inspect.v1.DeadLetter.from:type_name -> grpcproc.v1.PID
+	42, // 53: grpcproc.inspect.v1.DeadLetter.to:type_name -> grpcproc.v1.PID
+	14, // 54: grpcproc.inspect.v1.Inspector.GetNode:input_type -> grpcproc.inspect.v1.GetNodeRequest
+	17, // 55: grpcproc.inspect.v1.Inspector.ListProcesses:input_type -> grpcproc.inspect.v1.ListProcessesRequest
+	19, // 56: grpcproc.inspect.v1.Inspector.GetProcess:input_type -> grpcproc.inspect.v1.GetProcessRequest
+	21, // 57: grpcproc.inspect.v1.Inspector.SetLogLevel:input_type -> grpcproc.inspect.v1.SetLogLevelRequest
+	23, // 58: grpcproc.inspect.v1.Inspector.Send:input_type -> grpcproc.inspect.v1.SendRequest
+	25, // 59: grpcproc.inspect.v1.Inspector.Call:input_type -> grpcproc.inspect.v1.CallRequest
+	27, // 60: grpcproc.inspect.v1.Inspector.Query:input_type -> grpcproc.inspect.v1.QueryRequest
+	29, // 61: grpcproc.inspect.v1.Inspector.Exit:input_type -> grpcproc.inspect.v1.ExitRequest
+	31, // 62: grpcproc.inspect.v1.Inspector.Watch:input_type -> grpcproc.inspect.v1.WatchRequest
+	9,  // 63: grpcproc.inspect.v1.Inspector.LookupName:input_type -> grpcproc.inspect.v1.LookupNameRequest
+	11, // 64: grpcproc.inspect.v1.Inspector.ListNames:input_type -> grpcproc.inspect.v1.ListNamesRequest
+	15, // 65: grpcproc.inspect.v1.Inspector.GetNode:output_type -> grpcproc.inspect.v1.GetNodeResponse
+	18, // 66: grpcproc.inspect.v1.Inspector.ListProcesses:output_type -> grpcproc.inspect.v1.ListProcessesResponse
+	20, // 67: grpcproc.inspect.v1.Inspector.GetProcess:output_type -> grpcproc.inspect.v1.GetProcessResponse
+	22, // 68: grpcproc.inspect.v1.Inspector.SetLogLevel:output_type -> grpcproc.inspect.v1.SetLogLevelResponse
+	24, // 69: grpcproc.inspect.v1.Inspector.Send:output_type -> grpcproc.inspect.v1.SendResponse
+	26, // 70: grpcproc.inspect.v1.Inspector.Call:output_type -> grpcproc.inspect.v1.CallResponse
+	28, // 71: grpcproc.inspect.v1.Inspector.Query:output_type -> grpcproc.inspect.v1.QueryResponse
+	30, // 72: grpcproc.inspect.v1.Inspector.Exit:output_type -> grpcproc.inspect.v1.ExitResponse
+	32, // 73: grpcproc.inspect.v1.Inspector.Watch:output_type -> grpcproc.inspect.v1.WatchResponse
+	10, // 74: grpcproc.inspect.v1.Inspector.LookupName:output_type -> grpcproc.inspect.v1.LookupNameResponse
+	13, // 75: grpcproc.inspect.v1.Inspector.ListNames:output_type -> grpcproc.inspect.v1.ListNamesResponse
+	65, // [65:76] is the sub-list for method output_type
+	54, // [54:65] is the sub-list for method input_type
+	54, // [54:54] is the sub-list for extension type_name
+	54, // [54:54] is the sub-list for extension extendee
+	0,  // [0:54] is the sub-list for field type_name
 }
 
 func init() { file_grpcproc_inspect_v1_inspect_proto_init() }
@@ -2993,6 +3031,8 @@ func file_grpcproc_inspect_v1_inspect_proto_init() {
 		(*Event_LinkUp)(nil),
 		(*Event_LinkDown)(nil),
 		(*Event_DeadLetter)(nil),
+		(*Event_MemberUp)(nil),
+		(*Event_MemberDown)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

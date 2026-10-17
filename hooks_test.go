@@ -215,7 +215,10 @@ func TestJoinHooks(t *testing.T) {
 		h.OnDeadLetter(grpcproc.PID{}, grpcproc.PID{}, nil, "")
 		h.OnLinkUp(grpcproc.NodeID{})
 		h.OnLinkDown(grpcproc.NodeID{}, nil)
-		if counts.spawns.Load() != 1 || counts.exits.Load() != 1 || counts.deadLetters.Load() != 1 || counts.linkUps.Load() != 1 || counts.linkDowns.Load() != 1 {
+		h.OnMemberUp(grpcproc.Member{})
+		h.OnMemberDown(grpcproc.Member{})
+		if counts.spawns.Load() != 1 || counts.exits.Load() != 1 || counts.deadLetters.Load() != 1 || counts.linkUps.Load() != 1 || counts.linkDowns.Load() != 1 ||
+			counts.memberUps.Load() != 1 || counts.memberDowns.Load() != 1 {
 			t.Fatal("join did not fan out")
 		}
 	})
@@ -294,5 +297,7 @@ func TestNopHooks(t *testing.T) {
 		h.OnDeadLetter(grpcproc.PID{}, grpcproc.PID{}, nil, "")
 		h.OnLinkUp(grpcproc.NodeID{})
 		h.OnLinkDown(grpcproc.NodeID{}, nil)
+		h.OnMemberUp(grpcproc.Member{})
+		h.OnMemberDown(grpcproc.Member{})
 	})
 }

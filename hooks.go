@@ -64,6 +64,16 @@ type Hooks interface {
 	// way stays up is neither.
 	OnLinkUp(peer NodeID)
 	OnLinkDown(peer NodeID, err error)
+	// OnMemberUp runs when Members comes to list a member, or lists it
+	// changed: new, a newer incarnation, or the same with another address
+	// or metadata. OnMemberDown runs when one listed goes: reported down,
+	// or replaced by an incarnation that cannot be listed; m is the member
+	// as Members had it. Both run on the goroutine reading the Membership,
+	// once Members reflects the event, for this node too once it is
+	// reported; an event that changes nothing runs neither. m.Metadata is
+	// the map Members shares: do not modify it.
+	OnMemberUp(m Member)
+	OnMemberDown(m Member)
 }
 
 // NopHooks implements Hooks with no-ops, for embedding.
@@ -76,6 +86,8 @@ func (NopHooks) OnReceive(_ ReceiveInfo, md Metadata) (Metadata, Done) { return 
 func (NopHooks) OnDeadLetter(PID, PID, proto.Message, string)          {}
 func (NopHooks) OnLinkUp(NodeID)                                       {}
 func (NopHooks) OnLinkDown(NodeID, error)                              {}
+func (NopHooks) OnMemberUp(Member)                                     {}
+func (NopHooks) OnMemberDown(Member)                                   {}
 
 // JoinHooks combines several Hooks into one. Metadata passes through them in
 // order, each seeing what the previous returned; Done functions run in
@@ -150,6 +162,18 @@ func (j joined) OnLinkUp(peer NodeID) {
 func (j joined) OnLinkDown(peer NodeID, err error) {
 	for _, h := range j {
 		h.OnLinkDown(peer, err)
+	}
+}
+
+func (j joined) OnMemberUp(m Member) {
+	for _, h := range j {
+		h.OnMemberUp(m)
+	}
+}
+
+func (j joined) OnMemberDown(m Member) {
+	for _, h := range j {
+		h.OnMemberDown(m)
 	}
 }
 

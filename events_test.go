@@ -44,7 +44,7 @@ func TestSubscribe(t *testing.T) {
 		if ev := nextEvent(t, events, grpcproc.EventLinkDown); ev.Peer.Name != "b" || ev.Err == "" {
 			t.Fatalf("%+v", ev)
 		}
-		for _, k := range []grpcproc.EventKind{grpcproc.EventSpawn, grpcproc.EventExit, grpcproc.EventLinkUp, grpcproc.EventLinkDown, grpcproc.EventDeadLetter} {
+		for _, k := range []grpcproc.EventKind{grpcproc.EventSpawn, grpcproc.EventExit, grpcproc.EventLinkUp, grpcproc.EventLinkDown, grpcproc.EventDeadLetter, grpcproc.EventMemberUp, grpcproc.EventMemberDown} {
 			if k.String() == "" {
 				t.Fatal("kind string")
 			}

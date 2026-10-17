@@ -792,6 +792,8 @@ type Hooks interface {
     OnDeadLetter(from, to PID, body proto.Message, reason string)
     OnLinkUp(NodeID)
     OnLinkDown(NodeID, error)
+    OnMemberUp(Member)   // Members lists it anew or changed: new, a newer incarnation, other metadata
+    OnMemberDown(Member) // Members lists it no more
 }
 type Done func(err error)
 ```
@@ -814,6 +816,13 @@ less links down is the peers it has a session with. `Stop` announces
 nothing and waits for every link-up still being announced: no hook runs
 once it returns.
 
+`OnMemberUp` and `OnMemberDown` follow `Members`: each runs on the
+goroutine reading the `Membership`, once the node has applied an event
+that changed what `Members` lists, so whatever places work by the members
+learns of a change exactly when `Members` shows it, instead of polling
+`Members` after each event of its own watch. An event that changes
+nothing, an older incarnation reported up say, runs neither.
+
 Nil by default; a nil check per message when unset. This is the shape of
 `grpc.StatsHandler`, and what every observability feature in other
 frameworks reduces to:
@@ -822,14 +831,15 @@ frameworks reduces to:
 |---|---|---|---|
 | Metrics | Observer charts | `WithMetrics()` OTel gauges | `grpcproc/otel` on `Hooks` + `Processes()` snapshots, one series per **label** and never per PID (GoAkt's per-actor default is a cardinality trap it later added a switch for); a PID's own numbers are in `Processes()` and the Inspector |
 | Dead letters | log | dead-letter actor + event | `OnDeadLetter` + counter in `NodeInfo` |
-| System events | `gen.CoreEvent` | event stream | `OnSpawn/OnExit/OnLinkUp/OnLinkDown`; `Node.Subscribe(ctx, buffer)` is a channel of the same events |
+| System events | `gen.CoreEvent` | event stream | `OnSpawn/OnExit/OnLinkUp/OnLinkDown/OnMemberUp/OnMemberDown`; `Node.Subscribe(ctx, buffer)` is a channel of the same events |
 | Tracing | Sent / Delivered / Processed observations, trace id in the message | eBPF sidecar | `Envelope.metadata` carries W3C trace context. `grpcproc/otel` opens a producer (send) or client (call) span in `OnSend` and a consumer/server span covering the handling in `OnReceive`; a process's sends inherit the handling span, so chains form without threading a context. Sampling stays the tracer's job |
 | Logging | loggers as processes, per-process level | — | `p.Log()` is `slog` with pid/name/label; per-process level via a `slog.Handler` wrapper the node owns, settable at runtime |
 
 ### Events
 
 `node.Subscribe(ctx, buffer) <-chan Event` streams spawns, exits with the
-reason, sessions with peers beginning and ending, and dead letters.
+reason, sessions with peers beginning and ending, members listed and
+unlisted, and dead letters.
 Publishing never blocks the node: a full subscriber loses the event, and
 the next one it receives carries `Missed`, the count lost in between. With
 no subscriber the cost is one atomic load at each point that would publish.

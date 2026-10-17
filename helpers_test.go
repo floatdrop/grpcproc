@@ -208,8 +208,8 @@ func waitNoPeer(t *testing.T, n *grpcproc.Node, peer string) {
 // countingHooks counts what each hook is called for.
 type countingHooks struct {
 	grpcproc.NopHooks
-	spawns, exits, sends, receives, deadLetters, linkUps, linkDowns atomic.Int64
-	lastDead                                                        atomic.Pointer[string]
+	spawns, exits, sends, receives, deadLetters, linkUps, linkDowns, memberUps, memberDowns atomic.Int64
+	lastDead                                                                                atomic.Pointer[string]
 }
 
 func (h *countingHooks) OnSpawn(grpcproc.ProcessInfo)        { h.spawns.Add(1) }
@@ -228,3 +228,5 @@ func (h *countingHooks) OnDeadLetter(_, _ grpcproc.PID, _ proto.Message, reason 
 }
 func (h *countingHooks) OnLinkUp(grpcproc.NodeID)          { h.linkUps.Add(1) }
 func (h *countingHooks) OnLinkDown(grpcproc.NodeID, error) { h.linkDowns.Add(1) }
+func (h *countingHooks) OnMemberUp(grpcproc.Member)        { h.memberUps.Add(1) }
+func (h *countingHooks) OnMemberDown(grpcproc.Member)      { h.memberDowns.Add(1) }

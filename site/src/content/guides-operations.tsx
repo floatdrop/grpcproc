@@ -291,13 +291,8 @@ if err := leader.Resign(ctx, node, "billing"); err != nil && !errors.Is(err, lea
 	log.Warn("resign", "err", err)
 }
 // 2. The top supervisor stops its children in reverse order of their start.
-events := node.Subscribe(ctx, 64)
 _ = node.Exit(ctx, root, grpcproc.ReasonShutdown)
-for ev := range events { // closed when ctx ends
-	if ev.Kind == grpcproc.EventExit && ev.Process.PID == root {
-		break
-	}
-}
+_, _ = node.Wait(ctx, root) // its exit reason, ErrNoProc once it is gone, or ctx's error
 // 3. Every process left exits, links flush and close, the record is withdrawn.
 _ = node.Stop(ctx)
 // 4. Only now the server.

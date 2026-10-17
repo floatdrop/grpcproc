@@ -55,7 +55,7 @@ type Registrar interface {
 // lease expiring, say) settles it.
 type Membership interface {
 	// Watch reports members joining and leaving until ctx is done, then
-	// closes the channel.
+	// closes the channel, which Stop waits for.
 	Watch(ctx context.Context) (<-chan MemberEvent, error)
 }
 
@@ -246,6 +246,12 @@ type Node struct {
 	pendingMu sync.Mutex
 	pending   map[uint64]*pendingCall
 
+	// waiters is who waits on a process of this node from outside any
+	// process (Wait), by the ref of its watch: a Down to the node's own PID
+	// answers it. waitersMu is a leaf, like pendingMu.
+	waitersMu sync.Mutex
+	waiters   map[uint64]chan<- string
+
 	// mu guards the fields below, through stopped. A process's lock may be
 	// taken inside it (spawn does), never the reverse. Deliveries, and sends
 	// over a live link, only read, so they take it shared.
@@ -262,6 +268,7 @@ type Node struct {
 	lastIn   map[string]helloNo // per peer, the inbound link that went in last (see serveLink)
 	hellos   atomic.Uint64      // numbers the Hellos of inbound links
 	members  map[string]Member  // what Membership reports up, by name (see Members)
+	watched  chan struct{}      // closed once the Membership's watch ends; nil before Start
 	stopping bool               // Stop began: no new processes
 	stopped  bool               // links closed: no new links
 	// settling counts, per peer, the changes to its links that were decided
@@ -363,6 +370,7 @@ func NewNode(cfg Config) (*Node, error) {
 		procs:    map[uint64]*proc{},
 		names:    map[string]*proc{},
 		pending:  map[uint64]*pendingCall{},
+		waiters:  map[uint64]chan<- string{},
 		out:      map[string]*outLink{},
 		in:       map[string]*inLink{},
 		dialing:  map[string]*dialOp{},
@@ -413,9 +421,10 @@ func (n *Node) PID() PID { return PID{Node: n.id.Name, Incarnation: n.id.Incarna
 // Start watches Membership and publishes the node with its Registrar, when
 // configured. Processes may be spawned before Start and run immediately;
 // Start only makes the node known. ctx bounds it. A call after one that
-// succeeded does nothing; after one that failed, Start tries again;
-// concurrent calls wait for the one in progress; after Stop began, Start
-// fails with ErrNodeStopped.
+// succeeded does nothing; after one that failed, Start tries again, once
+// the Membership's watch of the failed one has ended; concurrent calls
+// wait for the one in progress; after Stop began, Start fails with
+// ErrNodeStopped.
 func (n *Node) Start(ctx context.Context) error {
 	n.startMu.Lock()
 	defer n.startMu.Unlock()
@@ -423,10 +432,19 @@ func (n *Node) Start(ctx context.Context) error {
 		return nil
 	}
 	n.mu.Lock()
-	stopping := n.stopping
+	stopping, previous := n.stopping, n.watched
 	n.mu.Unlock()
 	if stopping {
 		return ErrNodeStopped
+	}
+	if previous != nil {
+		// A Start that failed with its ctx done left its watch to end on the
+		// Membership's time: no event of it lands on this one's.
+		select {
+		case <-previous:
+		case <-ctx.Done():
+			return fmt.Errorf("grpcproc: start: the last watch has not ended: %w", context.Cause(ctx))
+		}
 	}
 	now := time.Now()
 	// A Start that fails undoes itself: it stops watching and waits for the
@@ -451,10 +469,20 @@ func (n *Node) Start(ctx context.Context) error {
 			close(watched)
 			return failed(fmt.Errorf("grpcproc: membership: %w", err))
 		}
+		n.mu.Lock()
+		stopping = n.stopping
+		if !stopping {
+			n.watched = watched
+		}
+		n.mu.Unlock()
 		go unlabelled(func() {
 			defer close(watched)
 			n.watchMembers(events)
 		})()
+		if stopping {
+			// Stop began while this watched: it would not wait for the watch.
+			return failed(ErrNodeStopped)
+		}
 	} else {
 		close(watched)
 	}
@@ -490,9 +518,12 @@ func (n *Node) Start(ctx context.Context) error {
 
 func (n *Node) watchMembers(events <-chan MemberEvent) {
 	for ev := range events {
-		n.recordMember(ev)
+		m, up, changed := n.recordMember(ev)
 		if ev.Member.Name != n.id.Name {
 			n.memberEvent(ev)
+		}
+		if changed {
+			n.memberChanged(m, up)
 		}
 	}
 }
@@ -501,9 +532,10 @@ func (n *Node) watchMembers(events <-chan MemberEvent) {
 // of the same name, unless it is an older incarnation, and one reported down
 // goes, if it is the incarnation kept or the event says whichever. A member
 // whose name, address or metadata could not be a node's own (NewNode) is
-// left out, so that whatever lists Members can send them.
-func (n *Node) recordMember(ev MemberEvent) {
-	m := ev.Member
+// left out, so that whatever lists Members can send them. It returns the
+// member listed or unlisted, if the event changed Members.
+func (n *Node) recordMember(ev MemberEvent) (m Member, up, changed bool) {
+	m = ev.Member
 	listable := m.Name != "" && validName(m.Name) && validName(m.Addr) && validMetadata(m.Metadata)
 	if ev.Up && !listable {
 		n.log.Warn("left a member out: its name, address or metadata is not valid UTF-8, or is over 16 KiB", "peer", wireText(m.Name))
@@ -516,12 +548,33 @@ func (n *Node) recordMember(ev MemberEvent) {
 		// Not listed, but newer than what is kept: that one is gone.
 		if ok && (m.Incarnation == 0 || m.Incarnation > kept.Incarnation) {
 			delete(n.members, m.Name)
+			return kept, false, true
 		}
 	case ev.Up && (!ok || m.Incarnation == 0 || m.Incarnation >= kept.Incarnation):
 		n.members[m.Name] = m
+		return m, true, !ok || !sameMember(kept, m) // reported again as it is: no change
 	case !ev.Up && ok && (m.Incarnation == 0 || m.Incarnation == kept.Incarnation):
 		delete(n.members, m.Name)
+		return kept, false, true
 	}
+	return Member{}, false, false
+}
+
+// sameMember says whether two records of a member say the same.
+func sameMember(a, b Member) bool {
+	return a.Name == b.Name && a.Incarnation == b.Incarnation && a.Addr == b.Addr && maps.Equal(a.Metadata, b.Metadata)
+}
+
+// memberChanged announces a change to Members: m listed (up) or unlisted.
+func (n *Node) memberChanged(m Member, up bool) {
+	kind, hook := EventMemberDown, Hooks.OnMemberDown
+	if up {
+		kind, hook = EventMemberUp, Hooks.OnMemberUp
+	}
+	if n.hooks != nil {
+		hook(n.hooks, m)
+	}
+	n.subs.publish(Event{Kind: kind, Member: m})
 }
 
 // Members lists the nodes Config.Membership reports up, this one among them
@@ -590,7 +643,8 @@ func (n *Node) memberEvent(ev MemberEvent) {
 }
 
 // Stop asks every process to exit (Receive returns ReasonShutdown), waits for
-// them until ctx is done, then closes every link. Watchers of this node's
+// them until ctx is done, and for the Membership's watch to end, which it
+// does once its ctx is, then closes every link. Watchers of this node's
 // processes receive Down{shutdown} while the links are still up: every
 // outbound link flushes, and is waited on until its peer ends it, or ctx is
 // done. A dial in flight completes within Config.DialTimeout and its link is
@@ -614,6 +668,20 @@ func (n *Node) Stop(ctx context.Context) error {
 	case <-done:
 	case <-ctx.Done():
 		err = fmt.Errorf("grpcproc: stop: %w", ctx.Err())
+	}
+	// The Membership closes its channel once its ctx is done: no member
+	// hook or event comes once Stop has returned.
+	n.mu.Lock()
+	watched := n.watched
+	n.mu.Unlock()
+	if watched != nil {
+		select {
+		case <-watched:
+		case <-ctx.Done():
+			if err == nil {
+				err = fmt.Errorf("grpcproc: stop: %w", ctx.Err())
+			}
+		}
 	}
 
 	n.mu.Lock()
@@ -955,6 +1023,48 @@ func (n *Node) CallTo[R proto.Message](ctx context.Context, to Target, req proto
 // yet.
 func (n *Node) Exit(ctx context.Context, to Target, reason string) error {
 	return n.exit(ctx, n.PID(), to, reason)
+}
+
+// Wait waits until a process of this node exits, or ctx is done, and
+// returns its exit reason: what a program that runs its services under one
+// supervisor needs to stop when it gives up, and, after Exit, to know it
+// is down. The target is a PID, a Name or a global name; one that no
+// process of this node holds, or that has exited, is ErrNoProc, so after
+// Exit it says the process is gone already. A process of a peer is an
+// error: Wait is a watch placed without a process, which only a process of
+// this node can carry.
+func (n *Node) Wait(ctx context.Context, to Target) (string, error) {
+	to, _ = n.resolveTarget(to)
+	pid, name := to.target()
+	if pid.Node != n.id.Name && pid.Node != "" {
+		return "", fmt.Errorf("grpcproc: %v is a process of %s: Wait is for a process of this node", to, pid.Node)
+	}
+	p := n.lookup(pid, name)
+	if p == nil {
+		return "", ErrNoProc
+	}
+	ref := Ref{Node: n.id.Name, ID: n.nextRef.Add(1)}
+	ch := make(chan string, 1)
+	n.waitersMu.Lock()
+	n.waiters[ref.ID] = ch
+	n.waitersMu.Unlock()
+	forget := func() {
+		n.waitersMu.Lock()
+		delete(n.waiters, ref.ID)
+		n.waitersMu.Unlock()
+	}
+	if !p.addWatcher(ref, watcher{pid: n.PID()}) {
+		forget()
+		return "", ErrNoProc
+	}
+	select {
+	case reason := <-ch:
+		return reason, nil
+	case <-ctx.Done():
+		p.removeWatcher(ref)
+		forget()
+		return "", ctx.Err()
+	}
 }
 
 // ---------- the operations; each has a local and a remote path ----------
@@ -1364,6 +1474,16 @@ func (n *Node) deliverDemonitor(from, to PID, name string, ref uint64) {
 }
 
 func (n *Node) deliverDown(from, to PID, ref uint64, reason string) {
+	if to.ID == 0 && from.Node == n.id.Name { // the node's own, from a process of it: a Wait
+		n.waitersMu.Lock()
+		ch := n.waiters[ref]
+		delete(n.waiters, ref)
+		n.waitersMu.Unlock()
+		if ch != nil {
+			ch <- reason // its one place, kept for this
+		}
+		return
+	}
 	p := n.lookup(to, "")
 	if p == nil {
 		return

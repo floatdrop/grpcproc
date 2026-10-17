@@ -169,10 +169,11 @@ state, err := node.Inspect(ctx, pid)`}</Code>
 					<p>
 						<C>node.Subscribe(ctx, buffer)</C> is a channel of what happens on the node: a spawn, an
 						exit with its reason, a session with a peer beginning or ending (its first link up, the peer
-						declared down), a dead letter. Each <C>Event</C> has a{' '}
-						<C>Kind</C> and the fields that kind fills: the <C>Process</C> snapshot for a spawn or an
-						exit, the <C>Peer</C> and an error for a link, <C>From</C>, <C>To</C>, the message{' '}
-						<C>Type</C> and a reason for a dead letter.
+						declared down), a member <C>Members</C> lists or lists no more, a dead letter. Each{' '}
+						<C>Event</C> has a <C>Kind</C> and the fields that kind fills: the <C>Process</C>{' '}
+						snapshot for a spawn or an exit, the <C>Peer</C> and an error for a link, the{' '}
+						<C>Member</C> for a member, <C>From</C>, <C>To</C>, the message <C>Type</C> and a reason
+						for a dead letter.
 					</p>
 					<p>
 						Publishing never blocks the node. A subscriber whose buffer is full loses the event, and
@@ -212,6 +213,8 @@ state, err := node.Inspect(ctx, pid)`}</Code>
 	OnDeadLetter(from, to PID, body proto.Message, reason string)
 	OnLinkUp(peer NodeID)
 	OnLinkDown(peer NodeID, err error)
+	OnMemberUp(m Member)   // Members lists it anew or changed: new, a newer incarnation, other metadata
+	OnMemberDown(m Member) // Members lists it no more
 }
 
 type Done func(err error)`}</Code>
@@ -233,6 +236,13 @@ type Done func(err error)`}</Code>
 						trace context, a tenant, a request id. <C>WithMetadata(ctx, md)</C> sets it for a node's
 						sends and every call, and <C>MetadataFrom(ctx)</C> reads it back. The hooks must not
 						modify the map they are given, which may be shared; they return a copy to change it.
+					</p>
+					<p>
+						<C>OnMemberUp</C> and <C>OnMemberDown</C> follow <C>Members</C>: each runs on the
+						goroutine reading the <C>Membership</C>, once the node has applied an event that changed
+						what <C>Members</C> lists, so whatever places work by the members learns of a change
+						exactly when <C>Members</C> shows it. An event that changes nothing, an older incarnation
+						reported up say, runs neither.
 					</p>
 					<p>
 						Embed <C>NopHooks</C> and override what you need. <C>JoinHooks</C> combines several:

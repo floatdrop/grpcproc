@@ -3,6 +3,7 @@ package inspect_test
 import (
 	"fmt"
 	"log/slog"
+	"maps"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -23,12 +24,15 @@ func TestEventConversions(t *testing.T) {
 			{Kind: grpcproc.EventLinkUp, Peer: grpcproc.NodeID{Name: "b", Incarnation: 3}},
 			{Kind: grpcproc.EventLinkDown, Peer: grpcproc.NodeID{Name: "b"}, Err: "eof"},
 			{Kind: grpcproc.EventDeadLetter, From: pid, To: pid, Type: "x.Y", Reason: "type"},
+			{Kind: grpcproc.EventMemberUp, Member: grpcproc.Member{Name: "b", Incarnation: 3, Addr: "b:1", Metadata: map[string]string{"zone": "eu"}}},
+			{Kind: grpcproc.EventMemberDown, Member: grpcproc.Member{Name: "b", Incarnation: 3}},
 		}
 		for _, ev := range events {
 			ev.Time, ev.Missed = now, 3
 			got := inspect.Event(inspect.EventToProto(ev))
 			if got.Kind != ev.Kind || got.Reason != ev.Reason || got.Peer != ev.Peer || got.Err != ev.Err ||
 				got.From != ev.From || got.Type != ev.Type || got.Missed != 3 || !got.Time.Equal(now) ||
+				got.Member.Name != ev.Member.Name || got.Member.Incarnation != ev.Member.Incarnation || got.Member.Addr != ev.Member.Addr || !maps.Equal(got.Member.Metadata, ev.Member.Metadata) ||
 				got.Process.PID != ev.Process.PID || got.Process.LogLevel != ev.Process.LogLevel || !got.Process.StartedAt.Equal(ev.Process.StartedAt) ||
 				got.Process.Links != ev.Process.Links || got.Process.TrapExit != ev.Process.TrapExit ||
 				got.Process.Busy != ev.Process.Busy || got.Process.BusyFor != ev.Process.BusyFor {

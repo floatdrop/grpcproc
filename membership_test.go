@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -395,4 +396,183 @@ func TestNodeMetadata(t *testing.T) {
 	if len(n.Members()) != 0 {
 		t.Fatalf("members without Membership: %v", n.Members())
 	}
+}
+
+// lateMembership reports x up, and once its ctx is done reports it down
+// after a while, then closes its channel: a store whose watch ends on its
+// own time.
+type lateMembership struct{ after time.Duration }
+
+func (l lateMembership) Watch(ctx context.Context) (<-chan grpcproc.MemberEvent, error) {
+	out := make(chan grpcproc.MemberEvent)
+	go func() {
+		defer close(out)
+		out <- grpcproc.MemberEvent{Up: true, Member: grpcproc.Member{Name: "x", Incarnation: 1}}
+		<-ctx.Done()
+		time.Sleep(l.after)
+		out <- grpcproc.MemberEvent{Member: grpcproc.Member{Name: "x"}}
+	}()
+	return out, nil
+}
+
+// stopOrderHooks notes a member hook that ran after Stop returned.
+type stopOrderHooks struct {
+	grpcproc.NopHooks
+	stopped   atomic.Bool
+	downs     atomic.Int64
+	afterStop atomic.Bool
+}
+
+func (h *stopOrderHooks) OnMemberDown(grpcproc.Member) {
+	h.downs.Add(1)
+	if h.stopped.Load() {
+		h.afterStop.Store(true)
+	}
+}
+
+// Stop waits for the Membership's watch to end, so no member hook comes
+// once it has returned; a watch that keeps going holds Stop until its ctx.
+func TestStopWaitsForTheMembershipWatch(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := &stopOrderHooks{}
+		start := func(after time.Duration) *grpcproc.Node {
+			n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Membership: lateMembership{after}, Hooks: h})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := n.Start(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			synctest.Wait()
+			return n
+		}
+		n := start(10 * time.Millisecond)
+		if err := n.Stop(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		h.stopped.Store(true)
+		if h.downs.Load() != 1 || h.afterStop.Load() {
+			t.Fatalf("downs %d, after Stop %v", h.downs.Load(), h.afterStop.Load())
+		}
+		h.stopped.Store(false)
+		n = start(time.Minute)
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		if err := n.Stop(ctx); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("a watch that goes on: %v", err)
+		}
+		time.Sleep(2 * time.Minute) // the watch ends on its own time
+	})
+}
+
+// A Start that failed with its ctx done leaves its watch to end on the
+// Membership's time; the next Start waits for it, within its ctx, so no
+// event of the old watch lands on the new one's.
+func TestStartAgainAfterAWatchLeftRunning(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := &fakeRegistrar{err: errors.New("boom")}
+		h := &stopOrderHooks{}
+		n, err := grpcproc.NewNode(grpcproc.Config{Admit: grpcproc.AdmitAll, Name: "a", Resolver: grpcproc.StaticResolver{}, Membership: lateMembership{time.Minute}, Registrar: r, Hooks: h})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		if err := n.Start(ctx); err == nil || !strings.Contains(err.Error(), "register") {
+			t.Fatalf("a registrar that fails: %v", err)
+		}
+		r.err = nil
+		ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		if err := n.Start(ctx); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("while the old watch goes on: %v", err)
+		}
+		if err := n.Start(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if h.downs.Load() != 1 {
+			t.Fatalf("the old watch's last event: %d downs", h.downs.Load())
+		}
+		if err := n.Stop(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// memberHooks records the members the node announces listed and unlisted.
+type memberHooks struct {
+	grpcproc.NopHooks
+	mu  sync.Mutex
+	log []string
+}
+
+func (h *memberHooks) OnMemberUp(m grpcproc.Member)   { h.note("up", m) }
+func (h *memberHooks) OnMemberDown(m grpcproc.Member) { h.note("down", m) }
+
+func (h *memberHooks) note(what string, m grpcproc.Member) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.log = append(h.log, memberText(what, m))
+}
+
+func memberText(what string, m grpcproc.Member) string {
+	return fmt.Sprintf("%s %s#%d%v", what, m.Name, m.Incarnation, m.Metadata)
+}
+
+// Hooks and events announce each change to Members once the node has
+// applied it: a member listed, a newer incarnation of one, one unlisted as
+// Members had it, this node among them. An event that changes nothing, an
+// older incarnation reported up say, announces nothing.
+func TestMemberHooksAndEvents(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := &memberHooks{}
+		m := &fakeMembership{events: make(chan grpcproc.MemberEvent)}
+		c := grpcproctest.NewWith(t, []grpcproctest.Option{
+			grpcproctest.WithHooks(h),
+			grpcproctest.WithConfig(func(_ string, cfg *grpcproc.Config) { cfg.Membership = m }),
+		}, "a")
+		a := c.Node("a")
+		events := a.Subscribe(t.Context(), 64)
+		up := func(name string, inc uint64, version string) {
+			m.events <- grpcproc.MemberEvent{Up: true, Member: grpcproc.Member{Name: name, Incarnation: inc, Metadata: map[string]string{"version": version}}}
+		}
+		down := func(name string, inc uint64) {
+			m.events <- grpcproc.MemberEvent{Member: grpcproc.Member{Name: name, Incarnation: inc}}
+		}
+		self := a.ID().Incarnation
+		up("a", self, "2")
+		up("x", 5, "1")
+		up("x", 4, "0") // older: not listed, nothing announced
+		up("x", 6, "2")
+		up("x", 6, "2") // reported again as it is: nothing
+		up("x", 6, "3") // its metadata changed: listed changed
+		down("x", 5)    // not the one kept
+		down("x", 0)    // whichever: the one kept goes
+		up("w", 1, "1")
+		m.events <- grpcproc.MemberEvent{Up: true, Member: grpcproc.Member{Name: "w", Incarnation: 2, Metadata: map[string]string{"k": "\xff"}}} // unlisted, and newer
+		m.events <- grpcproc.MemberEvent{Up: true, Member: grpcproc.Member{Name: "q\xff"}}                                                       // never listed
+		flush(m)
+		synctest.Wait()
+		want := []string{
+			memberText("up", grpcproc.Member{Name: "a", Incarnation: self, Metadata: map[string]string{"version": "2"}}),
+			memberText("up", grpcproc.Member{Name: "x", Incarnation: 5, Metadata: map[string]string{"version": "1"}}),
+			memberText("up", grpcproc.Member{Name: "x", Incarnation: 6, Metadata: map[string]string{"version": "2"}}),
+			memberText("up", grpcproc.Member{Name: "x", Incarnation: 6, Metadata: map[string]string{"version": "3"}}),
+			memberText("down", grpcproc.Member{Name: "x", Incarnation: 6, Metadata: map[string]string{"version": "3"}}),
+			memberText("up", grpcproc.Member{Name: "w", Incarnation: 1, Metadata: map[string]string{"version": "1"}}),
+			memberText("down", grpcproc.Member{Name: "w", Incarnation: 1, Metadata: map[string]string{"version": "1"}}),
+		}
+		h.mu.Lock()
+		got := strings.Join(h.log, "\n")
+		h.mu.Unlock()
+		if got != strings.Join(want, "\n") {
+			t.Fatalf("hooks:\n%s\nwant:\n%s", got, strings.Join(want, "\n"))
+		}
+		for _, w := range want {
+			ev := nextEvent(t, events, grpcproc.EventMemberUp, grpcproc.EventMemberDown)
+			if got := memberText(strings.TrimPrefix(ev.Kind.String(), "member-"), ev.Member); got != w {
+				t.Fatalf("event %q, want %q", got, w)
+			}
+		}
+	})
 }

@@ -17,9 +17,11 @@ const (
 	EventLinkUp
 	EventLinkDown
 	EventDeadLetter
+	EventMemberUp
+	EventMemberDown
 )
 
-var eventKinds = [...]string{"", "spawn", "exit", "link-up", "link-down", "dead-letter"}
+var eventKinds = [...]string{"", "spawn", "exit", "link-up", "link-down", "dead-letter", "member-up", "member-down"}
 
 func (k EventKind) String() string { return enumName(eventKinds[:], int(k), "EventKind") }
 
@@ -31,6 +33,8 @@ func (k EventKind) String() string { return enumName(eventKinds[:], int(k), "Eve
 //	EventLinkUp      Peer: a session with it began (see Hooks.OnLinkUp)
 //	EventLinkDown    Peer, Err: the session ended, the peer declared down
 //	EventDeadLetter  From, To, Type (proto full name), Reason
+//	EventMemberUp    Member: Members lists it, as Hooks.OnMemberUp says
+//	EventMemberDown  Member: Members lists it no more (Hooks.OnMemberDown)
 type Event struct {
 	Kind    EventKind
 	Time    time.Time
@@ -41,6 +45,7 @@ type Event struct {
 	From    PID
 	To      PID
 	Type    string
+	Member  Member
 	// Missed is how many events this subscriber lost, because its buffer
 	// was full, since the event before this one.
 	Missed uint64

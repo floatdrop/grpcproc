@@ -341,6 +341,9 @@ message Event {
     NodeID link_up = 5;
     LinkDown link_down = 6;
     DeadLetter dead_letter = 7;
+    // Members lists the member, or lists it no more.
+    Member member_up = 8;
+    Member member_down = 9;
   }
 }
 

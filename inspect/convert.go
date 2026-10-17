@@ -100,9 +100,18 @@ func nodeInfoTo(n grpcproc.NodeInfo) *inspectv1.NodeInfo {
 func membersTo(ms []grpcproc.Member) []*inspectv1.Member {
 	var out []*inspectv1.Member
 	for _, m := range ms {
-		out = append(out, &inspectv1.Member{Id: nodeIDTo(grpcproc.NodeID{Name: m.Name, Incarnation: m.Incarnation}), Addr: m.Addr, Metadata: m.Metadata})
+		out = append(out, memberTo(m))
 	}
 	return out
+}
+
+func memberTo(m grpcproc.Member) *inspectv1.Member {
+	return &inspectv1.Member{Id: nodeIDTo(grpcproc.NodeID{Name: m.Name, Incarnation: m.Incarnation}), Addr: m.Addr, Metadata: m.Metadata}
+}
+
+func memberFrom(m *inspectv1.Member) grpcproc.Member {
+	id := nodeIDFrom(m.GetId())
+	return grpcproc.Member{Name: id.Name, Incarnation: id.Incarnation, Addr: m.GetAddr(), Metadata: m.GetMetadata()}
 }
 
 func processInfoTo(p grpcproc.ProcessInfo) *inspectv1.ProcessInfo {
@@ -151,6 +160,10 @@ func eventTo(ev grpcproc.Event) *inspectv1.Event {
 		out.Kind = &inspectv1.Event_DeadLetter{DeadLetter: &inspectv1.DeadLetter{
 			From: ev.From.Proto(), To: ev.To.Proto(), Type: ev.Type, Reason: ev.Reason,
 		}}
+	case grpcproc.EventMemberUp:
+		out.Kind = &inspectv1.Event_MemberUp{MemberUp: memberTo(ev.Member)}
+	case grpcproc.EventMemberDown:
+		out.Kind = &inspectv1.Event_MemberDown{MemberDown: memberTo(ev.Member)}
 	}
 	return out
 }
@@ -160,8 +173,7 @@ func eventTo(ev grpcproc.Event) *inspectv1.Event {
 func Members(n *inspectv1.NodeInfo) []grpcproc.Member {
 	var out []grpcproc.Member
 	for _, m := range n.GetMembers() {
-		id := nodeIDFrom(m.GetId())
-		out = append(out, grpcproc.Member{Name: id.Name, Incarnation: id.Incarnation, Addr: m.GetAddr(), Metadata: m.GetMetadata()})
+		out = append(out, memberFrom(m))
 	}
 	return out
 }
@@ -244,6 +256,10 @@ func Event(e *inspectv1.Event) grpcproc.Event {
 	case *inspectv1.Event_DeadLetter:
 		d := k.DeadLetter
 		out.Kind, out.From, out.To, out.Type, out.Reason = grpcproc.EventDeadLetter, grpcproc.PIDFromProto(d.GetFrom()), grpcproc.PIDFromProto(d.GetTo()), d.GetType(), d.GetReason()
+	case *inspectv1.Event_MemberUp:
+		out.Kind, out.Member = grpcproc.EventMemberUp, memberFrom(k.MemberUp)
+	case *inspectv1.Event_MemberDown:
+		out.Kind, out.Member = grpcproc.EventMemberDown, memberFrom(k.MemberDown)
 	}
 	return out
 }
