@@ -454,9 +454,10 @@ func TestOlderIncarnation(t *testing.T) {
 		a, b := c.Node("a"), c.Node("b")
 		newer := selected("b")
 		newer.Incarnation = b.PID().Incarnation + 1
-		// b's scope first, so a's first hello finds it: b's hello, from an
-		// incarnation older than a knows of, does not ask b again.
+		// b's scope first, its first hello done (no scope on a), so b's next
+		// hello comes once a knows of the newer incarnation.
 		sb := start(t, b, peers("a"))
+		synctest.Wait()
 		sa := start(t, a, groups.Config{Membership: &members{up: []grpcproc.Member{newer}}})
 		join(t, sb, b, "g", idle(t, b))
 		synctest.Wait()

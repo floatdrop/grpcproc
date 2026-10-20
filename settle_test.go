@@ -5,13 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	grpcprocv1 "github.com/floatdrop/grpcproc/proto/grpcproc/v1"
@@ -160,9 +163,11 @@ func TestNewSessionWaitsForTheOldOnesDown(t *testing.T) {
 	}
 }
 
-// Two new streams at once: one replaces the old link, the other replaces
-// that one, each in turn, and the link events say so in order.
-func TestNewStreamsReplaceInTurn(t *testing.T) {
+// Two new streams at once, waiting on the old link's teardown. The earlier
+// goes in and the later replaces it; or the later goes in first, and the
+// earlier, given up for it, ends the session (lastIn). The link events say
+// which, in order.
+func TestNewStreamsSettleInOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		e := newSettleEnv(t)
 		events := e.n.Subscribe(t.Context(), 32)
@@ -171,34 +176,35 @@ func TestNewStreamsReplaceInTurn(t *testing.T) {
 		<-e.h.entered
 		_, served2 := e.stream(t, "3")
 		close(e.h.release)
+		synctest.Wait()
 		var got []string
-		for len(got) < 4 {
-			select {
-			case ev := <-events:
-				if ev.Kind == EventLinkUp || ev.Kind == EventLinkDown {
-					got = append(got, ev.Kind.String()+" "+ev.Peer.String())
-				}
-			case <-time.After(5 * time.Second):
-				t.Fatalf("link events %q", got)
+		for len(events) > 0 {
+			if ev := <-events; ev.Kind == EventLinkUp || ev.Kind == EventLinkDown {
+				got = append(got, ev.Kind.String()+" "+ev.Peer.String())
 			}
-		}
-		want := []string{"link-down b#2", "link-up b#3", "link-down b#3", "link-up b#3"}
-		for i := range want {
-			if got[i] != want[i] {
-				t.Fatalf("link events %q, want %q", got, want)
-			}
-		}
-		select { // the one replaced returns; the other is up
-		case <-served1:
-		case <-served2:
-		case <-time.After(5 * time.Second):
-			t.Fatal("neither stream was replaced")
 		}
 		e.n.mu.Lock()
 		up := e.n.in["b"]
 		e.n.mu.Unlock()
-		if up == nil {
-			t.Fatal("no link from b")
+		want := []string{"link-down b#2", "link-up b#3", "link-down b#3", "link-up b#3"}
+		select {
+		case err := <-served1:
+			switch {
+			case status.Code(err) == codes.Aborted:
+				want = want[:3]
+				if up != nil || len(served2) == 0 {
+					t.Fatal("the session the earlier stream ended goes on")
+				}
+			case err != nil:
+				t.Fatalf("the earlier stream: %v", err)
+			case up == nil:
+				t.Fatal("no link from b")
+			}
+		default:
+			t.Fatal("the earlier stream was neither replaced nor refused")
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("link events %q, want %q", got, want)
 		}
 	})
 }
