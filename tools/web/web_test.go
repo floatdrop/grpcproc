@@ -354,6 +354,18 @@ func TestEvents(t *testing.T) {
 		t.Errorf("%q", body)
 	}
 
+	// A node that serves no Inspector: the stream says so, for good.
+	u := serve(t, testcluster.Start(t, "uninspected"), web.Options{})
+	res, err = http.Get(u.URL + "/api/events?node=uninspected")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if !strings.HasSuffix(string(body), "event: end\ndata: \""+client.NotInspected+"\"\n\n") {
+		t.Errorf("%q", body)
+	}
+
 	// A writer that cannot flush cannot stream: nothing more is sent.
 	w := httptest.NewRecorder()
 	web.New(client.New(f.C.Conn("a")), web.Options{}).ServeHTTP(struct{ http.ResponseWriter }{w}, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/events", nil))

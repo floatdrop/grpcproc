@@ -109,8 +109,32 @@ var kinds = func() []string {
 // Node describes one node; "" is the node serving the Inspector.
 func (c *Client) Node(ctx context.Context, node string) (NodeView, error) {
 	v, _, err := c.node(ctx, &inspectv1.GetNodeRequest{Node: node}, nil)
+	if node != "" && uninspected(err, node) {
+		// Described as the Inspector's node's Membership has it, if at all.
+		u := NodeView{Name: node, NoInspector: true}
+		first, _, _ := c.node(ctx, &inspectv1.GetNodeRequest{ExcludeLinks: true}, nil)
+		if m, ok := byName(first.Members)[node]; ok {
+			u.Incarnation, u.Advertise, u.Metadata = m.Incarnation, m.Addr, m.Metadata
+		}
+		return u, nil
+	}
 	v.raw = nil
 	return v, err
+}
+
+// uninspected says whether err is the Inspector's word that node serves no
+// Inspector: node's own unknown service, as forwarding passes it on
+// (inspect's peerErr). The dialed server's unknown service, or a proxy's
+// 404, which is Unimplemented too, is an error.
+func uninspected(err error, node string) bool {
+	st := status.Convert(err)
+	return st.Code() == codes.Unimplemented && st.Message() == "inspect: node "+node+": unknown service "+inspectv1.Inspector_ServiceDesc.ServiceName
+}
+
+// askable is nodes but those that serve no Inspector, which what is asked
+// of every node leaves out.
+func askable(nodes []NodeView) []NodeView {
+	return slices.DeleteFunc(slices.Clone(nodes), func(n NodeView) bool { return n.NoInspector })
 }
 
 // node asks for a node as req says, and returns it with the peers its links
@@ -193,9 +217,10 @@ type ClusterOptions struct {
 // those it is linked to. When it reports none, as without a Membership, it
 // walks the links of every node it finds. Only the first node lists its
 // members. A node that
-// cannot be asked is listed with Error, and a member that cannot be with
-// the address and metadata its Membership reports; one that ctx ended
-// before it was asked or answered is listed as Unanswered.
+// cannot be asked is listed with Error, one that serves no Inspector with
+// NoInspector, and a member of either with the address and metadata its
+// Membership reports; one that ctx ended before it was asked or answered
+// is listed as Unanswered.
 func (c *Client) Cluster(ctx context.Context, o ClusterOptions) ([]NodeView, error) {
 	rctx, cancel := withTimeout(ctx, o.NodeTimeout)
 	first, peers, err := c.node(rctx, &inspectv1.GetNodeRequest{LinkTotalsBy: o.GroupLinksBy}, nil)
@@ -237,7 +262,7 @@ func (c *Client) Cluster(ctx context.Context, o ClusterOptions) ([]NodeView, err
 				<-slots
 			case <-ctx.Done():
 			}
-			if m, ok := members[peer]; ok && (v.Error != "" || v.Unanswered) {
+			if m, ok := members[peer]; ok && !v.Reached() {
 				v.Incarnation, v.Advertise, v.Metadata = m.Incarnation, m.Addr, m.Metadata
 			}
 			mu.Lock()
@@ -324,7 +349,8 @@ func quarter(ctx context.Context) time.Duration {
 	return 0
 }
 
-// Reached names the nodes that answered.
+// Reached names the nodes that were described: they answered, and serve an
+// Inspector.
 func Reached(nodes []NodeView) []string {
 	var out []string
 	for _, n := range nodes {
@@ -358,7 +384,8 @@ func each[T, R any](ctx context.Context, items []T, timeout time.Duration, fn fu
 	return out
 }
 
-// ask describes peer for Cluster: Unanswered when ctx ended first.
+// ask describes peer for Cluster: Unanswered when ctx ended first,
+// NoInspector when it serves none.
 func (c *Client) ask(ctx context.Context, peer string, o ClusterOptions, links, walk bool, members map[string]MemberView) (NodeView, []string) {
 	rctx, cancel := withTimeout(ctx, o.NodeTimeout)
 	defer cancel()
@@ -370,6 +397,8 @@ func (c *Client) ask(ctx context.Context, peer string, o ClusterOptions, links, 
 	switch code := status.Code(err); {
 	case (code == codes.DeadlineExceeded || code == codes.Canceled) && ctx.Err() != nil:
 		return NodeView{Name: peer, Unanswered: true}, nil
+	case uninspected(err, peer):
+		return NodeView{Name: peer, NoInspector: true}, nil
 	case err != nil:
 		return NodeView{Name: peer, Error: err.Error()}, nil
 	}

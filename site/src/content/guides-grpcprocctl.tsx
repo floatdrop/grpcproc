@@ -264,7 +264,7 @@ orders  order-17  charging  stuck   5         1               2026-10-05T11:49:2
 					head={['Command', '']}
 					rows={[
 						[<C>node [name]</C>, 'Counters and links of a node.'],
-						[<C>nodes</C>, "Every node this one knows of, by the members its Membership reports and by links, with its peers up and down."],
+						[<C>nodes</C>, "Every node this one knows of, by the members its Membership reports and by links, with its peers up and down; one that serves no Inspector says so, with no counters."],
 						[
 							<C>ps</C>,
 							<>

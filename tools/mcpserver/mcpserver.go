@@ -40,7 +40,7 @@ const instructions = `These tools inspect a grpcproc cluster: Go processes (goro
 - A grpcproc/cron process runs jobs on crontab schedules; cron_jobs lists each, when it runs next and last ran, how many runs are going, and why its last failed run failed. Each run is a process of its own, labelled cron:<job>.
 - A grpcproc/saga engine runs sagas: work across services kept as runs in a store, each a state of a machine and its data. saga_runs lists runs by saga and status; a stuck run is one whose effect failed for good with nothing to fire, and waits for a resume; saga_run shows one with its error and the signals waiting for a state that takes them, and its data only if the engine's InspectData is on. An engine answers only for the sagas it runs.
 - node_info lists a node's links. queued on an out link is what waits to be written to that peer: a growing queue means the peer or the network cannot keep up. A down out link with retry_in means dials to that peer failed, and sends to it fail at once until then; such a peer shows incarnation 0, and cluster_nodes lists it with an error if it cannot be reached.
-- cluster_nodes adds each node's links up (link_totals), and lists them too only in a cluster of up to 32 nodes: peers up and down, with the first down ones named, queued messages, traffic. group_links_by totals them by a key of the peers' metadata, such as a data center, to see which part of the cluster a node cannot reach. A node marked unanswered was not asked or did not answer before the time ran out: it is not known to be down.
+- cluster_nodes adds each node's links up (link_totals), and lists them too only in a cluster of up to 32 nodes: peers up and down, with the first down ones named, queued messages, traffic. group_links_by totals them by a key of the peers' metadata, such as a data center, to see which part of the cluster a node cannot reach. A node marked unanswered was not asked or did not answer before the time ran out: it is not known to be down. A node marked no_inspector is up but serves no Inspector: its counters are not its own, and the tools that ask every node leave it out, but for election, which lists it where the others name it, with an error saying it serves no Inspector.
 
 Start with cluster_nodes, then list_processes sorted by mailbox to find backlogs, then get_process on the suspects.`
 
@@ -306,7 +306,7 @@ type electionIn struct {
 
 type electionOut struct {
 	Electors []client.ElectorView `json:"electors"`
-	Leader   string               `json:"leader,omitempty" jsonschema:"the node that says it leads, in the highest term; empty while none does"`
+	Leader   string               `json:"leader,omitempty" jsonschema:"the node that leads in the highest term: one that says it does, or one that serves no Inspector and a node of that term follows; empty while none does"`
 }
 
 func (t tools) election(ctx context.Context, _ *mcp.CallToolRequest, in electionIn) (*mcp.CallToolResult, electionOut, error) {

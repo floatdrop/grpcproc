@@ -320,6 +320,10 @@ func cmdNode(ctx context.Context, a *app, args []string) error {
 	if len(n.Metadata) > 0 {
 		fmt.Fprintf(a.env.Stdout, "metadata:      %s\n", metadata(n.Metadata))
 	}
+	if n.NoInspector {
+		fmt.Fprintln(a.env.Stdout, client.NotInspected)
+		return nil
+	}
 	fmt.Fprintf(a.env.Stdout, "uptime:        %s\nprocesses:     %d (spawned %d, exited %d)\ndead letters:  %d\n\n",
 		n.Uptime, n.Processes, n.Spawned, n.Exited, n.DeadLetters)
 	rows := make([][]string, 0, len(n.Links))
@@ -353,7 +357,11 @@ func cmdNodes(ctx context.Context, a *app, args []string) error {
 	}
 	rows := make([][]string, 0, len(nodes))
 	for _, n := range nodes {
-		rows = append(rows, []string{n.Name, n.Advertise, n.Uptime, strconv.Itoa(n.Processes), u(n.DeadLetters), peers(n), metadata(n.Metadata), n.Problem()})
+		processes, dead := "-", "-" // a node not described has no counters
+		if n.Reached() {
+			processes, dead = strconv.Itoa(n.Processes), u(n.DeadLetters)
+		}
+		rows = append(rows, []string{n.Name, n.Advertise, n.Uptime, processes, dead, peers(n), metadata(n.Metadata), n.Problem()})
 	}
 	return a.table("NODE\tADVERTISE\tUPTIME\tPROCESSES\tDEAD LETTERS\tPEERS\tMETADATA\tERROR", rows)
 }
@@ -724,7 +732,7 @@ func cmdLeader(ctx context.Context, a *app, args []string) error {
 			return lead != "" && lead != was && (to == "" || lead == to)
 		}
 		for _, v := range vs {
-			if slices.Contains(v.Cordoned, node) != (verb == "cordon") {
+			if v.Error != client.NotInspected && slices.Contains(v.Cordoned, node) != (verb == "cordon") {
 				return false
 			}
 		}
@@ -758,14 +766,18 @@ func (a *app) settle(ctx context.Context, cluster string, done func([]client.Ele
 }
 
 // agreed is the leader every node names, or empty while they do not all
-// name the same one, or one could not be asked.
+// name the same one, or one could not be asked. A node that serves no
+// Inspector names none, and is not counted.
 func agreed(views []client.ElectorView) string {
 	var lead string
-	for i, v := range views {
-		if v.Error != "" || v.Leader == "" || i > 0 && v.Leader != lead {
+	for _, v := range views {
+		switch {
+		case v.Error == client.NotInspected:
+		case v.Error != "" || v.Leader == "" || lead != "" && v.Leader != lead:
 			return ""
+		default:
+			lead = v.Leader
 		}
-		lead = v.Leader
 	}
 	return lead
 }

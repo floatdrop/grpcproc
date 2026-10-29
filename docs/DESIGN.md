@@ -1025,7 +1025,11 @@ adds the totals up itself. `tools/client`'s `Cluster` takes its nodes from
 the `Membership` the Inspector's node reports plus that node's links, asks
 32 at a time within a time limit each, and asks for links only for a
 cluster small enough to draw, or walks them when the node reports no
-members. A node the walk's time ran out on is unanswered, not down. 2,700
+members. A node the walk's time ran out on is unanswered, not down; one
+that answers with gRPC's unknown service for the Inspector serves none, and
+is up, not described, and left out of what is asked of every node: an
+election lists it only where the others name it, as one that cannot be
+asked, and it leads where a node of the latest term follows it. 2,700
 nodes in three data centers take 3 seconds and 1 MB.
 
 **`Query` reads a process without touching its mailbox.** `WithInspect`

@@ -380,3 +380,40 @@ func TestOneNodeFailing(t *testing.T) {
 		t.Fatalf("%+v", engines)
 	}
 }
+
+// noInspector is a gRPC server that serves no Inspector.
+type noInspector struct{ inspectv1.InspectorClient }
+
+func (noInspector) GetNode(context.Context, *inspectv1.GetNodeRequest, ...grpc.CallOption) (*inspectv1.GetNodeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "unknown service grpcproc.inspect.v1.Inspector")
+}
+
+// TestUninspected: only node's own unknown service, as forwarding passes it
+// on, says node serves no Inspector. The dialed server's unknown service is
+// an error, whatever node is asked for, as is a proxy's 404, which is
+// Unimplemented too.
+func TestUninspected(t *testing.T) {
+	forwarded := "inspect: node u: unknown service grpcproc.inspect.v1.Inspector"
+	for _, tc := range []struct {
+		err  error
+		node string
+		want bool
+	}{
+		{status.Error(codes.Unimplemented, forwarded), "u", true},
+		{status.Error(codes.Unimplemented, forwarded), "v", false},
+		{status.Error(codes.Unimplemented, "unknown service grpcproc.inspect.v1.Inspector"), "u", false},
+		{status.Error(codes.Unimplemented, "inspect: node u: unexpected HTTP status code received from server: 404 (Not Found)"), "u", false},
+		{status.Error(codes.Unavailable, forwarded), "u", false},
+		{nil, "u", false},
+	} {
+		if got := uninspected(tc.err, tc.node); got != tc.want {
+			t.Errorf("%v for %s: %v", tc.err, tc.node, got)
+		}
+	}
+	c := &Client{rpc: noInspector{}, now: time.Now}
+	for _, node := range []string{"", "anything"} {
+		if n, err := c.Node(t.Context(), node); err == nil || n.NoInspector {
+			t.Fatalf("%q from a server with no Inspector: %+v %v", node, n, err)
+		}
+	}
+}

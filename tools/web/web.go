@@ -324,10 +324,17 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	}
 	// A node that cannot be reached would hold the stream open with nothing
 	// on it, as if all were quiet: it is asked first, within the time limit.
+	// One that serves no Inspector has no events to stream, ever: an "end"
+	// event says so, and the browser stops.
 	node := r.URL.Query().Get("node")
 	ctx, cancel := context.WithTimeout(r.Context(), s.o.Timeout)
-	_, err = s.c.Node(ctx, node)
+	n, err := s.c.Node(ctx, node)
 	cancel()
+	if err == nil && n.NoInspector {
+		b, _ := json.Marshal(client.NotInspected)
+		_, _ = fmt.Fprintf(w, "event: end\ndata: %s\n\n", b)
+		return
+	}
 	if err == nil {
 		err = s.c.Watch(r.Context(), node, func(e client.EventView) bool {
 			b, _ := json.Marshal(e) // an EventView always marshals

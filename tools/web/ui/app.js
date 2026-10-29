@@ -217,9 +217,30 @@ const LABEL_THEME = {
 	active: 'info', stuck: 'danger', done: 'unknown',
 	synced: 'success', syncing: 'warning', absent: 'unknown', unreachable: 'danger',
 	spawn: 'success', exit: 'unknown', 'link-up': 'info', 'link-down': 'warning', 'dead-letter': 'danger', 'member-up': 'info', 'member-down': 'warning',
-	info: 'info', bad: 'danger', warn: 'warning',
+	info: 'info', bad: 'danger', warn: 'warning', uninspected: 'unknown',
 };
 const pill = (text, kind, title) => h('span', { class: `label label_${LABEL_THEME[kind ?? text] || 'unknown'}`, title }, text);
+
+// stateKey says what the cluster's walk found of node n: down (its error
+// says why), unanswered, uninspected (up, but it serves no Inspector), or
+// described, its counters its own. STATE says how each shows: its pill
+// (text, kind, title; down's text is the node's error), a word where there
+// is little room (short), the picker's (word), its rank among what is wrong
+// (trouble) and its class on the map.
+const stateKey = (n) => (n.error ? 'down' : n.unanswered ? 'unanswered' : n.no_inspector ? 'uninspected' : 'described');
+const STATE = {
+	down: { kind: 'bad', short: 'down', word: 'unreachable', rank: 5, map: 'bad' },
+	unanswered: { text: 'not answered in time', kind: 'warn', short: '—', word: 'not answered', rank: 4, map: 'warn' },
+	uninspected: { text: 'no Inspector', kind: 'uninspected', title: 'up, but it serves no Inspector to describe it', short: '—', word: 'no Inspector', rank: 0.5 },
+	described: {},
+};
+const described = (n) => stateKey(n) === 'described';
+
+// statePill says what node n is, unless described.
+function statePill(n) {
+	const k = stateKey(n), st = STATE[k];
+	return k === 'described' ? '' : pill(k === 'down' ? n.error : st.text, st.kind, st.title);
+}
 
 // head is a page's title and, under it, what the page shows.
 const head = (title, lead) => h('header', { class: 'head' }, h('h1', null, title), h('p', { class: 'lead' }, lead));
@@ -439,23 +460,24 @@ function clusterPage(_node, params) {
 		{ key: 'advertise', t: 'Advertise', get: (n) => h('span', { class: 'mono' }, n.advertise), sort: (n) => n.advertise || '' },
 		{ key: 'metadata', t: 'Metadata', get: (n) => h('span', { class: 'mono' }, metadata(n.metadata)), sort: (n) => metadata(n.metadata) },
 		{ key: 'uptime', t: 'Uptime', num: true, get: (n) => n.uptime, sort: (n) => parseDur(n.uptime) },
-		{ key: 'processes', t: 'Processes', num: true, get: (n) => fmtInt(n.error ? null : n.processes), sort: (n) => n.processes || 0 },
+		{ key: 'processes', t: 'Processes', num: true, get: (n) => fmtInt(described(n) ? n.processes : null), sort: (n) => n.processes || 0 },
 		{ key: 'spawns', t: 'Spawns / s', num: true, get: (n) => fmtRate(nr.get(n.name)?.spawned), sort: (n) => nr.get(n.name)?.spawned || 0 },
 		{ key: 'exits', t: 'Exits / s', num: true, get: (n) => fmtRate(nr.get(n.name)?.exited), sort: (n) => nr.get(n.name)?.exited || 0 },
-		{ key: 'dead', t: 'Dead letters', num: true, get: (n) => [fmtInt(n.error ? null : n.dead_letters), delta(nr.get(n.name)?.dead_letters)], sort: (n) => nr.get(n.name)?.dead_letters || 0 },
+		{ key: 'dead', t: 'Dead letters', num: true, get: (n) => [fmtInt(described(n) ? n.dead_letters : null), delta(nr.get(n.name)?.dead_letters)], sort: (n) => nr.get(n.name)?.dead_letters || 0 },
 		{ key: 'peers', t: 'Peers', get: (n) => peers(n), sort: (n) => n.peers_down || 0, desc: true },
-		{ key: 'error', t: 'Error', wrap: true, get: (n) => (n.error ? pill(n.error, 'bad') : n.unanswered ? pill('not answered in time', 'warn') : ''), sort: (n) => trouble(n, nr), desc: true },
+		{ key: 'error', t: 'Error', wrap: true, get: statePill, sort: (n) => trouble(n, nr), desc: true },
 	];
 
 	function render() {
 		const nodes = data.nodes, key = p.group || '';
-		const up = nodes.filter((n) => !n.error && !n.unanswered);
-		const unreachable = nodes.filter((n) => n.error).length, unanswered = nodes.filter((n) => n.unanswered).length;
+		const states = nodes.map(stateKey), countOf = (k) => states.filter((x) => x === k).length;
+		const up = nodes.filter((_, i) => states[i] === 'described' || states[i] === 'uninspected'), seen = nodes.filter((_, i) => states[i] === 'described');
+		const unreachable = countOf('down'), unanswered = countOf('unanswered'), uninspected = countOf('uninspected');
 		const out = sum(up, (n) => n.outbound), outUp = sum(up, (n) => n.outbound_up);
 		const queued = sum(up, (n) => n.queued);
 		const deadRate = sum(up, (n) => nr.get(n.name)?.dead_letters);
 		cards.replaceChildren(
-			card('Nodes', up.length, [unreachable && `${unreachable} unreachable`, unanswered && `${unanswered} not answered in time`].filter(Boolean).join(', ') || 'all reachable', unreachable ? 'bad' : unanswered && 'warn'),
+			card('Nodes', up.length, [unreachable && `${unreachable} unreachable`, unanswered && `${unanswered} not answered in time`, uninspected && `${uninspected} without an Inspector`].filter(Boolean).join(', ') || 'all reachable', unreachable ? 'bad' : unanswered && 'warn'),
 			card('Processes', fmtInt(sum(up, (n) => n.processes)), `${fmtInt(sum(up, (n) => n.spawned))} spawned in all`),
 			card('Spawns / s', fmtRate(sum(up, (n) => nr.get(n.name)?.spawned)), `exits ${fmtRate(sum(up, (n) => nr.get(n.name)?.exited))}/s`),
 			card('Dead letters', fmtInt(sum(up, (n) => n.dead_letters)), deadRate > 0 ? `+${fmtRate(deadRate)}/s` : 'none lately', deadRate > 0 && 'warn'),
@@ -474,7 +496,7 @@ function clusterPage(_node, params) {
 				drawMap(groupNodes(groups), (l) => ({ messages: l.rate }), { open: (g) => pick(g.group), here: nodes[0]?.metadata?.[key] ?? '' }),
 				h('div', { class: 'legend' }, h('span', null, 'An arrow is a group sending to another; its width grows with messages per second.'), h('span', null, 'Dashed: a link of it is down. Click a group to list its nodes.')),
 			);
-		} else if (!key && up.every((n) => n.links)) {
+		} else if (!key && seen.every((n) => n.links)) {
 			map.replaceChildren(
 				h('div', { class: 'caption' }, 'nodes and links'),
 				drawMap(nodes, (l) => lr.get(linkKey(l))),
@@ -500,7 +522,7 @@ function clusterPage(_node, params) {
 						table(
 							[
 								{ t: key, get: (g) => (g.name === '' ? h('span', { class: 'muted' }, 'none') : h('b', null, g.name)) },
-								{ t: 'Nodes', get: (g) => [`${fmtInt(g.up)} / ${fmtInt(g.nodes)}`, g.unreachable ? [' ', pill(`${g.unreachable} unreachable`, 'bad')] : null, g.unanswered ? [' ', pill(`${g.unanswered} not answered`, 'warn')] : null] },
+								{ t: 'Nodes', get: (g) => [`${fmtInt(g.up)} / ${fmtInt(g.nodes)}`, g.unreachable ? [' ', pill(`${g.unreachable} unreachable`, 'bad')] : null, g.unanswered ? [' ', pill(`${g.unanswered} not answered`, 'warn')] : null, g.uninspected ? [' ', pill(`${g.uninspected} no Inspector`, 'uninspected')] : null] },
 								{ t: 'Processes', num: true, get: (g) => fmtInt(g.processes) },
 								{ t: 'Spawns / s', num: true, get: (g) => fmtRate(g.spawnRate) },
 								{ t: 'Dead letters', num: true, get: (g) => [fmtInt(g.dead), delta(g.deadRate)] },
@@ -541,7 +563,9 @@ function clusterPage(_node, params) {
 			setNodes(data.nodes);
 			const at = data.taken_at;
 			for (const n of data.nodes) Object.assign(n, linkSums(n));
-			nr = nodeRates(data.nodes, (n) => n.name, ['spawned', 'exited', 'dead_letters', 'sent', 'sent_bytes'], at);
+			// Rates of the nodes described alone: the counters of others are
+			// not theirs, and one described again starts its rates afresh.
+			nr = nodeRates(data.nodes.filter(described), (n) => n.name, ['spawned', 'exited', 'dead_letters', 'sent', 'sent_bytes'], at);
 			lr = linkRates(data.nodes.flatMap((n) => (n.links || []).map((l) => ({ ...l, from: n.name }))), linkKey, ['messages', 'bytes'], at);
 			tr = totalRates(data.nodes.flatMap((n) => (n.link_totals || []).map((t) => ({ ...t, from: n.name }))), totalKey, ['messages_sent', 'bytes_sent'], at);
 			render();
@@ -590,10 +614,11 @@ function pager(rows, params) {
 }
 
 // trouble ranks what is wrong with a node, worst first: down, not
-// answered, peers down, a queue, dead letters lately.
+// answered, peers down, a queue, dead letters lately; then no Inspector,
+// which is none of these but is not described.
 function trouble(n, nr) {
-	if (n.error) return 5;
-	if (n.unanswered) return 4;
+	const k = stateKey(n);
+	if (k !== 'described') return STATE[k].rank;
 	return n.peers_down ? 3 : n.queued ? 2 : nr.get(n.name)?.dead_letters > 0 ? 1 : 0;
 }
 
@@ -620,11 +645,15 @@ function groupsOf(nodes, key, nr, tr) {
 	for (const n of nodes) {
 		const name = n.metadata?.[key] ?? '';
 		let g = by.get(name);
-		if (!g) by.set(name, (g = { name, nodes: 0, up: 0, unreachable: 0, unanswered: 0, processes: 0, dead: 0, deadRate: 0, spawnRate: 0, peersDown: 0, queued: 0, sentRate: 0, out: new Map() }));
+		if (!g) by.set(name, (g = { name, nodes: 0, up: 0, unreachable: 0, unanswered: 0, uninspected: 0, processes: 0, dead: 0, deadRate: 0, spawnRate: 0, peersDown: 0, queued: 0, sentRate: 0, out: new Map() }));
 		g.nodes++;
-		if (n.error) g.unreachable++;
-		else if (n.unanswered) g.unanswered++;
-		else {
+		const k = stateKey(n);
+		if (k === 'down') g.unreachable++;
+		else if (k === 'unanswered') g.unanswered++;
+		else if (k === 'uninspected') {
+			g.up++;
+			g.uninspected++;
+		} else {
 			const r = nr.get(n.name);
 			g.up++;
 			g.processes += n.processes || 0;
@@ -715,17 +744,27 @@ function groupNodes(groups) {
 	// The group of nodes without the key is drawn as none, but named apart
 	// from a group whose value is "none".
 	const id = (name) => (name === '' ? '\u0000' : name);
-	return groups.map((g) => ({
+	return groups.map((g) => {
+		// A group is described with a node described; else up, undescribed,
+		// with one that serves no Inspector; else unanswered with one
+		// unanswered, which is not known to be down; else down. One that is
+		// not down but has nodes down is marked.
+		const k = g.up > g.uninspected ? 'described' : g.uninspected ? 'uninspected' : g.unanswered ? 'unanswered' : 'down';
+		return {
 		name: id(g.name),
 		label: g.name || 'none',
 		group: g.name,
 		processes: g.processes,
-		error: g.up ? '' : 'down',
-		title: `${g.name || 'none'}: ${fmtInt(g.up)} of ${fmtInt(g.nodes)} nodes up, ${fmtInt(g.processes)} processes`,
+		error: k === 'down' ? 'down' : '',
+		unanswered: k === 'unanswered',
+		no_inspector: k === 'uninspected',
+		warn: k !== 'down' && g.unreachable > 0,
+		title: `${g.name || 'none'}: ${fmtInt(g.up)} of ${fmtInt(g.nodes)} nodes up${g.uninspected ? `, ${fmtInt(g.uninspected)} without an Inspector` : ''}, ${fmtInt(g.processes)} processes`,
 		links: [...g.out]
 			.filter(([to, e]) => to !== g.name && names.has(to) && (e.rate > 0 || e.down || e.queued))
 			.map(([to, e]) => ({ peer: id(to), direction: 'out', state: e.down ? 'down' : 'up', messages: e.messages, bytes: e.bytes, queued: e.queued, rate: e.rate })),
-	}));
+		};
+	});
 }
 
 // peers are a node's peers, each once, with the state of its link to it;
@@ -793,15 +832,16 @@ function drawMap(nodes, rateOf, opt = {}) {
 	const circles = nodes.map((node) => {
 		const p = pos.get(node.name);
 		const queued = (node.links || []).some((l) => l.queued > 0);
+		const k = stateKey(node), st = STATE[k];
 		const lines = fitLabel(node.label ?? shortName(node.name));
 		const top = lines.length > 1 ? -8 : -1; // two lines sit higher, the count under them
 		return svg(
 			'g',
-			{ class: cls('node', node.error && 'bad', queued && 'warn', (node.group ?? node.name) === here && 'here'), transform: `translate(${p.x},${p.y})`, onclick: () => open(node) },
-			svg('title', null, node.title || (node.error ? `${node.name}: ${node.error}` : `${node.name}: ${node.processes} processes, up ${node.uptime}`)),
+			{ class: cls('node', st.map, (queued || node.warn) && 'warn', (node.group ?? node.name) === here && 'here'), transform: `translate(${p.x},${p.y})`, onclick: () => open(node) },
+			svg('title', null, node.title || (k === 'described' ? `${node.name}: ${node.processes} processes, up ${node.uptime}` : `${node.name}: ${k === 'down' ? node.error : st.title || st.text}`)),
 			svg('circle', { r: R }),
 			lines.map((line, i) => svg('text', { y: top + i * 12 }, line)),
-			svg('text', { class: 'sub', y: top + lines.length * 12 + 1 }, node.error ? 'down' : fmtInt(node.processes)),
+			svg('text', { class: 'sub', y: top + lines.length * 12 + 1 }, k === 'described' ? fmtInt(node.processes) : st.short),
 		);
 	});
 	return svg(
@@ -829,12 +869,11 @@ function nodePage(node, params) {
 	const cMsgs = new Chart('Messages / s between nodes', [['out', '--c1'], ['in', '--c4']]);
 	const cBytes = new Chart('Bytes / s between nodes', [['out', '--c1'], ['in', '--c4']], { fmt: fmtBytes });
 	const nr = rates(), lr = rates();
-	const el = h(
+	// What a node serving no Inspector has none of: hidden until the node
+	// is known to serve one.
+	const shown = h(
 		'div',
 		null,
-		head(['Node ', h('span', { class: 'mono' }, node || '(inspector)')], "Its counters and its links to peers, charted over the last minute."),
-		b.el,
-		cards,
 		h('div', { class: 'charts' }, cProc.el, cLife.el, cDead.el, cMsgs.el, cBytes.el),
 		h('h2', null, 'Links'),
 		h('div', { class: 'scope' }, h('b', null, 'Group by'), select(groupSel), h('span', { class: 'sep' }), h('label', null, filter), h('span', { class: 'spacer' }), count),
@@ -842,6 +881,10 @@ function nodePage(node, params) {
 		links,
 		h('p', null, h('a', { href: href('processes', { node }) }, 'Processes on this node →'), '   ', h('a', { href: href('events', { node }) }, 'Events →')),
 	);
+	shown.hidden = true;
+	const LEAD = 'Its counters and its links to peers, charted over the last minute.';
+	const top = head(['Node ', h('span', { class: 'mono' }, node || '(inspector)')], LEAD);
+	const el = h('div', null, top, b.el, cards, shown);
 	const linkKey = (l) => `${l.peer}>${l.direction}`;
 	const cols = [
 		{ key: 'peer', t: 'Peer', get: (l) => [nodeLink(l.peer), l.incarnation ? null : h('span', { class: 'muted' }, ' never reached')], sort: (l) => l.peer },
@@ -923,6 +966,16 @@ function nodePage(node, params) {
 		},
 		async tick() {
 			n = await api('/api/node', { node });
+			shown.hidden = !!n.no_inspector;
+			top.lastChild.textContent = n.no_inspector ? 'Up, as the cluster sees it, but it serves no Inspector to describe it.' : LEAD;
+			const about = [
+				card('Advertise', h('span', { class: 'mono' }, n.advertise || '–'), 'what peers dial'),
+				...(n.metadata ? [card('Metadata', h('span', { class: 'mono' }, metadata(n.metadata)), 'what it tells the cluster about itself')] : []),
+			];
+			if (n.no_inspector) {
+				cards.replaceChildren(card('Inspector', 'none', 'the rest as the cluster has it'), ...about);
+				return;
+			}
 			const d = nr([n], (x) => x.name, ['spawned', 'exited', 'dead_letters']).get(n.name);
 			const ls = n.links || [];
 			ld = lr(ls, linkKey, ['messages', 'bytes']);
@@ -934,8 +987,7 @@ function nodePage(node, params) {
 				card('Dead letters', fmtInt(n.dead_letters), d?.dead_letters ? `+${fmtRate(d.dead_letters)}/s` : 'none lately', d?.dead_letters > 0 && 'warn'),
 				card('Queued to peers', fmtInt(queued), queued ? fmtBytes(sum(ls, (l) => l.queued_bytes)) : 'nothing waits', queued > 0 && 'warn'),
 				card('Uptime', n.uptime || '–', 'since this incarnation started'),
-				card('Advertise', h('span', { class: 'mono' }, n.advertise || '–'), 'what peers dial'),
-				...(n.metadata ? [card('Metadata', h('span', { class: 'mono' }, metadata(n.metadata)), 'what it tells the cluster about itself')] : []),
+				...about,
 			);
 			cProc.push(n.processes);
 			cLife.push(d?.spawned, d?.exited);
@@ -1225,6 +1277,11 @@ function eventsPage(node) {
 	};
 	src.onerror = () => (status.textContent = 'reconnecting…');
 	src.addEventListener('failure', (e) => b.set((broke = `The event stream broke: ${JSON.parse(e.data)}. Reconnecting.`)));
+	// end: nothing to stream, ever, such as from a node without an Inspector.
+	src.addEventListener('end', (e) => {
+		src.close();
+		status.textContent = `${node || 'the inspector'} ${JSON.parse(e.data)}: no events to stream`;
+	});
 	src.onmessage = (m) => {
 		const e = JSON.parse(m.data);
 		counts[e.kind] = (counts[e.kind] || 0) + 1;
@@ -2033,20 +2090,20 @@ function setNodes(nodes) {
 	selectNode(app.params.node || home());
 }
 
+// pickerWords are the picker's options' words, as last put in.
+let pickerWords = [];
+
 // selectNode shows node in the picker, which offers every node the
 // cluster's walk found, as the browser filters them by what is typed.
 function selectNode(node) {
 	const input = $('#node'), list = $('#node-list');
 	const names = app.nodes.map((n) => n.name);
 	if (!names.includes(node) && node) names.push(node);
-	if (list.options.length !== names.length || [...list.options].some((o, i) => o.value !== names[i])) {
-		const byName = new Map(app.nodes.map((x) => [x.name, x]));
-		list.replaceChildren(
-			...names.map((n) => {
-				const x = byName.get(n);
-				return h('option', { value: n, label: x?.error ? 'unreachable' : x?.unanswered ? 'not answered' : null });
-			}),
-		);
+	const words = app.nodes.map((n) => STATE[stateKey(n)].word || '');
+	if (names.length > words.length) words.push('');
+	if (list.options.length !== names.length || [...list.options].some((o, i) => o.value !== names[i]) || words.some((w, i) => w !== pickerWords[i])) {
+		list.replaceChildren(...names.map((n, i) => h('option', { value: n, label: words[i] || null })));
+		pickerWords = words;
 	}
 	if (document.activeElement !== input) input.value = node;
 }

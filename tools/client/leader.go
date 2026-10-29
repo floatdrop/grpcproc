@@ -39,8 +39,9 @@ type ElectorView struct {
 
 // Election describes the election called cluster on every node Cluster
 // finds that takes part in it, in Cluster's order, asking them at once. A
-// node that runs no elector for it is left out; one that cannot be asked is
-// listed with its Error.
+// node that runs no elector for it is left out; one that cannot be asked,
+// or serves no Inspector and is named by the others (takesPart), is listed
+// with its Error.
 func (c *Client) Election(ctx context.Context, cluster string) ([]ElectorView, error) {
 	nodes, err := c.walkFor(ctx)
 	if err != nil {
@@ -48,17 +49,15 @@ func (c *Client) Election(ctx context.Context, cluster string) ([]ElectorView, e
 	}
 	timeout := quarter(ctx)
 	asked := each(ctx, nodes, timeout, func(ctx context.Context, n NodeView) *ElectorView {
+		if n.NoInspector {
+			return nil // listed below if it takes part
+		}
 		if !n.Reached() {
 			return &ElectorView{Node: n.Name, Error: n.Problem()}
 		}
 		return c.elector(ctx, n.Name, cluster)
 	})
-	out := []ElectorView{}
-	for _, v := range asked {
-		if v != nil {
-			out = append(out, *v)
-		}
-	}
+	out := electors(nodes, func(i int) *ElectorView { return asked[i] })
 	if len(out) == 0 {
 		return nil, fmt.Errorf("no node runs an election called %q", cluster)
 	}
@@ -103,10 +102,11 @@ func (c *Client) Elections(ctx context.Context) ([]ElectionView, error) {
 // part in, by the names its electors are registered under, and describes
 // each, in order of name, as the nodes that run it see it, in nodes'
 // order. It asks each node at once, each within timeout (0: ctx alone). A
-// node that cannot be asked is listed in each election with its Error; an
-// election whose electors all exit while it is asked, with none. When no
-// election is found and a node could not be asked, which may run one, that
-// is the error.
+// node that cannot be asked is listed in each election with its Error, one
+// that serves no Inspector only in those whose electors name it
+// (takesPart); an election whose electors all exit while it is asked, with
+// none. When no election is found and a node that may run one could not be
+// asked, that is the error.
 func (c *Client) ElectionsOf(ctx context.Context, nodes []NodeView, timeout time.Duration) ([]ElectionView, error) {
 	prefix := leader.ElectorName("")
 	type listed struct {
@@ -115,6 +115,9 @@ func (c *Client) ElectionsOf(ctx context.Context, nodes []NodeView, timeout time
 		cause     error
 	}
 	lists := each(ctx, nodes, timeout, func(ctx context.Context, n NodeView) listed {
+		if n.NoInspector {
+			return listed{}
+		}
 		if !n.Reached() {
 			return listed{err: n.Problem()}
 		}
@@ -155,29 +158,67 @@ func (c *Client) ElectionsOf(ctx context.Context, nodes []NodeView, timeout time
 	}
 	out := make([]ElectionView, 0, len(names))
 	for _, name := range slices.Sorted(maps.Keys(names)) {
-		e := ElectionView{Cluster: name, Electors: []ElectorView{}}
-		for i, n := range nodes {
-			switch v := byPart[part{n.Name, name}]; {
-			case lists[i].err != "":
-				e.Electors = append(e.Electors, ElectorView{Node: n.Name, Error: lists[i].err})
-			case v != nil:
-				e.Electors = append(e.Electors, *v)
+		e := ElectionView{Cluster: name, Electors: electors(nodes, func(i int) *ElectorView {
+			if lists[i].err != "" {
+				return &ElectorView{Node: nodes[i].Name, Error: lists[i].err}
 			}
-		}
+			return byPart[part{nodes[i].Name, name}]
+		})}
 		e.Leading = Leading(e.Electors)
 		out = append(out, e)
 	}
 	return out, nil
 }
 
+// electors lists, in nodes' order, the view of(i) gives each node, nil for
+// one that runs no elector, and each node that serves no Inspector that
+// takes part as the others say (takesPart), with Error NotInspected.
+func electors(nodes []NodeView, of func(int) *ElectorView) []ElectorView {
+	asked := make([]*ElectorView, len(nodes))
+	var answered []ElectorView
+	for i := range nodes {
+		if asked[i] = of(i); asked[i] != nil {
+			answered = append(answered, *asked[i])
+		}
+	}
+	out := []ElectorView{}
+	for i, n := range nodes {
+		switch v := asked[i]; {
+		case v != nil:
+			out = append(out, *v)
+		case n.NoInspector && takesPart(answered, n.Name):
+			out = append(out, ElectorView{Node: n.Name, Error: NotInspected})
+		}
+	}
+	return out
+}
+
+// takesPart says whether one of views names node in its view, or follows
+// it: of a node that serves no Inspector, all an election can know.
+func takesPart(views []ElectorView, node string) bool {
+	return slices.ContainsFunc(views, func(v ElectorView) bool { return v.Leader == node || slices.Contains(v.View, node) })
+}
+
 // Leading is the node views say leads: the leader of the highest term, or
-// empty while none does.
+// empty while none does. A node that serves no Inspector cannot say it
+// leads: it does in the term of a node that follows it.
 func Leading(views []ElectorView) string {
+	silent := map[string]bool{}
+	for _, v := range views {
+		silent[v.Node] = v.Error == NotInspected
+	}
 	var lead string
 	var term uint64
 	for _, v := range views {
-		if v.Role == leader.Leader.String() && v.Term >= term {
-			lead, term = v.Node, v.Term
+		n := v.Node
+		if v.Role != leader.Leader.String() {
+			if !silent[v.Leader] {
+				continue
+			}
+			n = v.Leader
+		}
+		if v.Term >= term {
+			lead, term = n, v.Term
 		}
 	}
 	return lead
@@ -204,8 +245,11 @@ func (c *Client) toLeader(ctx context.Context, cluster string, m proto.Message) 
 		return "", err
 	}
 	lead := Leading(views)
-	if lead == "" {
+	switch {
+	case lead == "":
 		return "", fmt.Errorf("no node leads %q now: try again once one does", cluster)
+	case slices.ContainsFunc(views, func(v ElectorView) bool { return v.Node == lead && v.Error == NotInspected }):
+		return "", fmt.Errorf("%s leads %q and serves no Inspector to be asked through", lead, cluster)
 	}
 	body, err := anypb.New(m)
 	if err != nil {

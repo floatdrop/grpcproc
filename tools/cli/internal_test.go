@@ -61,3 +61,24 @@ func TestLoopback(t *testing.T) {
 		}
 	}
 }
+
+func TestAgreed(t *testing.T) {
+	silent := client.ElectorView{Node: "u", Error: client.NotInspected}
+	for _, c := range []struct {
+		views []client.ElectorView
+		want  string
+	}{
+		{[]client.ElectorView{{Node: "a", Leader: "b"}, {Node: "b", Leader: "b"}}, "b"},
+		{[]client.ElectorView{{Node: "a", Leader: "b"}, {Node: "b", Leader: "a"}}, ""},
+		{[]client.ElectorView{{Node: "a", Leader: "b"}, {Node: "b", Error: "busy"}}, ""},
+		{[]client.ElectorView{{Node: "a"}, {Node: "b", Leader: "b"}}, ""},
+		// A node that serves no Inspector names none, whether it leads or not.
+		{[]client.ElectorView{silent, {Node: "a", Leader: "b"}, {Node: "b", Leader: "b"}}, "b"},
+		{[]client.ElectorView{{Node: "a", Leader: "u"}, silent, {Node: "b", Leader: "u"}}, "u"},
+		{[]client.ElectorView{silent}, ""},
+	} {
+		if got := agreed(c.views); got != c.want {
+			t.Errorf("agreed(%+v) = %q, want %q", c.views, got, c.want)
+		}
+	}
+}

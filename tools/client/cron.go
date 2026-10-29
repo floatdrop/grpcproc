@@ -73,9 +73,9 @@ func (c *Client) Crons(ctx context.Context, node string) ([]CronView, error) {
 // CronsOf describes the cron processes of nodes, found by their label,
 // cron, in nodes' order and by PID on each, asking the nodes at once, each
 // within timeout (0: ctx alone). A node that cannot be asked is listed
-// with its Error.
+// with its Error; one that serves no Inspector is left out.
 func (c *Client) CronsOf(ctx context.Context, nodes []NodeView, timeout time.Duration) []CronView {
-	found := each(ctx, nodes, timeout, func(ctx context.Context, n NodeView) []CronView {
+	found := each(ctx, askable(nodes), timeout, func(ctx context.Context, n NodeView) []CronView {
 		if !n.Reached() {
 			return []CronView{{Node: n.Name, Jobs: []CronJobView{}, Error: n.Problem()}}
 		}

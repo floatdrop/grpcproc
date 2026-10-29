@@ -105,3 +105,41 @@ func TestCordonWithNoLeader(t *testing.T) {
 		t.Errorf("cordon with no leader: %v", err)
 	}
 }
+
+// silentLeader is a node a that follows u, which serves no Inspector.
+type silentLeader struct{ inspectv1.InspectorClient }
+
+func (silentLeader) GetNode(_ context.Context, req *inspectv1.GetNodeRequest, _ ...grpc.CallOption) (*inspectv1.GetNodeResponse, error) {
+	if req.GetNode() == "u" {
+		return nil, status.Error(codes.Unimplemented, "inspect: node u: unknown service "+inspectv1.Inspector_ServiceDesc.ServiceName)
+	}
+	info := &inspectv1.NodeInfo{Id: &inspectv1.NodeID{Name: "a"}, Links: []*inspectv1.Link{{Peer: &inspectv1.NodeID{Name: "u"}, Outbound: true, State: inspectv1.LinkState_LINK_STATE_UP}}}
+	return &inspectv1.GetNodeResponse{Node: info}, nil
+}
+
+func (silentLeader) GetProcess(context.Context, *inspectv1.GetProcessRequest, ...grpc.CallOption) (*inspectv1.GetProcessResponse, error) {
+	return &inspectv1.GetProcessResponse{Inspect: map[string]string{"role": "follower", "term": "4", "leader": "u"}}, nil
+}
+
+func TestASilentLeader(t *testing.T) {
+	c := &Client{rpc: silentLeader{}, now: time.Now}
+	views, err := c.Election(t.Context(), "x")
+	if err != nil || len(views) != 2 || views[1].Error != NotInspected {
+		t.Fatalf("%+v %v", views, err)
+	}
+	if lead := Leading(views); lead != "u" {
+		t.Errorf("leading: %q, a follows u", lead)
+	}
+	if _, err := c.Cordon(t.Context(), "x", "a", false); err == nil || err.Error() != `u leads "x" and serves no Inspector to be asked through` {
+		t.Errorf("cordon through a silent leader: %v", err)
+	}
+	// A leader that says so, of a later term, leads; a node that follows
+	// one that can speak for itself names no leader.
+	later := append(views, ElectorView{Node: "b", Role: "leader", Term: 5})
+	if lead := Leading(later); lead != "b" {
+		t.Errorf("leading: %q, b leads term 5", lead)
+	}
+	if lead := Leading([]ElectorView{{Node: "a", Role: "follower", Term: 6, Leader: "b"}}); lead != "" {
+		t.Errorf("leading: %q, from a follower of a node that answers", lead)
+	}
+}

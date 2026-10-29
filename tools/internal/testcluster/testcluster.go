@@ -69,7 +69,8 @@ type unlisted struct{ grpcproc.Names }
 // says version=1.0 in its metadata. A node named "nonames" has no global
 // names, and one named "unlisted" has names it cannot list. With a node named
 // "quiet", which nothing links to, a's Membership reports every node up,
-// and "ghost", which is not running.
+// and "ghost", which is not running. A node named "uninspected" serves no
+// Inspector.
 func Start(t *testing.T, more ...string) *Fixture {
 	t.Helper()
 	names := append([]string{"a", "b"}, more...)
@@ -91,6 +92,9 @@ func Start(t *testing.T, more ...string) *Fixture {
 			}
 		}),
 		grpcproctest.WithServices(func(n *grpcproc.Node, s *grpc.Server) {
+			if n.Name() == "uninspected" {
+				return
+			}
 			insp := inspect.New(n)
 			insp.Register(s)
 			t.Cleanup(func() { _ = insp.Close() })

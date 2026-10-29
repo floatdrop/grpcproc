@@ -23,23 +23,33 @@ type NodeView struct {
 	Members     []MemberView      `json:"members,omitempty" jsonschema:"the nodes its Config.Membership reports up, by name: the cluster as its discovery sees it, linked or not; none without a Membership"`
 	Error       string            `json:"error,omitempty" jsonschema:"why the node could not be inspected"`
 	Unanswered  bool              `json:"unanswered,omitzero" jsonschema:"the time to describe the cluster ran out before this node was asked, or answered: not known to be down"`
+	NoInspector bool              `json:"no_inspector,omitzero" jsonschema:"the node serves no Inspector: up as far as the cluster knows, and not described, so its counters are not its own"`
 
 	raw []grpcproc.LinkInfo // Links, for Cluster to add up again
 }
 
-// NotAnswered is what to show for an Unanswered node where an error goes.
-const NotAnswered = "not answered in time"
+// What to show where an error goes: for an Unanswered node, and for one
+// with NoInspector.
+const (
+	NotAnswered  = "not answered in time"
+	NotInspected = "serves no Inspector"
+)
 
-// Problem says why the node is not described: its Error, or NotAnswered.
+// Problem says why the node is not described: its Error, NotAnswered or
+// NotInspected.
 func (v NodeView) Problem() string {
-	if v.Unanswered {
+	switch {
+	case v.Unanswered:
 		return NotAnswered
+	case v.NoInspector:
+		return NotInspected
 	}
 	return v.Error
 }
 
-// Reached is whether the node answered.
-func (v NodeView) Reached() bool { return v.Error == "" && !v.Unanswered }
+// Reached is whether the node was described: it answered, and serves an
+// Inspector.
+func (v NodeView) Reached() bool { return v.Error == "" && !v.Unanswered && !v.NoInspector }
 
 // LinkTotalsView is a node's links with a group of its peers, added up.
 type LinkTotalsView struct {

@@ -107,9 +107,10 @@ func (c *Client) SagaEngines(ctx context.Context, node string) ([]SagaEngineView
 
 // SagaEnginesOf describes the saga engines of nodes, in nodes' order and by
 // PID on each, asking the nodes at once, each within timeout (0: ctx
-// alone). A node that cannot be asked is listed with its Error.
+// alone). A node that cannot be asked is listed with its Error; one that
+// serves no Inspector is left out.
 func (c *Client) SagaEnginesOf(ctx context.Context, nodes []NodeView, timeout time.Duration) []SagaEngineView {
-	found := each(ctx, nodes, timeout, func(ctx context.Context, n NodeView) []SagaEngineView {
+	found := each(ctx, askable(nodes), timeout, func(ctx context.Context, n NodeView) []SagaEngineView {
 		if !n.Reached() {
 			return []SagaEngineView{{Node: n.Name, Sagas: []string{}, Error: n.Problem()}}
 		}
@@ -160,8 +161,9 @@ func (c *Client) engine(ctx context.Context, node, saga string) (*inspectv1.Targ
 			return nil, "", err
 		}
 		nodes = Reached(all)
-		if i := slices.IndexFunc(all, func(n NodeView) bool { return !n.Reached() }); i >= 0 {
-			failed = fmt.Errorf("%s: %s", all[i].Name, all[i].Problem())
+		asked := askable(all)
+		if i := slices.IndexFunc(asked, func(n NodeView) bool { return !n.Reached() }); i >= 0 {
+			failed = fmt.Errorf("%s: %s", asked[i].Name, asked[i].Problem())
 		}
 	}
 	type listed struct {

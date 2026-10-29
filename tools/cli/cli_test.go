@@ -424,6 +424,17 @@ func TestVersion(t *testing.T) {
 	}
 }
 
+// A node that serves no Inspector is up: nodes says so, with no counters,
+// and node says so of it.
+func TestANodeWithoutInspector(t *testing.T) {
+	f := testcluster.Start(t, "uninspected")
+	if err := f.C.Node("a").SendTo(t.Context(), grpcproc.Name{Node: "uninspected", Name: "x"}, &testpb.Ping{}); err != nil {
+		t.Fatal(err)
+	}
+	has(t, ok(t, run(t, f, "nodes")), "uninspected - - "+client.NotInspected)
+	has(t, ok(t, run(t, f, "node", "uninspected")), "node: uninspected#0 advertise: "+client.NotInspected)
+}
+
 // A peer node a fails to dial shows as a down link with when it is dialed
 // again. nodes marks it down and lists it as unreachable, and dot --cluster
 // still draws the nodes it can reach.

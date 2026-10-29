@@ -16,6 +16,29 @@ import (
 	"github.com/floatdrop/grpcproc/tools/internal/testcluster"
 )
 
+// waitMembers waits until the node c asks reports n members, which its
+// Membership watched from Start does in a moment.
+func waitMembers(t *testing.T, c *client.Client, n int) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(time.Millisecond) {
+		v, err := c.Node(t.Context(), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(v.Members) == n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("members: %+v", v.Members)
+		}
+	}
+}
+
+// all says whether every element of s satisfies f.
+func all[T any](s []T, f func(T) bool) bool {
+	return !slices.ContainsFunc(s, func(v T) bool { return !f(v) })
+}
+
 func TestParseTarget(t *testing.T) {
 	pid, err := client.ParseTarget("<orders.eu.7.42>")
 	if err != nil || pid.GetPid().GetNode() != "orders.eu" || pid.GetPid().GetIncarnation() != 7 || pid.GetPid().GetId() != 42 {
@@ -89,15 +112,7 @@ func TestAgainstACluster(t *testing.T) {
 	// reached.
 	q := testcluster.Start(t, "quiet")
 	qc := client.New(q.C.Conn("a"))
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(time.Millisecond) { // the Membership is watched from Start
-		n, err := qc.Node(ctx, "")
-		if err != nil || len(n.Members) == 4 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("a's members: %+v", n.Members)
-		}
-	}
+	waitMembers(t, qc, 4)
 	nodes, err = qc.Cluster(ctx, client.ClusterOptions{NodeTimeout: time.Second})
 	var got []string
 	for _, n := range nodes {
@@ -115,6 +130,59 @@ func TestAgainstACluster(t *testing.T) {
 	}
 	if ghost := nodes[2]; ghost.Advertise != "ghost" {
 		t.Errorf("ghost as its Membership reports it: %+v", ghost)
+	}
+
+	// A node that serves no Inspector is up, said so, and not described,
+	// walked to or asked alone; what is asked of every node leaves it out
+	// rather than failing on it.
+	u := testcluster.Start(t, "uninspected")
+	if err := u.C.Node("a").SendTo(ctx, grpcproc.Name{Node: "uninspected", Name: "x"}, &testpb.Ping{}); err != nil {
+		t.Fatal(err)
+	}
+	uc := client.New(u.C.Conn("a"))
+	nodes, err = uc.Cluster(ctx, client.ClusterOptions{NodeTimeout: time.Second})
+	i := slices.IndexFunc(nodes, func(n client.NodeView) bool { return n.Name == "uninspected" })
+	if err != nil || i < 0 {
+		t.Fatalf("%+v %v", nodes, err)
+	}
+	if n := nodes[i]; !n.NoInspector || n.Error != "" || n.Unanswered || n.Reached() || n.Problem() != client.NotInspected {
+		t.Fatalf("uninspected: %+v", n)
+	}
+	if n, err := uc.Node(ctx, "uninspected"); err != nil || !n.NoInspector || n.Name != "uninspected" {
+		t.Fatalf("asked alone: %+v %v", n, err)
+	}
+	if _, err := uc.Elections(ctx); err != nil {
+		t.Fatalf("elections: %v", err)
+	}
+	// In an election, it is listed, as one that cannot be asked, where the
+	// others name it, and only there.
+	notIt := func(node string) bool { return node != "uninspected" }
+	u.Elect(t, "x", "a", "b")
+	if es, err := uc.Election(ctx, "x"); err != nil || len(es) != 2 || !all(es, func(e client.ElectorView) bool { return notIt(e.Node) }) {
+		t.Fatalf("election: %+v %v", es, err)
+	}
+	u.Elect(t, "y", "a", "b", "uninspected")
+	if es, err := uc.Election(ctx, "y"); err != nil || len(es) != 3 || all(es, func(e client.ElectorView) bool { return notIt(e.Node) || e.Error != client.NotInspected }) {
+		t.Fatalf("an election it takes part in: %+v %v", es, err)
+	}
+	if es, err := uc.Elections(ctx); err != nil || len(es) != 2 || es[0].Cluster != "x" || len(es[0].Electors) != 2 || len(es[1].Electors) != 3 {
+		t.Fatalf("elections: %+v %v", es, err)
+	}
+	if cs, err := uc.Crons(ctx, ""); err != nil || !all(cs, func(c client.CronView) bool { return notIt(c.Node) }) {
+		t.Fatalf("crons: %+v %v", cs, err)
+	}
+	if ss, err := uc.SagaEngines(ctx, ""); err != nil || !all(ss, func(s client.SagaEngineView) bool { return notIt(s.Node) }) {
+		t.Fatalf("saga engines: %+v %v", ss, err)
+	}
+	if _, _, err := uc.SagaRuns(ctx, "", client.SagaQuery{Saga: "orders"}); err == nil || strings.Contains(err.Error(), "uninspected") {
+		t.Fatalf("a saga no engine runs: %v", err)
+	}
+	// Asked alone, a member is described as the Membership reports it.
+	m := testcluster.Start(t, "quiet", "uninspected")
+	mc := client.New(m.C.Conn("a"))
+	waitMembers(t, mc, 5)
+	if n, err := mc.Node(ctx, "uninspected"); err != nil || !n.NoInspector || n.Advertise != "uninspected" {
+		t.Fatalf("a member asked alone: %+v %v", n, err)
 	}
 
 	// A minimum past uint32 matches nothing; it used to wrap, and 1<<32

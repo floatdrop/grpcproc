@@ -68,7 +68,7 @@ monitors:              2
 | Command | |
 | --- | --- |
 | `node [name]` | counters and links of a node |
-| `nodes` | every node this one knows of, by the members its `Membership` reports and by links, with its peers up and down; `--json` also lists each node's links, up to 32 nodes |
+| `nodes` | every node this one knows of, by the members its `Membership` reports and by links, with its peers up and down; one that serves no Inspector says so, with no counters; `--json` also lists each node's links, up to 32 nodes |
 | `ps` | processes: `--node`, `--name`, `--label`, `--state`, `--min-mailbox`, `--sort pid\|mailbox\|received\|sent\|busy`, `--limit` |
 | `inspect <pid\|name>` | one process, with what it says about itself: `--node`, `--wait` |
 | `names [name]` | [global names](https://floatdrop.github.io/grpcproc/concepts/addressing/#global): who holds one, or a list: `--node`, `--prefix`, `--limit` |
@@ -194,7 +194,8 @@ through the same Inspector and refreshes every second:
 </picture>
 
 - **Cluster**: every node, with its peers up and down, dead letters and
-  queues, those in trouble first, a hundred at a time, and up to 32 nodes a
+  queues, those in trouble first (a node that serves no Inspector is up,
+  marked so, and not described), a hundred at a time, and up to 32 nodes a
   map of the links between them with messages per second on each. Grouped
   by a key of the nodes' metadata, a data center or a shard, it adds each
   group up and maps what goes between groups, up to 24; a group, or a
