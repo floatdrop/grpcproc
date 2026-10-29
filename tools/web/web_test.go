@@ -311,6 +311,12 @@ func TestEvents(t *testing.T) {
 	if !lines.Scan() || lines.Text() != "retry: 3000" {
 		t.Fatalf("first line %q", lines.Text())
 	}
+	// Once the node has answered, the stream says it is ready.
+	for lines.Scan() && lines.Text() != "event: ready" {
+	}
+	if !lines.Scan() || lines.Text() != "data: {}" {
+		t.Fatalf("after ready %q", lines.Text())
+	}
 	// The watch opens after the first line is sent: short-lived processes
 	// start until one is seen to start and end.
 	go func() {

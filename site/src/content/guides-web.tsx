@@ -39,11 +39,11 @@ grpcprocctl --plaintext --addr 10.0.0.5:9000 web   # http://localhost:9911`}</Co
 						rows={[
 							[
 								'Cluster',
-								'Every node, with its peers up and down, dead letters and queues, those in trouble first (a node that serves no Inspector is up, marked so, and not described), a hundred at a time, and up to 32 nodes a map of the links between them with messages per second on each. Grouped by a key of the nodes\' metadata, a data center or a shard, it adds each group up and maps what goes between groups, up to 24; a group, or a filter by name or key=value, lists its nodes. What every name begins with, as the pods of one chart share yarco-moq-, is left off the map and the peers and dimmed wherever a node or a PID is named, on every page: the rest tells the nodes apart. Pages share a walk over the cluster, which asks 32 nodes at a time: a large cluster is walked again once five times as long as the last walk took has passed, and at most 15 seconds. The node picker at the top filters as you type.'
+								'Every node, its address and metadata under its name (a long value shortened by its middle), with how many of its peers are up and those that are not, dead letters and queues, those in trouble first (a node that serves no Inspector is up, marked so, and not described), a hundred at a time, and up to 32 nodes a map of what goes between them, a line a pair, with messages per second on each. Grouped by a key of the nodes\' metadata, a data center or a shard, it adds each group up and maps the groups, up to 24, each a circle that opens on a click to its nodes, up to 32 a group (the URL keeps which are open), and what goes between what it draws: by the nodes\' links, or in a cluster too large for them, by each node\'s links added up by the group of the peer. A group in the table, or a filter by name or key=value, lists its nodes. What every name begins with, as the pods of one chart share yarco-moq-, is left off the map and the peers and dimmed wherever a node or a PID is named, on every page, and on the map so is what the pods of a deployment share, relay / zn57s: the rest tells the nodes apart. Pages share a walk over the cluster, which asks 32 nodes at a time: a large cluster is walked again once five times as long as the last walk took has passed, and at most 15 seconds. The node picker at the top filters as you type.'
 							],
 							[
 								'Node',
-								"One node's counters and links, charted over the last minute; the links down or queued first, a hundred at a time, filtered by peer or grouped by a key of the peers' metadata as the node's Membership reports it."
+								"One node's counters and links, charted over the last minute; a row a peer with its link each way, those down or queued first, a hundred at a time, filtered by peer or grouped by a key of the peers' metadata as the node's Membership reports it."
 							],
 							[
 								'Processes',
@@ -67,7 +67,7 @@ grpcprocctl --plaintext --addr 10.0.0.5:9000 web   # http://localhost:9911`}</Co
 									other nodes of the scope with their states.
 								</>
 							],
-							['Supervision', 'Each process under the one that started it, coloured by state, mailbox or activity.'],
+							['Supervision', 'Each process under the one that started it, coloured by state, mailbox or activity; five or more of one label under one parent with none under them, as a topic a peer each, are a row that opens.'],
 							['Events', 'Spawns, exits with their reasons, links and dead letters, streamed as they happen.'],
 							[
 								'Cron, Elections',

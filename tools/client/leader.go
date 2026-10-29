@@ -85,7 +85,7 @@ func (c *Client) elector(ctx context.Context, node, cluster string) *ElectorView
 // part sees it.
 type ElectionView struct {
 	Cluster  string        `json:"cluster"`
-	Leading  string        `json:"leading,omitempty" jsonschema:"the leader of the highest term any node knows; empty while none leads"`
+	Leading  string        `json:"leading,omitempty" jsonschema:"the node that leads in the highest term: one that says it does, or one that serves no Inspector and a node of that term follows; empty while none leads"`
 	Electors []ElectorView `json:"electors"`
 }
 
@@ -199,9 +199,10 @@ func takesPart(views []ElectorView, node string) bool {
 	return slices.ContainsFunc(views, func(v ElectorView) bool { return v.Leader == node || slices.Contains(v.View, node) })
 }
 
-// Leading is the node views say leads: the leader of the highest term, or
-// empty while none does. A node that serves no Inspector cannot say it
-// leads: it does in the term of a node that follows it.
+// Leading is the node views say leads: of the nodes that say they lead,
+// and those that serve no Inspector, which cannot, that a node follows, the
+// one of the highest term; empty while there is none. A node that follows
+// another that can say so and does not names no leader.
 func Leading(views []ElectorView) string {
 	silent := map[string]bool{}
 	for _, v := range views {

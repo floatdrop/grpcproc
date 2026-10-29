@@ -731,6 +731,13 @@ td.wrap:has(.under) {
 	max-width: 720px;
 }
 
+/* In a table, two lines at most: the rest in its title, and on the node's
+   page. */
+td .under {
+	max-height: calc(2 * var(--g-text-caption-2-line-height) + 4px);
+	overflow: hidden;
+}
+
 .under .chips {
 	display: contents;
 }
@@ -766,10 +773,6 @@ td.wrap:has(.under) {
 	color: var(--g-color-text-secondary);
 }
 
-/* A pid on the page of its node: what tells it apart, its id, stands out. */
-.prefix .id {
-	color: var(--g-color-text-primary);
-}
 
 .delta {
 	margin-inline-start: var(--g-spacing-1);
@@ -891,6 +894,53 @@ td.wrap:has(.under) {
 	stroke: var(--g-color-base-background);
 	stroke-width: 4px;
 	stroke-linejoin: round;
+}
+
+.map .node.small text {
+	font-size: 10px;
+}
+
+/* An opened group: a ring around its nodes, its name over it. */
+.map .hull {
+	cursor: pointer;
+}
+
+.map .hull circle {
+	fill: var(--g-color-base-generic-ultralight);
+	stroke: var(--g-color-line-generic-accent);
+	stroke-dasharray: 2 4;
+}
+
+.map .hull:hover circle {
+	stroke: var(--g-color-line-generic-accent-hover);
+}
+
+.map .hull.warn circle {
+	stroke: var(--g-color-line-warning);
+}
+
+.map .hull.bad circle {
+	stroke: var(--g-color-line-danger);
+}
+
+.map .hull text {
+	fill: var(--g-color-text-secondary);
+	font-size: 11px;
+	text-anchor: middle;
+}
+
+.map .caption button.flat {
+	padding: 0 var(--g-spacing-2);
+	border: 0;
+	background: none;
+	font: inherit;
+	color: var(--g-color-text-link);
+	cursor: pointer;
+}
+
+.map .caption button.flat:disabled {
+	color: var(--g-color-text-hint);
+	cursor: default;
 }
 
 .map .legend {

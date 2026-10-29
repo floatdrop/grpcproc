@@ -307,10 +307,11 @@ func (s *server) process(ctx context.Context, q url.Values) (any, error) {
 	return s.c.Process(ctx, q.Get("node"), q.Get("target"), q.Get("inspect") == "1", wait)
 }
 
-// events streams node's events, one JSON object per event. If the node
-// cannot be reached, or the Inspector ends the stream, a "failure" event says
-// why and the browser's EventSource connects again; if it serves no
-// Inspector, an "end" event says so, and the browser stops.
+// events streams node's events, one JSON object per event, after a
+// "ready" event once the node has answered. If the node cannot be reached,
+// or the Inspector ends the stream, a "failure" event says why and the
+// browser's EventSource connects again; if it serves no Inspector, an "end"
+// event says so, and the browser stops.
 func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	rc := http.NewResponseController(w)
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -335,6 +336,12 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 		b, _ := json.Marshal(client.NotInspected)
 		_, _ = fmt.Fprintf(w, "event: end\ndata: %s\n\n", b)
 		return
+	}
+	if err == nil {
+		// The stream opened before the node was asked: ready says it answered.
+		if _, err = fmt.Fprint(w, "event: ready\ndata: {}\n\n"); err == nil {
+			err = rc.Flush()
+		}
 	}
 	if err == nil {
 		err = s.c.Watch(r.Context(), node, func(e client.EventView) bool {

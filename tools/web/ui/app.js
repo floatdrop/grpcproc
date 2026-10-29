@@ -100,17 +100,21 @@ const nodeOf = (pid) => pidParts(pid)?.node || '';
 // node's restarts apart, is left out, and the node's prefix is dimmed, as
 // nameEl dims it; on a page about its node, the node is left out too. The
 // full pid is its title.
-function pidText(pid) {
+function pidText(pid, whole) {
 	const p = pidParts(pid);
 	if (!p) return pid;
-	return p.node === pageNode() ? [h('span', { class: 'prefix' }, '<….'), String(p.id), h('span', { class: 'prefix' }, '>')] : ['<', nameEl(p.node), `.….${p.id}>`];
+	return !whole && p.node === pageNode() ? [h('span', { class: 'prefix' }, '<….'), String(p.id), h('span', { class: 'prefix' }, '>')] : ['<', nameEl(p.node), `.….${p.id}>`];
 }
 
 // pageNode is the node the page shows, on the pages about one node; ''
-// elsewhere.
+// elsewhere. A drawer shows pids whole: it may be about another node.
 function pageNode() {
-	const r = route();
-	return NODE_PAGES.has(r.page) ? r.params.node || home() : '';
+	if (pageNode.hash !== location.hash + home()) {
+		const r = route();
+		pageNode.hash = location.hash + home();
+		pageNode.node = NODE_PAGES.has(r.page) ? r.params.node || home() : '';
+	}
+	return pageNode.node;
 }
 const NODE_PAGES = new Set(['node', 'processes', 'tree', 'events']);
 // rel says how far a time is from now, as in 3m or 2h ago; its title is the
@@ -296,15 +300,16 @@ function banner() {
 // as none.
 const defs = (pairs) => pairs.flatMap(([k, v]) => [h('span', { class: 'k' }, k), h('span', { class: 'v' }, v || h('span', { class: 'muted' }, 'none'))]);
 
-// pidLink opens the process in the drawer, over whatever page is showing.
-function pidLink(pid, text) {
+// pidLink opens the process in the drawer, over whatever page is showing;
+// whole, its node is named on the node's own page too.
+function pidLink(pid, text, whole) {
 	if (!pid) return null;
 	const r = route();
-	return h('a', { class: 'mono', title: pid, href: href(r.page, { ...r.params, proc: pid }), onclick: (e) => e.stopPropagation() }, text || pidText(pid));
+	return h('a', { class: 'mono', title: pid, href: href(r.page, { ...r.params, proc: pid }), onclick: (e) => e.stopPropagation() }, text || pidText(pid, whole));
 }
 
 // linkify turns the pids in a line a process says about itself into links.
-const linkify = (s) => s.split(/(<[^<>\s]+\.\d+\.\d+>)/).map((part, i) => (i % 2 ? pidLink(part) : part));
+const linkify = (s, whole) => s.split(/(<[^<>\s]+\.\d+\.\d+>)/).map((part, i) => (i % 2 ? pidLink(part, null, whole) : part));
 
 // table draws rows under cols: {key, t (title), num, desc, wrap, get(row), sort(row)}.
 function table(cols, rows, opt = {}) {
@@ -367,6 +372,7 @@ class Chart {
 		this.fmt = opt.fmt || fmtRate;
 		this.n = opt.points || 60;
 		this.series = series.map(([name, color]) => ({ name, color, data: [], val: h('b', null, '–') }));
+		this.t = []; // when each sample was taken
 		this.canvas = h('canvas');
 		this.el = h(
 			'div',
@@ -383,6 +389,8 @@ class Chart {
 	}
 
 	push(...vals) {
+		this.t.push(performance.now());
+		if (this.t.length > this.n) this.t.shift();
 		this.series.forEach((s, i) => {
 			const v = vals[i] ?? null;
 			s.data.push(v);
@@ -405,10 +413,14 @@ class Chart {
 		g.clearRect(0, 0, w, ht);
 		const css = getComputedStyle(document.documentElement);
 		let max = 0, points = 0;
-		for (const s of this.series) for (const v of s.data) if (v != null) (points++, (max = Math.max(max, v)));
+		for (const s of this.series) {
+			let n = 0;
+			for (const v of s.data) if (v != null) (n++, (max = Math.max(max, v)));
+			points = Math.max(points, n);
+		}
 		// Nothing yet, or nothing but naughts: said in words, not drawn as a
 		// scale of 1 over a flat line.
-		const quiet = points < 2 ? 'charting from now' : max === 0 ? 'none in the last ' + fmtSpan((this.series[0].data.length * (app.interval || 1000)) / 1000) : '';
+		const quiet = points < 2 ? 'charting from now' : max === 0 ? `none in the last ${fmtSpan((this.t.at(-1) - this.t[0]) / 1000)}` : '';
 		max = niceCeil(max);
 		const top = 12, bottom = ht - 2, span = bottom - top;
 		g.strokeStyle = css.getPropertyValue('--g-color-line-generic');
@@ -477,7 +489,7 @@ function clusterPage(_node, params) {
 	const groupsEl = h('div');
 	const list = h('div');
 	const count = h('span', { class: 'muted' });
-	const groupSel = h('select', { 'aria-label': 'Group by', onchange: (e) => set({ group: e.target.value, q: '', page: '' }) });
+	const groupSel = h('select', { 'aria-label': 'Group by', onchange: (e) => set({ group: e.target.value, q: '', page: '', open: '' }) });
 	const filter = h('input', { type: 'search', placeholder: 'name, or key=value', value: p.q || '', oninput: debounce((e) => set({ q: e.target.value, page: '' }), 300) });
 	const nodeRates = rates(), linkRates = rates(), totalRates = rates();
 	const el = h(
@@ -503,7 +515,7 @@ function clusterPage(_node, params) {
 			wrap: true,
 			get: (n) => [
 				h('div', null, nameEl(n.name, true), n === data.nodes[0] ? [' ', pill('inspector', 'info')] : null),
-				n.advertise || n.metadata ? h('div', { class: 'under' }, n.advertise ? h('span', { class: 'mono', title: 'what peers dial' }, n.advertise) : null, chips(n.metadata)) : null,
+				n.advertise || n.metadata ? h('div', { class: 'under', title: [n.advertise, ...Object.keys(n.metadata || {}).sort().map((k) => `${k}=${n.metadata[k]}`)].filter(Boolean).join('\n') }, n.advertise ? h('span', { class: 'mono' }, n.advertise) : null, chips(n.metadata)) : null,
 			],
 			sort: (n) => n.name,
 		},
@@ -539,21 +551,48 @@ function clusterPage(_node, params) {
 		const groups = key ? groupsOf(nodes, key, nr, tr) : [];
 		const pick = (g) => set({ q: filterOf(key, g), page: '' });
 		if (key && groups.length <= MAP_GROUPS) {
+			const opened = openOf(p);
+			const isOpen = (g) => opened === ALL || opened.has(g);
+			const toggle = (g) => {
+				const names = groups.map((x) => x.name);
+				const now = new Set(opened === ALL ? names : names.filter((x) => opened.has(x)));
+				if (isOpen(g)) now.delete(g);
+				else now.add(g);
+				set({ open: now.size === groups.length ? '*' : now.size ? JSON.stringify([...now]) : '' });
+			};
+			const some = groups.some((g) => isOpen(g.name));
 			map.replaceChildren(
-				h('div', { class: 'caption' }, `groups by ${key}, and what goes between them`),
-				drawMap(groupNodes(groups), (l) => ({ messages: l.rate }), { open: (g) => pick(g.group), here: nodes[0]?.metadata?.[key] ?? '' }),
-				h('div', { class: 'legend' }, h('span', null, 'An arrow is a group sending to another; its width grows with messages per second.'), h('span', null, 'Dashed: a link of it is down. Click a group to list its nodes.')),
-			);
-		} else if (!key && seen.every((n) => n.links)) {
-			map.replaceChildren(
-				h('div', { class: 'caption' }, 'nodes and links'),
-				drawMap(nodes, (l) => lr.get(linkKey(l))),
+				h(
+					'div',
+					{ class: 'caption' },
+					`groups by ${key}, and what goes between them`,
+					h('span', { class: 'spacer' }),
+					h('button', { type: 'button', class: 'flat', onclick: () => set({ open: '*' }) }, 'Open all'),
+					h('button', { type: 'button', class: 'flat', disabled: !some, onclick: () => set({ open: '' }) }, 'Close all'),
+				),
+				groupMap(groups, nodes, key, isOpen, { lr, tr, hereGroup: nodes[0]?.metadata?.[key] ?? '', hereNode: nodes[0]?.name, toggle, pick }),
 				h(
 					'div',
 					{ class: 'legend' },
-					h('span', null, 'An arrow is a node sending to a peer; its width grows with messages per second.'),
+					h('span', null, 'A circle is a group: click it to open it to its nodes, an opened one’s ring to close it.'),
+					h('span', null, 'A line is what two send each other, a head at each end sent to; its width grows with messages per second. Dashed: a link of it is down.'),
+				),
+			);
+		} else if (!key && seen.every((n) => n.links)) {
+			const lines = familyLabels(nodes.map((n) => shortName(n.name)));
+			map.replaceChildren(
+				h('div', { class: 'caption' }, 'nodes and links'),
+				drawMap(
+					nodes.map((n) => ({ ...n, lines: lines.get(shortName(n.name)) })),
+					(l) => lr.get(linkKey(l)),
+				),
+				h(
+					'div',
+					{ class: 'legend' },
+					h('span', null, 'A line is what two nodes send each other, a head at each end sent to; its width grows with messages per second.'),
 					h('span', null, 'Dashed: connecting or down. Click a node to open it.'),
-					app.prefix ? h('span', null, 'Names without the ', h('span', { class: 'mono' }, app.prefix), ' they all begin with.') : null,
+					app.prefix ? h('span', null, 'Names without the ', h('span', { class: 'mono' }, app.prefix), ' they all begin with, and what a deployment’s pods share.') : null,
+					nodes.length > 12 && keys.length ? h('span', null, 'Group by a key to fold the map.') : null,
 				),
 			);
 		} else {
@@ -633,6 +672,18 @@ function setKeys(sel, keys, key) {
 	sel.value = key;
 }
 
+// openOf is the groups params say the map opens: ALL, or a set of names.
+function openOf(params) {
+	if (params.open === '*') return ALL;
+	try {
+		const names = JSON.parse(params.open || '[]');
+		return new Set(Array.isArray(names) ? names.map(String) : []);
+	} catch {
+		return new Set();
+	}
+}
+const ALL = Symbol('all');
+
 // MAP_GROUPS is the most groups the cluster map draws.
 const MAP_GROUPS = 24;
 
@@ -662,8 +713,8 @@ function pager(rows, params) {
 }
 
 // trouble ranks what is wrong with a node, worst first: down, not
-// answered, peers down, a queue, dead letters lately; then no Inspector,
-// which is none of these but is not described.
+// answered, peers down, a queue, dead letters lately. One that serves no
+// Inspector has none of these: it ranks as a healthy one.
 function trouble(n, nr) {
 	const k = stateKey(n);
 	if (k !== 'described') return STATE[k].rank;
@@ -792,50 +843,31 @@ const MAP_CHARS = 10;
 // at a separator when the rest then fits, or when it fits no other way, and
 // then shortened in the middle, since its end is what tells names apart, as
 // a pod's does.
-function fitLabel(label) {
-	if (label.length <= MAP_CHARS) return [label];
+function fitLabel(label, width = MAP_CHARS) {
+	if (label.length <= width) return [label];
 	// the last separator with a line's worth before it and something after
-	const at = [...label.slice(1, MAP_CHARS + 1).matchAll(/[-._:/]/g)].map((m) => m.index + 1).findLast((i) => i < label.length - 1);
-	const fits = (i) => label.length - i <= MAP_CHARS; // what follows i fits a line
-	const [cut, from] = at && (fits(at + 1) || !fits(MAP_CHARS)) ? [at, at + 1] : [MAP_CHARS, MAP_CHARS];
+	const at = [...label.slice(1, width + 1).matchAll(/[-._:/]/g)].map((m) => m.index + 1).findLast((i) => i < label.length - 1);
+	const fits = (i) => label.length - i <= width; // what follows i fits a line
+	const [cut, from] = at && (fits(at + 1) || !fits(width)) ? [at, at + 1] : [width, width];
 	const rest = label.slice(from);
-	return [label.slice(0, cut), rest.length > MAP_CHARS ? `${rest.slice(0, 4)}…${rest.slice(-(MAP_CHARS - 5))}` : rest];
+	return [label.slice(0, cut), rest.length > width ? middle(rest, width) : rest];
 }
 
-// groupNodes draws groups as drawMap draws nodes: each group a node, and a
-// link what it sends to another group, where something goes or is wrong.
-function groupNodes(groups) {
-	const names = new Set(groups.map((g) => g.name));
-	// The group of nodes without the key is drawn as none, but named apart
-	// from a group whose value is "none".
-	const id = (name) => (name === '' ? '\u0000' : name);
-	return groups.map((g) => {
-		// A group is described with a node described; else up, undescribed,
-		// with one that serves no Inspector; else unanswered with one
-		// unanswered, which is not known to be down; else down. One that is
-		// not down but has nodes down is marked.
-		const k = g.up > g.uninspected ? 'described' : g.uninspected ? 'uninspected' : g.unanswered ? 'unanswered' : 'down';
-		return {
-		name: id(g.name),
-		label: g.name || 'none',
-		group: g.name,
-		processes: g.processes,
-		error: k === 'down' ? 'down' : '',
-		unanswered: k === 'unanswered',
-		no_inspector: k === 'uninspected',
-		warn: k !== 'down' && g.unreachable > 0,
-		title: `${g.name || 'none'}: ${fmtInt(g.up)} of ${fmtInt(g.nodes)} nodes up${g.uninspected ? `, ${fmtInt(g.uninspected)} without an Inspector` : ''}, ${fmtInt(g.processes)} processes`,
-		links: [...g.out]
-			.filter(([to, e]) => to !== g.name && names.has(to) && (e.rate > 0 || e.down || e.queued))
-			.map(([to, e]) => ({ peer: id(to), direction: 'out', state: e.down ? 'down' : 'up', messages: e.messages, bytes: e.bytes, queued: e.queued, rate: e.rate })),
-		};
-	});
+// groupState is the state a group is drawn in, as stateKey reads a node:
+// described with a node described; else up, undescribed, with one that
+// serves no Inspector; else unanswered with one unanswered, which is not
+// known to be down; else down. One that is not down but has nodes down is
+// marked warn.
+function groupState(g) {
+	const k = g.up > g.uninspected ? 'described' : g.uninspected ? 'uninspected' : g.unanswered ? 'unanswered' : 'down';
+	return { error: k === 'down' ? 'down' : '', unanswered: k === 'unanswered', no_inspector: k === 'uninspected', warn: k !== 'down' && g.unreachable > 0 };
 }
 
 // peers says how many of a node's peers are up, and names those that are
 // not, up to PEERS_NAMED, without prefix; with its links, its title lists
 // them all.
 function peers(n) {
+	if (!described(n)) return ''; // nothing known of its peers
 	const named = (p, s) => {
 		const short = shortName(p);
 		return pill(short, s, short === p ? null : p);
@@ -879,61 +911,366 @@ function linkSums(n) {
 	};
 }
 
-// drawMap lays the nodes out on an ellipse, the inspector's node first,
-// and draws each out link as an arrow bent to its right, so the two
-// directions between a pair of nodes stay apart. A click on a node opens
-// it, or does what opt.open says; opt.here names the node to mark, the
-// first by default.
-function drawMap(nodes, rateOf, opt = {}) {
-	const open = opt.open || ((node) => go('node', { node: node.name }));
-	const here = opt.here ?? nodes[0]?.name;
-	const W = 800, H = 340, cx = W / 2, cy = H / 2, R = 34;
-	const n = nodes.length;
-	const rx = n < 2 ? 0 : Math.min(300, 90 + n * 40), ry = n < 3 ? 0 : 118;
-	const a0 = n === 2 ? Math.PI : -Math.PI / 2;
-	const pos = new Map(nodes.map((node, i) => [node.name, { x: cx + rx * Math.cos(a0 + (i * 2 * Math.PI) / n), y: cy + ry * Math.sin(a0 + (i * 2 * Math.PI) / n) }]));
+// drawMap lays the nodes out around an ellipse (ring), the inspector's
+// node first, at the top, and draws what goes between each pair of them
+// (pairArrows). A click on a node opens it.
+function drawMap(nodes, rateOf) {
+	const here = nodes[0]?.name, R = MAP_R;
+	const xy = ring(nodes.map(() => R), 30);
+	const pos = new Map(nodes.map((node, i) => [node.name, xy[i]]));
 	const labelOf = new Map(nodes.map((node) => [node.name, node.label ?? node.name]));
-	const edges = [], labels = [];
+	const ends = new Map(nodes.map((node) => [node.name, { id: node.name, ...pos.get(node.name), r: R }]));
+	const directed = [];
 	for (const node of nodes) {
 		for (const l of node.links || []) {
-			const p = pos.get(node.name), q = pos.get(l.peer);
-			if (l.direction !== 'out' || !q) continue;
-			const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
-			const sx = p.x + ux * R + nx * 7, sy = p.y + uy * R + ny * 7, ex = q.x - ux * (R + 3) + nx * 7, ey = q.y - uy * (R + 3) + ny * 7;
-			const mx = (p.x + q.x) / 2 + nx * 30, my = (p.y + q.y) / 2 + ny * 30;
+			if (l.direction !== 'out' || !ends.has(l.peer)) continue;
 			const r = rateOf({ ...l, from: node.name });
-			const width = 1.5 + Math.min(5, Math.log10(1 + (r?.messages || 0)) * 1.4);
 			const tip = `${labelOf.get(node.name)} → ${labelOf.get(l.peer)}: ${l.state}, ${fmtInt(l.messages)} messages, ${fmtBytes(l.bytes)}` + (l.queued ? `, ${l.queued} queued` : '') + (l.last_error ? `\nlast error: ${l.last_error}` : '');
-			edges.push(svg('path', { class: cls('link', l.state), d: `M${sx},${sy} Q${mx},${my} ${ex},${ey}`, 'stroke-width': width, 'marker-end': 'url(#arrow)' }, svg('title', null, tip)));
-			if (r?.messages > 0 || l.queued) {
-				const lx = 0.25 * sx + 0.5 * mx + 0.25 * ex + nx * 8, ly = 0.25 * sy + 0.5 * my + 0.25 * ey + ny * 8;
-				labels.push(svg('text', { class: 'rate', x: lx, y: ly }, `${fmtRate(r?.messages || 0)}/s` + (l.queued ? ` q${l.queued}` : '')));
-			}
+			directed.push({ a: ends.get(node.name), b: ends.get(l.peer), rate: r?.messages || 0, queued: l.queued || 0, state: l.state, tip });
 		}
 	}
+	const { arrows, labels } = pairArrows(directed, true);
 	const circles = nodes.map((node) => {
 		const p = pos.get(node.name);
 		const queued = (node.links || []).some((l) => l.queued > 0);
 		const k = stateKey(node), st = STATE[k];
-		const lines = fitLabel(node.label ?? shortName(node.name));
+		const lines = node.lines || fitLabel(node.label ?? shortName(node.name));
 		const top = lines.length > 1 ? -8 : -1; // two lines sit higher, the count under them
 		return svg(
 			'g',
-			{ class: cls('node', st.map, (queued || node.warn) && 'warn', (node.group ?? node.name) === here && 'here'), transform: `translate(${p.x},${p.y})`, onclick: () => open(node) },
-			svg('title', null, node.title || (k === 'described' ? `${node.name}: ${node.processes} processes, up ${node.uptime}` : `${node.name}: ${k === 'down' ? node.error : st.title || st.text}`)),
+			{ class: cls('node', st.map, queued && 'warn', node.name === here && 'here'), transform: `translate(${p.x},${p.y})`, onclick: () => go('node', { node: node.name }) },
+			svg('title', null, k === 'described' ? `${node.name}: ${node.processes} processes, up ${node.uptime}` : `${node.name}: ${k === 'down' ? node.error : st.title || st.text}`),
 			svg('circle', { r: R }),
 			lines.map((line, i) => svg('text', { y: top + i * 12 }, line)),
 			svg('text', { class: 'sub', y: top + lines.length * 12 + 1 }, k === 'described' ? fmtInt(node.processes) : st.short),
 		);
 	});
-	return svg(
-		'svg',
-		{ viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'xMidYMid meet', role: 'img', 'aria-label': 'Nodes and the links between them' },
-		svg('defs', null, svg('marker', { id: 'arrow', viewBox: '0 0 10 10', refX: 8, refY: 5, markerWidth: 9, markerHeight: 9, markerUnits: 'userSpaceOnUse', orient: 'auto' }, svg('path', { d: 'M0,0 L10,5 L0,10 z' }))),
-		edges,
+	return mapSvg(
+		'Nodes and the links between them',
+		xy.map((p) => ({ ...p, r: R })),
+		arrowMarker(),
+		arrows,
 		labels,
 		circles,
 	);
+}
+
+// mapSvg is a map: its view box around circles {x, y, r, over}, over the
+// room a name takes above one, and at least as large as 800 by 340, so a
+// few draw no larger than a map of many.
+function mapSvg(label, circles, ...kids) {
+	let x0 = Math.min(...circles.map((c) => c.x - c.r)), x1 = Math.max(...circles.map((c) => c.x + c.r));
+	let y0 = Math.min(...circles.map((c) => c.y - c.r - (c.over || 0))), y1 = Math.max(...circles.map((c) => c.y + c.r));
+	const W = Math.max(800, x1 - x0 + 40), H = Math.max(340, y1 - y0 + 40);
+	x0 -= (W - (x1 - x0)) / 2;
+	y0 -= (H - (y1 - y0)) / 2;
+	return svg(
+		'svg',
+		{ viewBox: `${x0} ${y0} ${W} ${H}`, preserveAspectRatio: 'xMidYMid meet', role: 'img', 'aria-label': label, style: { aspectRatio: `${W} / ${H}`, maxHeight: `${Math.min(640, H)}px` } },
+		...kids,
+	);
+}
+
+// pairArrows draws what goes between two ends of a map as one line, a
+// head at each end sent to, as wide as both ways add up to; its title says
+// each way, its label, when labelled, the messages per second. Two curves
+// a pair would make a star, every node sending to one and back, a tangle.
+// An end is {id, x, y, r}; an edge {a, b, rate, queued, state, tip}.
+function pairArrows(directed, labelled) {
+	const pairs = new Map();
+	for (const e of directed) {
+		const [a, b] = e.a.id < e.b.id ? [e.a, e.b] : [e.b, e.a];
+		const k = `${a.id}\n${b.id}`;
+		if (!pairs.has(k)) pairs.set(k, { a, b, ways: [] });
+		pairs.get(k).ways.push(e);
+	}
+	const rank = { up: 0, connecting: 1, down: 2 };
+	const arrows = [], labels = [];
+	for (const { a, b, ways } of pairs.values()) {
+		const rate = sum(ways, (e) => e.rate), queued = sum(ways, (e) => e.queued);
+		const state = ways.reduce((s, e) => ((rank[e.state] ?? 1) > rank[s] ? e.state : s), 'up');
+		const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+		const sx = a.x + ux * (a.r + 3), sy = a.y + uy * (a.r + 3), ex = b.x - ux * (b.r + 3), ey = b.y - uy * (b.r + 3);
+		arrows.push(
+			svg(
+				'path',
+				{ class: cls('link', state), d: `M${sx},${sy} L${ex},${ey}`, 'stroke-width': arrowWidth(rate), 'marker-end': ways.some((e) => e.b === b) ? 'url(#arrow)' : null, 'marker-start': ways.some((e) => e.b === a) ? 'url(#arrow-back)' : null },
+				svg('title', null, ways.map((e) => e.tip).join('\n')),
+			),
+		);
+		if (labelled && (rate > 0 || queued)) labels.push(svg('text', { class: 'rate', x: (sx + ex) / 2 - uy * 9, y: (sy + ey) / 2 + ux * 9 + 4 }, `${fmtRate(rate)}/s` + (queued ? ` q${fmtInt(queued)}` : '')));
+	}
+	return { arrows, labels };
+}
+
+// MAP_LABELLED is the most arrows a map labels with their rates: more crowd
+// it, and their titles still say.
+const MAP_LABELLED = 16;
+
+// arrowWidth grows with messages per second.
+const arrowWidth = (rate) => 1.5 + Math.min(5, Math.log10(1 + (rate || 0)) * 1.4);
+
+// arrowMarker is the heads arrows end in: at the end of a line, and at its
+// start, where it is drawn the other way.
+const arrowMarker = () =>
+	svg(
+		'defs',
+		null,
+		svg('marker', { id: 'arrow', viewBox: '0 0 10 10', refX: 8, refY: 5, markerWidth: 9, markerHeight: 9, markerUnits: 'userSpaceOnUse', orient: 'auto' }, svg('path', { d: 'M0,0 L10,5 L0,10 z' })),
+		svg('marker', { id: 'arrow-back', viewBox: '0 0 10 10', refX: 2, refY: 5, markerWidth: 9, markerHeight: 9, markerUnits: 'userSpaceOnUse', orient: 'auto' }, svg('path', { d: 'M10,0 L0,5 L10,10 z' })),
+	);
+
+// familyLabels gives each of names the lines the map labels it with, of
+// width characters at most. Names of as many parts that begin with the same
+// word, as the pods of a deployment do, relay-74b96c87fb-zn57s and
+// relay-74b96c87fb-q8hnh, are that word over the parts that tell them
+// apart, the others left out: relay / zn57s; web-1.dc1.example.com is
+// web / 1. Others, and names that begin with a number, as addresses do,
+// are fitted as fitLabel fits them.
+function familyLabels(names, width = MAP_CHARS) {
+	const parsed = new Map(
+		names.map((n) => {
+			const t = n.split(/([-._:/])/); // parts, and the separator before each
+			return [n, { parts: t.filter((_, i) => i % 2 === 0), seps: ['', ...t.filter((_, i) => i % 2)] }];
+		}),
+	);
+	// A family is the names that begin with one word, all of as many parts:
+	// relay-74b96c87fb-zn57s beside relay-edge-5f6d7c8b9a-x5l58 makes none,
+	// as their first word would not tell them apart. The parts that tell a
+	// family's names apart are those not alike in all of them.
+	const kin = (n, parts) => parts.length > 1 && /^[a-z]/i.test(parts[0]) && !ADDRESS.test(n);
+	const families = new Map();
+	for (const [n, { parts }] of parsed) {
+		if (!kin(n, parts)) continue;
+		if (!families.has(parts[0])) families.set(parts[0], { first: parts, names: 0, mixed: false, told: new Set() });
+		const f = families.get(parts[0]);
+		f.names++;
+		f.mixed ||= parts.length !== f.first.length;
+		parts.forEach((x, i) => i && x !== f.first[i] && f.told.add(i));
+	}
+	const out = new Map();
+	for (const n of names) {
+		const { parts, seps } = parsed.get(n), f = kin(n, parts) && families.get(parts[0]);
+		const told = f && f.names > 1 && !f.mixed ? [...f.told].sort((a, b) => a - b) : [];
+		if (!told.length) {
+			out.set(n, fitLabel(n, width));
+			continue;
+		}
+		const text = told.map((i, j) => (j ? seps[i] : '') + parts[i]).join('');
+		// family: the word the names begin with, which a ring of them may say
+		out.set(n, Object.assign([middle(parts[0], width), tell(text, parts[told.at(-1)], width)], { family: parts[0] }));
+	}
+	return out;
+}
+
+// ADDRESS is a name that is an address, IPv4 or IPv6, with a port or not:
+// its parts are numbers, no family.
+const ADDRESS = /^(\[?[0-9a-f]*:[0-9a-f:.]*\]?|\d+(\.\d+){3})(:\d+)?$/i;
+
+// tell fits what tells a name apart in width characters: its last part
+// whole, a pod's own, and what goes before it shortened, a deployment's
+// hash in a rollout.
+function tell(text, last, width) {
+	if (text.length <= width) return text;
+	const room = width - last.length - 1;
+	return room >= 2 ? `${text.slice(0, room - 1)}…${text.slice(text.length - last.length - 1)}` : middle(last, width);
+}
+
+// MAP_SMALL is the radius of a node in a group the map has opened, which
+// opens to at most MAP_OPEN.
+const MAP_SMALL = 24, MAP_OPEN = 32;
+// MAP_R is the radius of a node, or a group, drawn whole.
+const MAP_R = 34;
+
+// groupMap draws the groups of nodes by a key, each a circle, and the ones
+// open names opened to their nodes; and what goes between what it draws:
+// by the nodes' links when the walk has them all, else by each node's
+// links added up by the group of the peer, so to a whole opened group. A
+// click on a group opens it, on an opened one's name or ring closes it; on
+// a node opens its page.
+function groupMap(groups, nodes, key, open, opt) {
+	const { lr, tr, hereGroup, hereNode, toggle, pick } = opt;
+	const gap = 44, pad = 14;
+	const groupOf = new Map(nodes.map((n) => [n.name, n.metadata?.[key] ?? '']));
+	const members = new Map(groups.map((g) => [g.name, []]));
+	for (const n of nodes) members.get(groupOf.get(n.name))?.push(n);
+	// Each group is a slot: a circle, or a ring around its nodes laid out
+	// on a sunflower's spiral, which packs them evenly in a disc.
+	const slots = groups.map((g) => {
+		const ms = members.get(g.name).sort((a, b) => natural(a.name, b.name));
+		if (!open(g.name) || ms.length > MAP_OPEN) return { g, r: MAP_R, ms: null };
+		const step = (2 * MAP_SMALL + 10) / 1.77;
+		const at = ms.map((n, i) => {
+			const rr = ms.length === 1 ? 0 : step * Math.sqrt(i + 0.5), a = i * 2.39996;
+			return { n, dx: rr * Math.cos(a), dy: rr * Math.sin(a) };
+		});
+		return { g, r: Math.max(...at.map((p) => Math.hypot(p.dx, p.dy))) + MAP_SMALL + pad, ms: at };
+	});
+	// An opened group's name is over its ring: room is made for it.
+	const xy = ring(slots.map((s) => s.r + (s.ms ? OVER : 0)), gap);
+	slots.forEach((s, i) => Object.assign(s, xy[i]));
+
+	// What an arrow can end at: a node of an opened group, a group's circle,
+	// or an opened group's ring.
+	const nodeAt = new Map(), groupAt = new Map();
+	for (const s of slots) {
+		groupAt.set(s.g.name, { id: `g:${s.g.name}`, group: s.g.name, x: s.x, y: s.y, r: s.r, label: s.g.name || 'none' });
+		for (const m of s.ms || []) nodeAt.set(m.n.name, { id: `n:${m.n.name}`, group: s.g.name, x: s.x + m.dx, y: s.y + m.dy, r: MAP_SMALL, label: shortName(m.n.name) });
+	}
+	const at = (name) => nodeAt.get(name) || (groupOf.has(name) ? groupAt.get(groupOf.get(name)) : undefined);
+	const edges = new Map();
+	const add = (a, b, f) => {
+		// Not within a group drawn whole, nor from a node to its own ring.
+		if (!a || !b || a === b || b.id === `g:${a.group}`) return;
+		const k = `${a.id}>${b.id}`;
+		if (!edges.has(k)) edges.set(k, { a, b, messages: 0, bytes: 0, rate: 0, queued: 0, up: 0, down: 0 });
+		f(edges.get(k));
+	};
+	const linked = nodes.every((n) => !described(n) || n.links);
+	for (const n of nodes) {
+		if (linked) {
+			for (const l of n.links || [])
+				if (l.direction === 'out')
+					add(at(n.name), at(l.peer), (e) => {
+						e.messages += l.messages || 0;
+						e.bytes += l.bytes || 0;
+						e.rate += lr.get(`${n.name}>${l.peer}>out`)?.messages || 0;
+						e.queued += l.queued || 0;
+						l.state === 'up' ? e.up++ : e.down++;
+					});
+		} else {
+			for (const t of n.link_totals || [])
+				add(at(n.name), groupAt.get(t.group || ''), (e) => {
+					e.messages += t.messages_sent || 0;
+					e.bytes += t.bytes_sent || 0;
+					e.rate += tr.get(`${n.name}>${t.group || ''}`)?.messages_sent || 0;
+					e.queued += t.queued || 0;
+					e.up += t.outbound_up || 0;
+					e.down += t.outbound_down || 0;
+				});
+		}
+	}
+
+	const hulls = [], circles = [];
+	const directed = [...edges.values()]
+		.filter((e) => e.messages > 0 || e.down || e.queued)
+		.map((e) => ({
+			...e,
+			state: e.down ? (e.up ? 'connecting' : 'down') : 'up',
+			tip: `${e.a.label} → ${e.b.label}: ${fmtInt(e.messages)} messages, ${fmtBytes(e.bytes)}` + (e.down ? `, ${fmtInt(e.down)} of ${fmtInt(e.up + e.down)} links down` : '') + (e.queued ? `, ${fmtInt(e.queued)} queued` : ''),
+		}));
+	const { arrows, labels: rateLabels } = pairArrows(directed, directed.length <= MAP_LABELLED);
+	const counted = (g) => `${fmtInt(g.up)} of ${fmtInt(g.nodes)} nodes up${g.uninspected ? `, ${fmtInt(g.uninspected)} without an Inspector` : ''}, ${fmtInt(g.processes)} processes`;
+	const view = new Map(groups.map((g) => [g.name, groupState(g)]));
+	// Nodes are labelled as on the map of nodes, over the cluster: in a
+	// group of one deployment, what tells them apart alone.
+	const labels = familyLabels(nodes.map((n) => shortName(n.name)), 7);
+	for (const s of slots) {
+		const name = s.g.name || 'none', v = view.get(s.g.name);
+		if (!s.ms) {
+			const k = stateKey(v), st = STATE[k], big = members.get(s.g.name).length > MAP_OPEN;
+			const lines = fitLabel(name);
+			const top = lines.length > 1 ? -8 : -1;
+			circles.push(
+				svg(
+					'g',
+					{ class: cls('node', st.map, v.warn && 'warn', s.g.name === hereGroup && 'here'), transform: `translate(${s.x},${s.y})`, onclick: () => (big ? pick(s.g.name) : toggle(s.g.name)) },
+					svg('title', null, `${name}: ${counted(s.g)}. ${big ? `Too many to open on the map: click to list them.` : 'Click to open it.'}`),
+					svg('circle', { r: MAP_R }),
+					lines.map((line, i) => svg('text', { y: top + i * 12 }, line)),
+					svg('text', { class: 'sub', y: top + lines.length * 12 + 1 }, `×${fmtInt(s.g.nodes)}`),
+				),
+			);
+			continue;
+		}
+		// A group of one deployment, two or more nodes of one family, says
+		// the family over its ring once, and its nodes what tells them apart.
+		const fams = new Set(s.ms.map((m) => labels.get(shortName(m.n.name)).family));
+		const one = s.ms.length > 1 && fams.size === 1 && !fams.has(undefined) ? [...fams][0] : '';
+		// The ring's name fits its width: the group's value is shortened, the
+		// family kept while there is room for both.
+		const fit = Math.max(8, Math.floor((2 * s.r) / 6.6)), count = ` ×${fmtInt(s.g.nodes)}`;
+		const also = one && one !== name ? ` · ${one}` : '';
+		const keep = also && fit - also.length - count.length - 2 >= Math.min(4, name.length) ? also : '';
+		const named = `▾ ${middle(name, Math.max(3, fit - keep.length - count.length - 2))}${keep}${count}`;
+		const over = one && (keep || one === name); // the family is said over the ring
+		hulls.push(
+			svg(
+				'g',
+				{ class: cls('hull', v.warn && 'warn', stateKey(v) === 'down' && 'bad'), transform: `translate(${s.x},${s.y})`, onclick: () => toggle(s.g.name) },
+				svg('title', null, `${name}: ${counted(s.g)}. Click to close it.`),
+				svg('circle', { r: s.r }),
+				svg('text', { y: -s.r - 6 }, named),
+			),
+		);
+		for (const m of s.ms) {
+			const n = m.n, k = stateKey(n), st = STATE[k], all = labels.get(shortName(n.name));
+			const lines = over ? all.slice(1) : all; // the family once, over the ring, if it is
+			circles.push(
+				svg(
+					'g',
+					{ class: cls('node', 'small', st.map, (n.links || []).some((l) => l.queued > 0) && 'warn', n.name === hereNode && 'here'), transform: `translate(${s.x + m.dx},${s.y + m.dy})`, onclick: () => go('node', { node: n.name }) },
+					svg('title', null, k === 'described' ? `${n.name}: ${n.processes} processes, up ${n.uptime}` : `${n.name}: ${k === 'down' ? n.error : st.title || st.text}`),
+					svg('circle', { r: MAP_SMALL }),
+					lines.map((line, i) => svg('text', { y: (lines.length > 1 ? -7 : -2) + i * 11 }, line)),
+					svg('text', { class: 'sub', y: lines.length > 1 ? 15 : 10 }, k === 'described' ? fmtInt(n.processes) : st.short),
+				),
+			);
+		}
+	}
+	return mapSvg(`Groups by ${key} and what goes between them`, slots.map((s) => ({ x: s.x, y: s.y, r: s.r, over: s.ms ? OVER : 0 })), arrowMarker(), hulls, arrows, rateLabels, circles);
+}
+
+// OVER is the room an opened group's name takes over its ring.
+const OVER = 22;
+
+// around places circles as ring says, on an ellipse grow times the least
+// that holds them.
+function around(radii, gap, grow) {
+	const n = radii.length;
+	if (n === 1) return [{ x: 0, y: 0 }];
+	if (n === 2) {
+		const d = Math.max(radii[0] + radii[1] + gap * 2, 320);
+		return [{ x: -d / 2, y: 0 }, { x: d / 2, y: 0 }];
+	}
+	const need = radii.reduce((s, r) => s + 2 * r + gap, 0);
+	const big = Math.max(...radii);
+	// At least as wide as the map of nodes draws a few.
+	let a = Math.max(need / 4.844, 2 * big + gap, 220), b = Math.max(a / 2, big + gap / 2, 110);
+	// Ramanujan's perimeter; the ellipse grows until the circles fit on it.
+	const perimeter = () => Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
+	const k = Math.max(1, need / perimeter()) * grow;
+	a *= k;
+	b *= k;
+	// Arc length, sampled, from the top clockwise.
+	const N = 720, pts = [], len = [0];
+	for (let i = 0; i <= N; i++) {
+		const t = -Math.PI / 2 + (i * 2 * Math.PI) / N;
+		pts.push({ x: a * Math.cos(t), y: b * Math.sin(t) });
+		if (i) len.push(len[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+	}
+	const spare = (len[N] - need) / n;
+	const out = [];
+	let s = 0;
+	for (let i = 0; i < n; i++) {
+		if (i) s += radii[i - 1] + gap + spare + radii[i];
+		const j = Math.min(N, len.findIndex((l) => l >= s));
+		out.push(pts[j < 0 ? N : j]);
+	}
+	return out;
+}
+
+// ring lays circles of radii out around an ellipse twice as wide as it is
+// tall, the first at the top, each a gap from the next along it, and grows
+// the ellipse until no two are nearer than half a gap: on its bends a
+// chord is shorter than the arc. One is centred, two side by side.
+function ring(radii, gap) {
+	if (radii.length < 3) return around(radii, gap, 1);
+	for (let grow = 1; ; grow *= 1.08) {
+		const out = around(radii, gap, grow);
+		const apart = out.every((p, i) => out.every((q, j) => j <= i || Math.hypot(p.x - q.x, p.y - q.y) >= radii[i] + radii[j] + gap / 2));
+		if (apart || grow > 4) return out;
+	}
 }
 
 function nodePage(node, params) {
@@ -974,7 +1311,7 @@ function nodePage(node, params) {
 	// A row a peer: out is the link the node dialed and sends to it on, in
 	// the one the peer dialed, which the node receives on.
 	const cols = [
-		{ key: 'peer', t: 'Peer', get: (r) => [nodeLink(r.peer), (r.out || r.in).incarnation ? null : h('span', { class: 'muted' }, ' never reached')], sort: (r) => r.peer },
+		{ key: 'peer', t: 'Peer', get: (r) => [nodeLink(r.peer), r.out?.incarnation || r.in?.incarnation ? null : h('span', { class: 'muted' }, ' never reached')], sort: (r) => r.peer },
 		{ key: 'out', t: 'Out', get: (r) => (r.out ? pill(r.out.state) : ''), sort: (r) => r.out?.state || '' },
 		{ key: 'in', t: 'In', get: (r) => (r.in ? pill(r.in.state) : ''), sort: (r) => r.in?.state || '' },
 		{ key: 'age', t: 'Age', num: true, get: (r) => (r.out || r.in).age, sort: (r) => parseDur((r.out || r.in).age) },
@@ -983,16 +1320,20 @@ function nodePage(node, params) {
 		{ key: 'received', t: 'Received', num: true, get: (r) => (r.in ? [fmtInt(r.in.messages), delta(rate(r.in, 'messages'))] : ''), sort: (r) => rate(r.in, 'messages') || 0 },
 		{ key: 'bytes', t: 'Bytes out / in', num: true, get: (r) => `${r.out ? fmtBytes(r.out.bytes) : '–'} / ${r.in ? fmtBytes(r.in.bytes) : '–'}`, sort: (r) => (rate(r.out, 'bytes') || 0) + (rate(r.in, 'bytes') || 0) },
 		{ key: 'reconnects', t: 'Reconnects', num: true, get: (r) => fmtInt(r.out?.reconnects), sort: (r) => r.out?.reconnects || 0 },
-		{ key: 'retry', t: 'Retry in', get: (r) => r.out?.retry_in },
+		{ key: 'retry', t: 'Retry in', get: (r) => r.retry },
 		{ key: 'error', t: 'Last error', wrap: true, get: (r) => errText(r.out?.last_error || r.in?.last_error, r.peer), sort: (r) => r.out?.last_error || r.in?.last_error || '' },
 	];
-	// peerRows pairs a node's links by peer.
+	// peerRows pairs a node's links by peer, the one up each way if one is:
+	// a peer dials failed to has a down entry, with its retry, beside the
+	// link that came up since.
 	function peerRows(ls) {
 		const by = new Map();
 		for (const l of ls) {
 			let r = by.get(l.peer);
-			if (!r) by.set(l.peer, (r = { peer: l.peer, out: null, in: null }));
-			r[l.direction === 'out' ? 'out' : 'in'] = l;
+			if (!r) by.set(l.peer, (r = { peer: l.peer, out: null, in: null, retry: '' }));
+			const way = l.direction === 'out' ? 'out' : 'in', was = r[way];
+			if (!was || (was.state !== 'up' && l.state === 'up')) r[way] = l;
+			if (l.retry_in) r.retry = l.retry_in;
 		}
 		return [...by.values()];
 	}
@@ -1067,7 +1408,7 @@ function nodePage(node, params) {
 			n = await api('/api/node', { node });
 			shown.hidden = !!n.no_inspector;
 			top.lastChild.textContent = n.no_inspector ? 'Up, as the cluster sees it, but it serves no Inspector to describe it.' : LEAD;
-			about.replaceChildren(n.advertise ? h('span', { class: 'mono', title: 'what peers dial' }, n.advertise) : null, chips(n.metadata));
+			about.replaceChildren(...[n.advertise ? h('span', { class: 'mono', title: 'what peers dial' }, n.advertise) : null, chips(n.metadata)].filter(Boolean));
 			if (n.no_inspector) {
 				cards.replaceChildren(card('Inspector', 'none', 'its address and metadata as the cluster has them'));
 				return;
@@ -1377,8 +1718,8 @@ function commonStart(names) {
 	if (names.length < 2) return '';
 	let c = names[0];
 	for (const n of names) while (!n.startsWith(c)) c = c.slice(0, -1);
-	c = c.slice(0, c.search(/[-._:/@{]?[^-._:/@{]*$/) + 1);
-	return names.every((n) => n.length > c.length) ? c : '';
+	c = c.slice(0, Math.max(...[...'-._:/@{'].map((s) => c.lastIndexOf(s))) + 1); // through its last separator
+	return c && names.every((n) => n.length > c.length) ? c : '';
 }
 
 const KINDS = ['spawn', 'exit', 'link-up', 'link-down', 'dead-letter', 'member-up', 'member-down'];
@@ -1394,9 +1735,18 @@ function eventsPage(node) {
 	const since = clock(new Date().toISOString());
 	// What the table says while it lists nothing.
 	const none = h('div', { class: 'empty' });
+	let ended = '', streaming = false, began = false; // began: streamed once
 	const quiet = () => {
 		none.hidden = tbody.childElementCount > 0;
-		none.textContent = buf.length ? 'No event matches.' : `No events since ${since.slice(0, 8)}: they show here as they happen.`;
+		none.textContent = ended
+			? `No events: ${node || 'the inspector'} ${ended}.`
+			: buf.length
+				? 'No event matches.'
+				: streaming
+					? `No events since ${since.slice(0, 8)}: they show here as they happen.`
+					: broke || began
+						? `No events since ${since.slice(0, 8)}.`
+						: `Asking ${node || 'the inspector'}…`;
 	};
 	const chips = KINDS.map((k) => {
 		const n = h('span', { class: 'n' }, '0');
@@ -1434,17 +1784,35 @@ function eventsPage(node) {
 	}
 
 	const src = new EventSource('/api/events' + query({ node }));
+	// The stream opens before the node is asked; "ready" says it answered.
 	src.onopen = () => {
+		status.textContent = `asking ${node || 'the inspector'}…`;
+		streaming = false;
+		quiet();
+	};
+	src.addEventListener('ready', () => {
 		status.textContent = `streaming from ${node || 'the inspector'}`;
+		streaming = began = true;
 		broke = '';
 		b.set(note());
+		quiet();
+	});
+	src.onerror = () => {
+		status.textContent = 'reconnecting…';
+		streaming = false;
+		quiet();
 	};
-	src.onerror = () => (status.textContent = 'reconnecting…');
-	src.addEventListener('failure', (e) => b.set((broke = `The event stream broke: ${JSON.parse(e.data)}. Reconnecting.`)));
+	src.addEventListener('failure', (e) => {
+		streaming = false;
+		b.set((broke = `The event stream broke: ${JSON.parse(e.data)}. Reconnecting.`));
+		quiet();
+	});
 	// end: nothing to stream, ever, such as from a node without an Inspector.
 	src.addEventListener('end', (e) => {
 		src.close();
-		status.textContent = `${node || 'the inspector'} ${JSON.parse(e.data)}: no events to stream`;
+		ended = JSON.parse(e.data);
+		status.textContent = `${node || 'the inspector'} ${ended}: no events to stream`;
+		quiet();
 	});
 	src.onmessage = (m) => {
 		const e = JSON.parse(m.data);
@@ -1634,7 +2002,7 @@ function groupsPage(node, params) {
 	const peers = h('div');
 	const none = h('div', { class: 'empty', hidden: true });
 	const body = h('div', { hidden: true }, h('div', { class: 'scope' }, h('label', null, 'scope', select(scope)), h('label', null, 'groups starting with', prefix)), list, members, h('h2', null, 'Nodes of the scope'), peers);
-	let scopes = '';
+	let scopes = '', absent = '';
 	const page = {
 		every: 2000,
 		el: h(
@@ -1645,7 +2013,7 @@ function groupsPage(node, params) {
 			none,
 			body,
 		),
-		banner: b.set,
+		banner: (msg) => b.set(msg || absent),
 		update(np) {
 			const what = (x) => [x.scope || '', x.prefix || '', x.group || ''].join('\n');
 			const refetch = what(np) !== what(p);
@@ -1654,27 +2022,42 @@ function groupsPage(node, params) {
 		},
 		async tick(stale) {
 			const q = { node, scope: p.scope || '' };
-			let v, m;
+			let v, m, missing = '';
 			try {
-				[v, m] = await Promise.all([api('/api/groups', { ...q, prefix: p.prefix || '' }), p.group ? api('/api/group', { ...q, group: p.group }) : null]);
+				try {
+					[v, m] = await Promise.all([api('/api/groups', { ...q, prefix: p.prefix || '' }), p.group ? api('/api/group', { ...q, group: p.group }) : null]);
+				} catch (e) {
+					// The scope asked for, picked on another node or away a
+					// while, is not here now: the banner says so, what the node
+					// runs shows meanwhile, and the URL keeps the scope, asked
+					// for again each tick.
+					if (!(e.status === 400 && p.scope && e.message.startsWith('no grpcproc/groups scope named '))) throw e;
+					missing = e.message;
+					[v, m] = [await api('/api/groups', { node, prefix: p.prefix || '' }), null];
+				}
 			} catch (e) {
 				// A node that runs no scope is not in trouble: it says so, as
 				// the other modules' pages do.
-				if (stale() || !(e.status === 400 && e.message.startsWith('no grpcproc/groups scope'))) throw e;
+				if (stale() || !(e.status === 400 && e.message.startsWith('no grpcproc/groups scope on '))) throw e;
+				absent = '';
 				none.textContent = `${node} runs no grpcproc/groups scope.`;
 				none.hidden = false;
 				body.hidden = true;
 				return;
 			}
-			if (stale()) return;
+			if (stale()) return; // a later tick says what is missing, not this one
+			absent = missing;
 			none.hidden = true;
 			body.hidden = false;
-			// Options are made again only when they change, so an open select stays open.
-			if (JSON.stringify(v.scopes) !== scopes) {
-				scopes = JSON.stringify(v.scopes);
-				scope.replaceChildren(...v.scopes.map((s) => h('option', { value: s }, s)));
+			// Options are made again only when they change, so an open select
+			// stays open; one asked for that is not here is among them, so
+			// another can be picked.
+			const offered = (absent ? [...v.scopes, p.scope] : v.scopes).map((s) => [s, absent && s === p.scope ? `${s}: not here` : s]);
+			if (JSON.stringify(offered) !== scopes) {
+				scopes = JSON.stringify(offered);
+				scope.replaceChildren(...offered.map(([s, label]) => h('option', { value: s }, label)));
 			}
-			scope.value = v.scope;
+			scope.value = absent ? p.scope : v.scope;
 			list.replaceChildren(
 				table(
 					[
@@ -1685,8 +2068,12 @@ function groupsPage(node, params) {
 					],
 					v.groups,
 					{
-						onRow: (g) => set({ group: g.name === p.group ? '' : g.name }, false),
-						rowClass: (g) => g.name === p.group && 'sel',
+						// A group shown in place of a scope not here is of the
+						// scope shown: picking it picks that scope too, and the
+						// group the URL names, of the scope not here, is none of
+						// these.
+						onRow: (g) => set(absent ? { scope: v.scope, group: g.name } : { group: g.name === p.group ? '' : g.name }, false),
+						rowClass: (g) => !absent && g.name === p.group && 'sel',
 						empty: p.prefix ? `No group of ${v.scope} starts with ${p.prefix}.` : `No process is in a group of ${v.scope}.`,
 					},
 				),
@@ -1908,7 +2295,7 @@ function sagasPage(_node, params) {
 			const [all, first] = await Promise.all([api('/api/sagas'), ask()]);
 			if (stale()) return;
 			known = all.flatMap((e) => e.sagas.map((s) => ({ saga: sagaName(s), node: e.node })));
-			runsEl.hidden = !known.length; // no runs to page through without a saga
+			runsEl.hidden = !saga(); // no runs to page through without a saga
 			engines.replaceChildren(
 				table(
 					[
@@ -1961,7 +2348,7 @@ function procDrawer(pid) {
 		try {
 			const v = await api('/api/process', { node, target: pid, inspect: 1, wait: '1s' });
 			const keys = Object.keys(v.inspect || {}).sort();
-			said.replaceChildren(...keys.flatMap((k) => [h('span', { class: 'k' }, k), h('span', { class: 'v' }, linkify(v.inspect[k]))]));
+			said.replaceChildren(...keys.flatMap((k) => [h('span', { class: 'k' }, k), h('span', { class: 'v' }, linkify(v.inspect[k], true))]));
 			said.hidden = !keys.length;
 			saidNote.textContent = v.inspect_error ? v.inspect_error : keys.length ? `answered at ${new Date().toLocaleTimeString()}` : 'It publishes nothing: see grpcproc.WithInspect.';
 		} catch (e) {
@@ -2050,7 +2437,7 @@ function procDrawer(pid) {
 			cBox.push(v.mailbox);
 			cBusy.push(share(d?.busy_seconds));
 			const kv = [
-				['parent', pidLink(v.parent) || h('span', { class: 'muted' }, 'none: spawned by the node')],
+				['parent', pidLink(v.parent, null, true) || h('span', { class: 'muted' }, 'none: spawned by the node')],
 				['global names', v.globals?.length ? h('span', { class: 'mono' }, v.globals.join(', ')) : h('span', { class: 'muted' }, 'none')],
 				['last message', v.last_message],
 				['monitors', `${v.monitors || 0} held`],
@@ -2063,7 +2450,7 @@ function procDrawer(pid) {
 				const mine = ps.filter((x) => x.parent === pid).sort((a, c) => pidCmp(a.pid, c.pid));
 				kids.replaceChildren(
 					mine.length
-						? h('div', { class: 'kv' }, mine.flatMap((x) => [h('span', { class: 'k' }, pidLink(x.pid)), h('span', { class: 'v' }, [x.name || x.label, ' ', pill(x.state), x.mailbox ? ` ${x.mailbox} waiting` : ''])]))
+						? h('div', { class: 'kv' }, mine.flatMap((x) => [h('span', { class: 'k' }, pidLink(x.pid, null, true)), h('span', { class: 'v' }, [x.name || x.label, ' ', pill(x.state), x.mailbox ? ` ${x.mailbox} waiting` : ''])]))
 						: h('span', { class: 'muted' }, 'nothing on this node'),
 				);
 			}
@@ -2258,9 +2645,11 @@ async function run(v) {
 }
 
 // offline says whether e is this page's server or the Inspector out of
-// reach, as the header shows it; anything else is the view's own trouble,
-// which its banner shows.
-const offline = (e) => !e.status || e.status === 502 || e.status === 504;
+// reach, as the header shows it. What the Inspector says begins with
+// "inspect: ", a peer it could not reach or resolve among it: that is the
+// view's own trouble, which its banner shows. A request that ran out of
+// time unanswered is taken for the Inspector's.
+const offline = (e) => !e.status || ((e.status === 502 || e.status === 504) && !e.message.startsWith('inspect: '));
 
 async function tick() {
 	if (app.busy || document.hidden) return;
@@ -2363,7 +2752,8 @@ async function boot() {
 	const mode = $('#mode');
 	mode.textContent = app.info.allow_writes ? 'writes allowed' : 'read-only';
 	mode.className = `label label_${app.info.allow_writes ? 'warning' : 'unknown'}`;
-	$('#about').replaceChildren(h('div', null, `grpcprocctl ${app.info.version || ''}`), h('div', { title: `The Inspector this page reads through: ${app.info.target || ''}` }, middle(app.info.target || '', 26)));
+	const version = `grpcprocctl ${app.info.version || ''}`;
+	$('#about').replaceChildren(h('div', { title: version }, middle(version, 26)), h('div', { title: `The Inspector this page reads through: ${app.info.target || ''}` }, middle(app.info.target || '', 26)));
 	try {
 		setNodes((await api('/api/nodes')).nodes);
 	} catch (e) {
