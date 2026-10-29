@@ -98,11 +98,21 @@ const nodeOf = (pid) => pidParts(pid)?.node || '';
 
 // pidText shortens a pid for a table: the incarnation, which only tells a
 // node's restarts apart, is left out, and the node's prefix is dimmed, as
-// nameEl dims it. The full pid is its title.
+// nameEl dims it; on a page about its node, the node is left out too. The
+// full pid is its title.
 function pidText(pid) {
 	const p = pidParts(pid);
-	return p ? ['<', nameEl(p.node), `.….${p.id}>`] : pid;
+	if (!p) return pid;
+	return p.node === pageNode() ? [h('span', { class: 'prefix' }, '<….'), String(p.id), h('span', { class: 'prefix' }, '>')] : ['<', nameEl(p.node), `.….${p.id}>`];
 }
+
+// pageNode is the node the page shows, on the pages about one node; ''
+// elsewhere.
+function pageNode() {
+	const r = route();
+	return NODE_PAGES.has(r.page) ? r.params.node || home() : '';
+}
+const NODE_PAGES = new Set(['node', 'processes', 'tree', 'events']);
 // rel says how far a time is from now, as in 3m or 2h ago; its title is the
 // time itself.
 function rel(iso) {
@@ -150,6 +160,11 @@ function rates() {
 }
 
 const sum = (xs, f) => xs.reduce((a, x) => a + (Number(f(x)) || 0), 0);
+
+// middle shortens s to n characters by its middle, where a hash or a
+// domain is least telling: its start and its end, a port or a pod's own
+// part, stay.
+const middle = (s, n) => (s.length <= n ? s : `${s.slice(0, Math.ceil((n - 1) / 2))}…${s.slice(s.length - Math.floor((n - 1) / 2))}`);
 
 // ---- API ----------------------------------------------------------------
 
@@ -239,7 +254,22 @@ const described = (n) => stateKey(n) === 'described';
 // statePill says what node n is, unless described.
 function statePill(n) {
 	const k = stateKey(n), st = STATE[k];
-	return k === 'described' ? '' : pill(k === 'down' ? n.error : st.text, st.kind, st.title);
+	return k === 'described' ? '' : k === 'down' ? h('span', { class: 'label label_danger', title: n.error }, errText(n.error, n.name, true)) : pill(st.text, st.kind, st.title);
+}
+
+// errText is an error as a table shows it, its whole text its title: Go's
+// "rpc error: code = X desc = " left off, the code a tag before the rest
+// unless bare, and "inspect: node N: ", which the Inspector puts before a
+// peer's error, left off where the row names N.
+function errText(msg, node, bare) {
+	if (!msg) return '';
+	let rest = msg, code = '';
+	const g = /^rpc error: code = (\w+) desc = ([\s\S]*)$/.exec(rest);
+	if (g) [, code, rest] = g;
+	const by = `inspect: node ${node}: `;
+	if (node && rest.startsWith(by)) rest = rest.slice(by.length);
+	if (rest === msg) return msg;
+	return h('span', { title: msg }, code && !bare ? [h('span', { class: 'code' }, code), ' '] : null, rest || code);
 }
 
 // head is a page's title and, under it, what the page shows.
@@ -292,7 +322,7 @@ function table(cols, rows, opt = {}) {
 		h(
 			'tr',
 			{ class: cls(onRow && 'click', rowClass?.(r)), onclick: onRow ? () => onRow(r) : null },
-			cols.map((c) => h('td', { class: cls(c.num && 'num', c.wrap && 'wrap') }, c.get(r))),
+			cols.map((c) => h('td', { class: cls(c.num && 'num', c.wrap && 'wrap'), style: c.min ? { minWidth: c.min } : null }, c.get(r))),
 		),
 	);
 	return h(
@@ -374,8 +404,11 @@ class Chart {
 		g.setTransform(dpr, 0, 0, dpr, 0, 0);
 		g.clearRect(0, 0, w, ht);
 		const css = getComputedStyle(document.documentElement);
-		let max = 0;
-		for (const s of this.series) for (const v of s.data) if (v != null && v > max) max = v;
+		let max = 0, points = 0;
+		for (const s of this.series) for (const v of s.data) if (v != null) (points++, (max = Math.max(max, v)));
+		// Nothing yet, or nothing but naughts: said in words, not drawn as a
+		// scale of 1 over a flat line.
+		const quiet = points < 2 ? 'charting from now' : max === 0 ? 'none in the last ' + fmtSpan((this.series[0].data.length * (app.interval || 1000)) / 1000) : '';
 		max = niceCeil(max);
 		const top = 12, bottom = ht - 2, span = bottom - top;
 		g.strokeStyle = css.getPropertyValue('--g-color-line-generic');
@@ -389,7 +422,11 @@ class Chart {
 		}
 		g.fillStyle = css.getPropertyValue('--g-color-text-secondary');
 		g.font = '10px ' + css.getPropertyValue('--g-font-family-monospace');
-		g.fillText(this.fmt(max), 2, top - 2);
+		if (quiet) {
+			g.textAlign = 'center';
+			g.fillText(quiet, w / 2, top + span / 2);
+			g.textAlign = 'start';
+		} else g.fillText(this.fmt(max), 2, top - 2);
 		const step = w / (this.n - 1);
 		for (const s of this.series) {
 			g.strokeStyle = css.getPropertyValue(s.color).trim();
@@ -412,6 +449,9 @@ class Chart {
 		}
 	}
 }
+
+// fmtSpan says s seconds as a chart's span: 45s, 2m.
+const fmtSpan = (s) => (s < 60 ? `${Math.round(s)}s` : `${Math.round(s / 60)}m`);
 
 function niceCeil(v) {
 	if (v <= 0) return 1;
@@ -456,9 +496,17 @@ function clusterPage(_node, params) {
 	const totalKey = (t) => `${t.from}>${t.group || ''}`;
 
 	const cols = [
-		{ key: 'node', t: 'Node', get: (n) => [nameEl(n.name, true), n === data.nodes[0] ? ' ' : null, n === data.nodes[0] ? pill('inspector', 'info') : null], sort: (n) => n.name },
-		{ key: 'advertise', t: 'Advertise', get: (n) => h('span', { class: 'mono' }, n.advertise), sort: (n) => n.advertise || '' },
-		{ key: 'metadata', t: 'Metadata', get: (n) => h('span', { class: 'mono' }, metadata(n.metadata)), sort: (n) => metadata(n.metadata) },
+		// The node, and under it where peers dial it and its metadata.
+		{
+			key: 'node',
+			t: 'Node',
+			wrap: true,
+			get: (n) => [
+				h('div', null, nameEl(n.name, true), n === data.nodes[0] ? [' ', pill('inspector', 'info')] : null),
+				n.advertise || n.metadata ? h('div', { class: 'under' }, n.advertise ? h('span', { class: 'mono', title: 'what peers dial' }, n.advertise) : null, chips(n.metadata)) : null,
+			],
+			sort: (n) => n.name,
+		},
 		{ key: 'uptime', t: 'Uptime', num: true, get: (n) => n.uptime, sort: (n) => parseDur(n.uptime) },
 		{ key: 'processes', t: 'Processes', num: true, get: (n) => fmtInt(described(n) ? n.processes : null), sort: (n) => n.processes || 0 },
 		{ key: 'spawns', t: 'Spawns / s', num: true, get: (n) => fmtRate(nr.get(n.name)?.spawned), sort: (n) => nr.get(n.name)?.spawned || 0 },
@@ -713,6 +761,23 @@ const nameList = (list) => (list || []).flatMap((n, i) => [i ? ', ' : null, name
 // else, whatever row it is in.
 const nodeLink = (node) => h('a', { href: href('node', { node }), onclick: (e) => e.stopPropagation() }, nameEl(node));
 
+// procName shows a process's name with the prefix of node names dimmed
+// wherever one is in it, as a topic named for a node has it, and a line
+// break allowed after each separator.
+function procName(name) {
+	if (!name) return '';
+	const parts = app.prefix && name.includes(app.prefix) ? name.split(app.prefix) : [name];
+	return parts.flatMap((part, i) => (i ? [h('span', { class: 'prefix' }, breakable(app.prefix)), breakable(part)] : [breakable(part)]));
+}
+
+// breakable lets a line break after each separator of s: a type's dots,
+// a topic's braces and @.
+const breakable = (s) => s.split(/(?<=[-._:/@{])/).flatMap((part, i) => (i ? [h('wbr'), part] : [part]));
+
+// labelEl shows a process's label, muted when it is only the type of
+// message it takes, which a process spawned without a label has for one.
+const labelEl = (x) => (x.label && x.label === x.type ? h('span', { class: 'muted', title: 'no label: the type of message it takes' }, x.label) : x.label);
+
 // nameEl shows a name with its prefix dimmed.
 function nameEl(name, strong) {
 	const short = shortName(name);
@@ -767,25 +832,42 @@ function groupNodes(groups) {
 	});
 }
 
-// peers are a node's peers, each once, with the state of its link to it;
-// without its links, how many are up, and those down. A peer is named
-// without prefix, the whole name its title.
+// peers says how many of a node's peers are up, and names those that are
+// not, up to PEERS_NAMED, without prefix; with its links, its title lists
+// them all.
 function peers(n) {
 	const named = (p, s) => {
 		const short = shortName(p);
 		return pill(short, s, short === p ? null : p);
 	};
-	if (!n.links) {
+	let up, down, more, title;
+	if (n.links) {
+		const seen = new Map();
+		for (const l of n.links) {
+			const s = seen.get(l.peer);
+			seen.set(l.peer, s === 'up' || l.state === 'up' ? 'up' : s || l.state);
+		}
+		const all = [...seen].sort(([a], [b]) => natural(a, b));
+		down = all.filter(([, s]) => s !== 'up');
+		up = all.length - down.length;
+		more = 0;
+		title = all.map(([p, s]) => `${p}: ${s}`).join('\n');
+	} else {
 		const t = linkSums(n);
-		return h('span', { class: 'row' }, t.peers > t.peers_down ? `${fmtInt(t.peers - t.peers_down)} up` : null, ...t.down.map((p) => named(p, 'down')), t.peers_down > t.down.length ? `+${fmtInt(t.peers_down - t.down.length)} down` : null);
+		up = t.peers - t.peers_down;
+		down = t.down.map((p) => [p, 'down']);
+		more = t.peers_down - t.down.length;
 	}
-	const seen = new Map();
-	for (const l of n.links) {
-		const s = seen.get(l.peer);
-		seen.set(l.peer, s === 'up' || l.state === 'up' ? 'up' : s || l.state);
-	}
-	return h('span', { class: 'row' }, [...seen].map(([p, s]) => named(p, s)));
+	more += Math.max(0, down.length - PEERS_NAMED);
+	return h(
+		'span',
+		{ class: 'row', title },
+		up || !down.length ? h('span', null, `${fmtInt(up)} up`) : null,
+		...down.slice(0, PEERS_NAMED).map(([p, s]) => named(p, s)),
+		more > 0 ? h('span', { class: 'muted' }, `+${fmtInt(more)} down`) : null,
+	);
 }
+const PEERS_NAMED = 3;
 
 // linkSums adds a node's link totals up across groups.
 function linkSums(n) {
@@ -884,20 +966,36 @@ function nodePage(node, params) {
 	shown.hidden = true;
 	const LEAD = 'Its counters and its links to peers, charted over the last minute.';
 	const top = head(['Node ', h('span', { class: 'mono' }, node || '(inspector)')], LEAD);
-	const el = h('div', null, top, b.el, cards, shown);
+	// Where peers dial it and its metadata, under the title.
+	const about = h('div', { class: 'under about' });
+	const el = h('div', null, top, about, b.el, cards, shown);
 	const linkKey = (l) => `${l.peer}>${l.direction}`;
+	const rate = (l, f) => (l ? ld.get(linkKey(l))?.[f] : undefined);
+	// A row a peer: out is the link the node dialed and sends to it on, in
+	// the one the peer dialed, which the node receives on.
 	const cols = [
-		{ key: 'peer', t: 'Peer', get: (l) => [nodeLink(l.peer), l.incarnation ? null : h('span', { class: 'muted' }, ' never reached')], sort: (l) => l.peer },
-		{ key: 'dir', t: 'Dir', get: (l) => (l.direction === 'out' ? '→ out' : '← in'), sort: (l) => l.direction },
-		{ key: 'state', t: 'State', get: (l) => pill(l.state), sort: (l) => l.state },
-		{ key: 'age', t: 'Age', num: true, get: (l) => l.age, sort: (l) => parseDur(l.age) },
-		{ key: 'queued', t: 'Queued', num: true, get: (l) => (l.direction === 'out' ? [fmtInt(l.queued), l.queued ? h('span', { class: 'muted' }, ` ${fmtBytes(l.queued_bytes)}`) : null] : ''), sort: (l) => l.queued || 0 },
-		{ key: 'messages', t: 'Messages', num: true, get: (l) => [fmtInt(l.messages), delta(ld.get(linkKey(l))?.messages)], sort: (l) => ld.get(linkKey(l))?.messages || 0 },
-		{ key: 'bytes', t: 'Bytes', num: true, get: (l) => [fmtBytes(l.bytes), delta(ld.get(linkKey(l))?.bytes, fmtBytes)], sort: (l) => ld.get(linkKey(l))?.bytes || 0 },
-		{ key: 'reconnects', t: 'Reconnects', num: true, get: (l) => fmtInt(l.reconnects), sort: (l) => l.reconnects || 0 },
-		{ key: 'retry', t: 'Retry in', get: (l) => l.retry_in },
-		{ key: 'error', t: 'Last error', wrap: true, get: (l) => l.last_error, sort: (l) => l.last_error || '' },
+		{ key: 'peer', t: 'Peer', get: (r) => [nodeLink(r.peer), (r.out || r.in).incarnation ? null : h('span', { class: 'muted' }, ' never reached')], sort: (r) => r.peer },
+		{ key: 'out', t: 'Out', get: (r) => (r.out ? pill(r.out.state) : ''), sort: (r) => r.out?.state || '' },
+		{ key: 'in', t: 'In', get: (r) => (r.in ? pill(r.in.state) : ''), sort: (r) => r.in?.state || '' },
+		{ key: 'age', t: 'Age', num: true, get: (r) => (r.out || r.in).age, sort: (r) => parseDur((r.out || r.in).age) },
+		{ key: 'queued', t: 'Queued', num: true, get: (r) => (r.out?.queued ? [fmtInt(r.out.queued), h('span', { class: 'muted' }, ` ${fmtBytes(r.out.queued_bytes)}`)] : ''), sort: (r) => r.out?.queued || 0 },
+		{ key: 'sent', t: 'Sent', num: true, get: (r) => (r.out ? [fmtInt(r.out.messages), delta(rate(r.out, 'messages'))] : ''), sort: (r) => rate(r.out, 'messages') || 0 },
+		{ key: 'received', t: 'Received', num: true, get: (r) => (r.in ? [fmtInt(r.in.messages), delta(rate(r.in, 'messages'))] : ''), sort: (r) => rate(r.in, 'messages') || 0 },
+		{ key: 'bytes', t: 'Bytes out / in', num: true, get: (r) => `${r.out ? fmtBytes(r.out.bytes) : '–'} / ${r.in ? fmtBytes(r.in.bytes) : '–'}`, sort: (r) => (rate(r.out, 'bytes') || 0) + (rate(r.in, 'bytes') || 0) },
+		{ key: 'reconnects', t: 'Reconnects', num: true, get: (r) => fmtInt(r.out?.reconnects), sort: (r) => r.out?.reconnects || 0 },
+		{ key: 'retry', t: 'Retry in', get: (r) => r.out?.retry_in },
+		{ key: 'error', t: 'Last error', wrap: true, get: (r) => errText(r.out?.last_error || r.in?.last_error, r.peer), sort: (r) => r.out?.last_error || r.in?.last_error || '' },
 	];
+	// peerRows pairs a node's links by peer.
+	function peerRows(ls) {
+		const by = new Map();
+		for (const l of ls) {
+			let r = by.get(l.peer);
+			if (!r) by.set(l.peer, (r = { peer: l.peer, out: null, in: null }));
+			r[l.direction === 'out' ? 'out' : 'in'] = l;
+		}
+		return [...by.values()];
+	}
 
 	// renderLinks lists the node's links: grouped by a key of the peers'
 	// metadata, as the node's Membership reports it, filtered, down and
@@ -939,18 +1037,19 @@ function nodePage(node, params) {
 				),
 			);
 		} else groupsEl.replaceChildren();
-		const hits = p.q ? ls.filter((l) => matches(peerOf(l), p.q)) : ls;
+		const rows = peerRows(ls);
+		const hits = p.q ? rows.filter((r) => matches(peerOf(r), p.q)) : rows;
 		const s = sorter(cols, p);
-		const worst = (l) => (l.state === 'down' ? 2 : l.queued ? 1 : 0);
-		const ordered = s.sort ? s.apply(hits) : [...hits].sort((a, b) => worst(b) - worst(a) || natural(a.peer, b.peer) || a.direction.localeCompare(b.direction));
+		const worst = (r) => (r.out?.state === 'down' || r.in?.state === 'down' ? 2 : r.out?.queued ? 1 : 0);
+		const ordered = s.sort ? s.apply(hits) : [...hits].sort((a, b) => worst(b) - worst(a) || natural(a.peer, b.peer));
 		const pg = pager(ordered, p);
-		count.textContent = p.q ? `${fmtInt(hits.length)} of ${fmtInt(ls.length)} links` : `${fmtInt(ls.length)} links`;
+		count.textContent = p.q ? `${fmtInt(hits.length)} of ${fmtInt(rows.length)} peers` : `${fmtInt(rows.length)} peers`;
 		links.replaceChildren(
 			table(cols, pg.rows, {
 				sort: s.sort,
 				onSort: sortBy(() => p),
-				empty: ls.length ? 'No link matches.' : 'No links: this node has not talked to another yet.',
-				rowClass: (l) => l.queued > 0 && 'backlog',
+				empty: rows.length ? 'No peer matches.' : 'No links: this node has not talked to another yet.',
+				rowClass: (r) => r.out?.queued > 0 && 'backlog',
 			}),
 			...pg.el,
 		);
@@ -968,12 +1067,9 @@ function nodePage(node, params) {
 			n = await api('/api/node', { node });
 			shown.hidden = !!n.no_inspector;
 			top.lastChild.textContent = n.no_inspector ? 'Up, as the cluster sees it, but it serves no Inspector to describe it.' : LEAD;
-			const about = [
-				card('Advertise', h('span', { class: 'mono' }, n.advertise || '–'), 'what peers dial'),
-				...(n.metadata ? [card('Metadata', h('span', { class: 'mono' }, metadata(n.metadata)), 'what it tells the cluster about itself')] : []),
-			];
+			about.replaceChildren(n.advertise ? h('span', { class: 'mono', title: 'what peers dial' }, n.advertise) : null, chips(n.metadata));
 			if (n.no_inspector) {
-				cards.replaceChildren(card('Inspector', 'none', 'the rest as the cluster has it'), ...about);
+				cards.replaceChildren(card('Inspector', 'none', 'its address and metadata as the cluster has them'));
 				return;
 			}
 			const d = nr([n], (x) => x.name, ['spawned', 'exited', 'dead_letters']).get(n.name);
@@ -987,7 +1083,6 @@ function nodePage(node, params) {
 				card('Dead letters', fmtInt(n.dead_letters), d?.dead_letters ? `+${fmtRate(d.dead_letters)}/s` : 'none lately', d?.dead_letters > 0 && 'warn'),
 				card('Queued to peers', fmtInt(queued), queued ? fmtBytes(sum(ls, (l) => l.queued_bytes)) : 'nothing waits', queued > 0 && 'warn'),
 				card('Uptime', n.uptime || '–', 'since this incarnation started'),
-				...about,
 			);
 			cProc.push(n.processes);
 			cLife.push(d?.spawned, d?.exited);
@@ -1023,8 +1118,8 @@ function processesPage(node, params) {
 
 	const cols = [
 		{ key: 'pid', t: 'PID', get: (x) => pidSpan(x.pid), sort: (x) => x.pid, cmp: pidCmp },
-		{ key: 'name', t: 'Name', get: (x) => x.name, sort: (x) => x.name || '' },
-		{ key: 'label', t: 'Label', get: (x) => x.label, sort: (x) => x.label },
+		{ key: 'name', t: 'Name', wrap: true, min: '14rem', get: (x) => procName(x.name), sort: (x) => x.name || '' },
+		{ key: 'label', t: 'Label', get: labelEl, sort: (x) => x.label },
 		{ key: 'state', t: 'State', get: (x) => pill(x.state), sort: (x) => x.state },
 		{ key: 'mailbox', t: 'Mailbox', num: true, get: (x) => [fmtInt(x.mailbox), x.mailbox ? h('span', { class: 'bar', style: { width: `${Math.max(3, Math.min(60, 60 * Math.log10(1 + x.mailbox) / 3))}px` } }) : null], sort: (x) => x.mailbox },
 		{ key: 'oldest', t: 'Oldest', num: true, get: (x) => x.oldest_wait, sort: (x) => parseDur(x.oldest_wait) },
@@ -1034,7 +1129,7 @@ function processesPage(node, params) {
 		{ key: 'received', t: 'Received', num: true, get: (x) => fmtInt(x.received), sort: (x) => x.received },
 		{ key: 'sent', t: 'Sent', num: true, get: (x) => fmtInt(x.sent), sort: (x) => x.sent },
 		{ key: 'calls', t: 'Calls', num: true, get: (x) => (x.calls_in_flight ? fmtInt(x.calls_in_flight) : ''), sort: (x) => x.calls_in_flight || 0 },
-		{ key: 'last', t: 'Last message', get: (x) => h('span', { class: 'mono' }, x.last_message), sort: (x) => x.last_message || '' },
+		{ key: 'last', t: 'Last message', wrap: true, min: '9rem', get: (x) => h('span', { class: 'mono' }, breakable(x.last_message || '')), sort: (x) => x.last_message || '' },
 		{ key: 'uptime', t: 'Uptime', num: true, get: (x) => x.uptime, sort: (x) => parseDur(x.uptime) },
 		{ key: 'log', t: 'Log', get: (x) => h('span', { class: 'muted' }, x.log_level) },
 	];
@@ -1114,6 +1209,11 @@ function treePage(node, params) {
 	let p = params;
 	const b = banner();
 	const collapsed = new Set();
+	const unfolded = new Set(); // runs of like processes opened, by parent and label
+	const unfoldAll = () => {
+		const pids = new Set(rows.map((x) => x.pid));
+		for (const x of rows) unfolded.add(`${x.parent && pids.has(x.parent) ? x.parent : ''}>${x.label}`);
+	};
 	const pr = rates();
 	let rows = [], r = new Map();
 	const color = h(
@@ -1160,6 +1260,46 @@ function treePage(node, params) {
 			}
 		}
 		const order = (a, b) => (kids.has(b.pid) ? 1 : 0) - (kids.has(a.pid) ? 1 : 0) || pidCmp(a.pid, b.pid);
+		// rowsOf draws siblings, FOLD or more leaves of one label as one row
+		// that opens to them, unless a search shows only its hits.
+		const rowsOf = (parent, xs) => {
+			xs = xs.sort(order);
+			if (keep) return xs.map(row);
+			const like = new Map();
+			for (const x of xs) if (x.label && !kids.has(x.pid)) like.set(x.label, [...(like.get(x.label) || []), x]);
+			const out = [];
+			for (const x of xs) {
+				const run = !kids.has(x.pid) && like.get(x.label);
+				if (!run || run.length < FOLD) out.push(row(x));
+				else if (run[0] === x) out.push(fold(`${parent}>${x.label}`, run));
+			}
+			return out;
+		};
+		const fold = (id, run) => {
+			const open = unfolded.has(id);
+			const toggle = () => {
+				if (open) unfolded.delete(id);
+				else unfolded.add(id);
+				render();
+			};
+			const waiting = sum(run, (x) => x.mailbox);
+			const worst = STATES.findLast((s) => run.some((x) => x.state === s)) || 'idle';
+			const dot = p.color === 'mailbox' ? heat(Math.max(...run.map((x) => x.mailbox)), [1, 10, 100]) : p.color === 'activity' ? heat(Math.max(...run.map((x) => r.get(x.pid)?.received || 0)), [0.01, 1, 100]) : worst;
+			const common = commonStart(run.map((x) => x.name || ''));
+			return [
+				h(
+					'div',
+					{ class: 'trow fold', onclick: toggle },
+					h('span', { class: 'tog' }, open ? '▾' : '▸'),
+					h('span', { class: cls('dot', dot), title: `${fmtInt(waiting)} waiting; the busiest ${worst}` }),
+					h('span', { class: 'tname' }, common ? [procName(common), '…'] : run[0].label),
+					h('span', { class: 'muted' }, `× ${fmtInt(run.length)}`),
+					h('span', { class: 'muted' }, run[0].label),
+					waiting ? pill(`${fmtInt(waiting)} waiting`, 'warn') : null,
+				),
+				open ? h('div', { class: 'tkids' }, run.map(row)) : null,
+			];
+		};
 		const row = (x) => {
 			if (keep && !keep.has(x.pid)) return null;
 			const ch = kids.get(x.pid) || [];
@@ -1176,20 +1316,21 @@ function treePage(node, params) {
 					{ class: cls('trow', hit(x) && 'hit'), onclick: () => openProc(x.pid) },
 					h('span', { class: 'tog', onclick: ch.length ? toggle : null }, ch.length ? (open ? '▾' : '▸') : ''),
 					h('span', { class: cls('dot', colour(x)), title: `${x.state}, ${x.mailbox} waiting` }),
-					h('span', { class: 'tname' }, x.name || x.label),
+					h('span', { class: 'tname' }, procName(x.name) || x.label),
 					h('span', { class: 'mono muted', title: x.pid }, pidText(x.pid)),
-					x.name ? h('span', { class: 'muted' }, x.label) : null,
+					x.name ? h('span', { class: x.label === x.type ? 'muted faint' : 'muted' }, x.label) : null,
 					x.mailbox ? pill(`${fmtInt(x.mailbox)} waiting`, 'warn') : null,
 					!open && ch.length ? h('span', { class: 'muted' }, `${ch.length} below`) : null,
 					x.parent && !byPid.has(x.parent) ? h('span', { class: 'muted' }, 'started by ', pidLink(x.parent)) : null,
 				),
-				open && ch.length ? h('div', { class: 'tkids' }, ch.sort(order).map(row)) : null,
+				open && ch.length ? h('div', { class: 'tkids' }, rowsOf(x.pid, ch)) : null,
 			];
 		};
 		legend.textContent = legends[p.color] || legends.state;
-		count.textContent = `${fmtInt(rows.length)} processes, ${fmtInt(roots.filter((x) => kids.has(x.pid)).length)} trees`;
+		const trees = roots.filter((x) => kids.has(x.pid)).length;
+		count.textContent = `${fmtInt(rows.length)} processes, ${fmtInt(trees)} ${trees === 1 ? 'tree' : 'trees'}`;
 		view.replaceChildren();
-		append(view, roots.sort(order).map(row));
+		append(view, rowsOf('', roots));
 		if (!view.childElementCount) view.append(h('div', { class: 'empty' }, rows.length ? 'Nothing matches.' : 'No processes.'));
 	}
 
@@ -1204,8 +1345,8 @@ function treePage(node, params) {
 				{ class: 'scope' },
 				select(color),
 				h('label', null, search),
-				h('button', { type: 'button', onclick: () => (collapsed.clear(), render()) }, 'Expand all'),
-				h('button', { type: 'button', onclick: () => (rows.forEach((x) => x.parent && collapsed.add(x.parent)), render()) }, 'Collapse all'),
+				h('button', { type: 'button', onclick: () => (collapsed.clear(), unfoldAll(), render()) }, 'Expand all'),
+				h('button', { type: 'button', onclick: () => (rows.forEach((x) => x.parent && collapsed.add(x.parent)), unfolded.clear(), render()) }, 'Collapse all'),
 				h('span', { class: 'spacer' }),
 				count,
 			),
@@ -1225,6 +1366,21 @@ function treePage(node, params) {
 	return page;
 }
 
+// FOLD is how many leaves of one label under one parent the tree draws as
+// one row, as a pub/sub topic a peer each makes.
+const FOLD = 5;
+
+
+// commonStart is what every one of names begins with, up to a separator
+// with something after it in each, or ''.
+function commonStart(names) {
+	if (names.length < 2) return '';
+	let c = names[0];
+	for (const n of names) while (!n.startsWith(c)) c = c.slice(0, -1);
+	c = c.slice(0, c.search(/[-._:/@{]?[^-._:/@{]*$/) + 1);
+	return names.every((n) => n.length > c.length) ? c : '';
+}
+
 const KINDS = ['spawn', 'exit', 'link-up', 'link-down', 'dead-letter', 'member-up', 'member-down'];
 
 function eventsPage(node) {
@@ -1235,6 +1391,13 @@ function eventsPage(node) {
 	const note = () => broke || (missed ? `${fmtInt(missed)} events were dropped: the node sent them faster than this page read them.` : '');
 	const status = h('span', { class: 'muted' }, 'connecting…');
 	const tbody = h('tbody');
+	const since = clock(new Date().toISOString());
+	// What the table says while it lists nothing.
+	const none = h('div', { class: 'empty' });
+	const quiet = () => {
+		none.hidden = tbody.childElementCount > 0;
+		none.textContent = buf.length ? 'No event matches.' : `No events since ${since.slice(0, 8)}: they show here as they happen.`;
+	};
 	const chips = KINDS.map((k) => {
 		const n = h('span', { class: 'n' }, '0');
 		const btn = h('button', { type: 'button', class: 'kind on', 'aria-pressed': 'true', onclick: () => (on.has(k) ? on.delete(k) : on.add(k), btn.setAttribute('aria-pressed', String(btn.classList.toggle('on'))), redraw()) }, k, n);
@@ -1267,6 +1430,7 @@ function eventsPage(node) {
 	function redraw() {
 		const shown = buf.filter(matches).slice(-500).reverse();
 		tbody.replaceChildren(...shown.map((e) => evRow(e, false)));
+		quiet();
 	}
 
 	const src = new EventSource('/api/events' + query({ node }));
@@ -1294,9 +1458,11 @@ function eventsPage(node) {
 		} else if (matches(e)) {
 			tbody.prepend(evRow(e, true));
 			while (tbody.childElementCount > 500) tbody.lastChild.remove();
+			quiet();
 		}
 	};
 
+	quiet();
 	let prev = { ...counts }, at = performance.now();
 	const filter = h('input', { type: 'search', placeholder: 'filter: pid, name, reason, type…', oninput: (e) => ((text = e.target.value.toLowerCase()), redraw()) });
 	return {
@@ -1305,7 +1471,7 @@ function eventsPage(node) {
 			null,
 			head(['Events ', h('span', { class: 'mono' }, node || '(inspector)')], 'Spawns, exits with their reasons, links and dead letters, as they happen. The node keeps no history: the stream starts when the page opens.'),
 			b.el,
-			h('div', { class: 'charts' }, chart.el),
+			h('div', { class: 'charts wide' }, chart.el),
 			h(
 				'div',
 				{ class: 'scope' },
@@ -1317,7 +1483,7 @@ function eventsPage(node) {
 				h('span', { class: 'spacer' }),
 				status,
 			),
-			h('div', { class: 'tablewrap' }, h('table', null, h('thead', null, h('tr', null, ['Time', 'Kind', 'Process', 'Detail'].map((t) => h('th', null, t)))), tbody)),
+			h('div', { class: 'tablewrap' }, h('table', null, h('thead', null, h('tr', null, ['Time', 'Kind', 'Process', 'Detail'].map((t) => h('th', null, t)))), tbody), none),
 		),
 		banner: (msg) => b.set(msg || note()),
 		tick() {
@@ -1334,6 +1500,8 @@ function eventsPage(node) {
 	};
 }
 
+// readOnlyNote says how to change things from here, on a read-only page;
+// a page hides it while it lists nothing to change.
 const readOnlyNote = () =>
 	app.info.allow_writes ? null : h('p', { class: 'muted' }, 'Read-only. Start grpcprocctl web with --allow-writes to change things from here.');
 
@@ -1342,6 +1510,7 @@ function cronPage(_node, params) {
 	const b = banner();
 	const where = h('select', { onchange: (e) => set({ on: e.target.value }) });
 	const list = h('div');
+	const ro = readOnlyNote();
 	let crons = [];
 	function render() {
 		const nodes = [...new Set(crons.map((c) => c.node))];
@@ -1362,7 +1531,7 @@ function cronPage(_node, params) {
 					{ t: 'Last', get: (x) => x.j?.last },
 					{ t: 'Running', num: true, get: (x) => (x.j?.running ? pill(String(x.j.running), 'running') : '') },
 					{ t: 'Last failure', wrap: true, get: (x) => (x.j?.failure ? pill(x.j.failure, 'bad') : '') },
-					{ t: 'Error', wrap: true, get: (x) => x.c.error },
+					{ t: 'Error', wrap: true, get: (x) => errText(x.c.error, x.c.node) },
 					...(app.info.allow_writes
 						? [{ t: '', get: (x) => (x.j ? h('span', { class: 'actions' }, x.j.disabled ? job(x, 'enable', 'Enable') : job(x, 'disable', 'Disable'), job(x, 'remove', 'Remove', true)) : '') }]
 						: []),
@@ -1381,7 +1550,7 @@ function cronPage(_node, params) {
 			b.el,
 			h('div', { class: 'scope' }, h('label', null, 'on', select(where))),
 			list,
-			readOnlyNote(),
+			ro,
 		),
 		banner: b.set,
 		update(np) {
@@ -1390,6 +1559,7 @@ function cronPage(_node, params) {
 		},
 		async tick() {
 			crons = await api('/api/crons');
+			if (ro) ro.hidden = !crons.some((c) => c.jobs.length);
 			render();
 		},
 	};
@@ -1401,6 +1571,19 @@ const metadata = (md) =>
 		.sort()
 		.map((k) => `${k}=${md[k]}`)
 		.join(' ');
+
+// chips shows metadata a chip a key, a long value shortened by its middle,
+// as a certificate's hash would be, and whole in the chip's title.
+const chips = (md) =>
+	h(
+		'span',
+		{ class: 'chips' },
+		Object.keys(md || {})
+			.sort()
+			.map((k) => h('span', { class: 'chip mono', title: `${k}=${md[k]}` }, h('span', { class: 'muted' }, `${k}=`), middle(md[k], CHIP_VALUE))),
+	);
+// CHIP_VALUE is the most characters a chip shows of a value.
+const CHIP_VALUE = 18;
 
 function namesPage(node, params) {
 	let p = params;
@@ -1449,6 +1632,8 @@ function groupsPage(node, params) {
 	const list = h('div');
 	const members = h('div');
 	const peers = h('div');
+	const none = h('div', { class: 'empty', hidden: true });
+	const body = h('div', { hidden: true }, h('div', { class: 'scope' }, h('label', null, 'scope', select(scope)), h('label', null, 'groups starting with', prefix)), list, members, h('h2', null, 'Nodes of the scope'), peers);
 	let scopes = '';
 	const page = {
 		every: 2000,
@@ -1457,11 +1642,8 @@ function groupsPage(node, params) {
 			null,
 			head('Process groups', `The grpcproc/groups scopes ${node} runs, as its copy has them: each group's members on every node, and the other nodes of the scope. Pick a group to see its members.`),
 			b.el,
-			h('div', { class: 'scope' }, h('label', null, 'scope', select(scope)), h('label', null, 'groups starting with', prefix)),
-			list,
-			members,
-			h('h2', null, 'Nodes of the scope'),
-			peers,
+			none,
+			body,
 		),
 		banner: b.set,
 		update(np) {
@@ -1472,8 +1654,21 @@ function groupsPage(node, params) {
 		},
 		async tick(stale) {
 			const q = { node, scope: p.scope || '' };
-			const [v, m] = await Promise.all([api('/api/groups', { ...q, prefix: p.prefix || '' }), p.group ? api('/api/group', { ...q, group: p.group }) : null]);
+			let v, m;
+			try {
+				[v, m] = await Promise.all([api('/api/groups', { ...q, prefix: p.prefix || '' }), p.group ? api('/api/group', { ...q, group: p.group }) : null]);
+			} catch (e) {
+				// A node that runs no scope is not in trouble: it says so, as
+				// the other modules' pages do.
+				if (stale() || !(e.status === 400 && e.message.startsWith('no grpcproc/groups scope'))) throw e;
+				none.textContent = `${node} runs no grpcproc/groups scope.`;
+				none.hidden = false;
+				body.hidden = true;
+				return;
+			}
 			if (stale()) return;
+			none.hidden = true;
+			body.hidden = false;
 			// Options are made again only when they change, so an open select stays open.
 			if (JSON.stringify(v.scopes) !== scopes) {
 				scopes = JSON.stringify(v.scopes);
@@ -1534,12 +1729,14 @@ function electionsPage() {
 	const b = banner();
 	const list = h('div');
 	const moveTo = new Map(); // what each election's "to" select was left at
+	const ro = readOnlyNote();
 	return {
 		every: 5000,
-		el: h('div', null, head('Elections', 'Every grpcproc/leader election reachable from here, as each node that takes part sees it. Nodes that follow different leaders, or lag a term behind, point at a partition.'), b.el, list, readOnlyNote()),
+		el: h('div', null, head('Elections', 'Every grpcproc/leader election reachable from here, as each node that takes part sees it. Nodes that follow different leaders, or lag a term behind, point at a partition.'), b.el, list, ro),
 		banner: b.set,
 		async tick() {
 			const all = await api('/api/elections');
+			if (ro) ro.hidden = !all.length;
 			if (!all.length) {
 				list.replaceChildren(h('div', { class: 'empty' }, 'No node reachable from here takes part in a grpcproc/leader election.'));
 				return;
@@ -1599,7 +1796,7 @@ function election(e, moveTo) {
 		{ t: 'Unreachable', get: (v) => (v.unreachable || []).map((n) => pill(shortName(n), 'bad', n)) },
 		{ t: 'Singleton', get: (v) => (v.singleton?.startsWith('<') ? pidLink(v.singleton) : v.singleton) },
 		{ t: 'Backoff', get: (v) => v.backoff },
-		{ t: 'Error', wrap: true, get: (v) => v.error },
+		{ t: 'Error', wrap: true, get: (v) => errText(v.error, v.node) },
 	];
 	if (writes) {
 		cols.push({
@@ -1634,6 +1831,7 @@ function sagasPage(_node, params) {
 	const count = h('span', { class: 'muted' });
 	const list = h('div');
 	const pager = h('div', { class: 'actions' });
+	const runsEl = h('div', { hidden: true }, h('h2', null, 'Runs'), h('div', { class: 'scope' }, h('label', null, 'saga', select(which)), select(status), h('span', { class: 'spacer' }), count, pager), list, readOnlyNote());
 	let known = [], runs = [], more = false, from = '', options = '';
 	const saga = () => p.saga || known[0]?.saga || '';
 	const on = () => p.on || known.find((k) => k.saga === saga())?.node || '';
@@ -1690,10 +1888,7 @@ function sagasPage(_node, params) {
 			b.el,
 			h('h2', null, 'Engines'),
 			engines,
-			h('h2', null, 'Runs'),
-			h('div', { class: 'scope' }, h('label', null, 'saga', select(which)), select(status), h('span', { class: 'spacer' }), count, pager),
-			list,
-			readOnlyNote(),
+			runsEl,
 		),
 		banner: b.set,
 		// The page is asked for again when what it shows changes, not when a
@@ -1713,6 +1908,7 @@ function sagasPage(_node, params) {
 			const [all, first] = await Promise.all([api('/api/sagas'), ask()]);
 			if (stale()) return;
 			known = all.flatMap((e) => e.sagas.map((s) => ({ saga: sagaName(s), node: e.node })));
+			runsEl.hidden = !known.length; // no runs to page through without a saga
 			engines.replaceChildren(
 				table(
 					[
@@ -1720,7 +1916,7 @@ function sagasPage(_node, params) {
 						{ t: 'Engine', get: (e) => pidLink(e.pid, e.process) },
 						{ t: 'Sagas', get: (e) => h('span', { class: 'row' }, e.sagas.map((s) => h('a', { href: href('sagas', { saga: sagaName(s), on: e.node, status: p.status }), onclick: (ev) => ev.stopPropagation() }, s))) },
 						{ t: 'Working on', num: true, get: (e) => (e.error ? '' : fmtInt(e.working)) },
-						{ t: 'Error', wrap: true, get: (e) => e.error },
+						{ t: 'Error', wrap: true, get: (e) => errText(e.error, e.node) },
 					],
 					all,
 					{ empty: 'No grpcproc/saga engine runs on the nodes reachable from here.' },
@@ -2057,9 +2253,14 @@ async function run(v) {
 	} catch (e) {
 		if (stale()) return;
 		v.banner(e.message);
-		live(false, e.message);
+		live(!offline(e), e.message);
 	}
 }
+
+// offline says whether e is this page's server or the Inspector out of
+// reach, as the header shows it; anything else is the view's own trouble,
+// which its banner shows.
+const offline = (e) => !e.status || e.status === 502 || e.status === 504;
 
 async function tick() {
 	if (app.busy || document.hidden) return;
@@ -2157,17 +2358,16 @@ async function boot() {
 	try {
 		app.info = await api('/api/info');
 	} catch (e) {
-		live(false, e.message);
+		live(!offline(e), e.message);
 	}
 	const mode = $('#mode');
 	mode.textContent = app.info.allow_writes ? 'writes allowed' : 'read-only';
 	mode.className = `label label_${app.info.allow_writes ? 'warning' : 'unknown'}`;
-	$('#about').textContent = `grpcprocctl ${app.info.version || ''}\n${app.info.target || ''}`;
-	$('#about').title = 'The Inspector this page reads through';
+	$('#about').replaceChildren(h('div', null, `grpcprocctl ${app.info.version || ''}`), h('div', { title: `The Inspector this page reads through: ${app.info.target || ''}` }, middle(app.info.target || '', 26)));
 	try {
 		setNodes((await api('/api/nodes')).nodes);
 	} catch (e) {
-		live(false, e.message);
+		live(!offline(e), e.message);
 	}
 	$('#node').addEventListener('change', pickNode);
 	$('#interval').addEventListener('change', (e) => {
