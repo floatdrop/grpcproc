@@ -7,7 +7,7 @@ module github.com/floatdrop/grpcproc/saga/postgres
 
 go 1.27.1
 
-require github.com/floatdrop/grpcproc v0.16.0
+require github.com/floatdrop/grpcproc v0.17.0
 
 require (
 	github.com/floatdrop/fsm v0.8.0 // indirect
