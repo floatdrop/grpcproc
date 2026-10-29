@@ -161,9 +161,8 @@ func (c *Client) engine(ctx context.Context, node, saga string) (*inspectv1.Targ
 			return nil, "", err
 		}
 		nodes = Reached(all)
-		asked := askable(all)
-		if i := slices.IndexFunc(asked, func(n NodeView) bool { return !n.Reached() }); i >= 0 {
-			failed = fmt.Errorf("%s: %s", asked[i].Name, asked[i].Problem())
+		if i := slices.IndexFunc(all, func(n NodeView) bool { return !n.NoInspector && !n.Reached() }); i >= 0 {
+			failed = fmt.Errorf("%s: %s", all[i].Name, all[i].Problem())
 		}
 	}
 	type listed struct {

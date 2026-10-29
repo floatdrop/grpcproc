@@ -231,7 +231,7 @@ const stateKey = (n) => (n.error ? 'down' : n.unanswered ? 'unanswered' : n.no_i
 const STATE = {
 	down: { kind: 'bad', short: 'down', word: 'unreachable', rank: 5, map: 'bad' },
 	unanswered: { text: 'not answered in time', kind: 'warn', short: '—', word: 'not answered', rank: 4, map: 'warn' },
-	uninspected: { text: 'no Inspector', kind: 'uninspected', title: 'up, but it serves no Inspector to describe it', short: '—', word: 'no Inspector', rank: 0.5 },
+	uninspected: { text: 'no Inspector', kind: 'uninspected', title: 'up, but it serves no Inspector to describe it', short: '—', word: 'no Inspector', rank: 0 },
 	described: {},
 };
 const described = (n) => stateKey(n) === 'described';
@@ -1549,8 +1549,16 @@ function electionsPage() {
 	};
 }
 
+// NOT_INSPECTED is client.NotInspected: an elector's error when its node
+// serves no Inspector, which is not trouble, and cannot be asked through.
+const NOT_INSPECTED = 'serves no Inspector';
+
 function election(e, moveTo) {
 	const answered = e.electors.filter((v) => !v.error);
+	// A leader that serves no Inspector cannot be asked to hand over or to
+	// cordon: nothing here can change the election.
+	const silent = e.electors.some((v) => v.node === e.leading && v.error === NOT_INSPECTED);
+	const writes = app.info.allow_writes && e.leading && !silent;
 	const leaders = new Set(answered.filter((v) => v.leader).map((v) => v.leader));
 	const top = Math.max(0, ...answered.map((v) => v.term || 0));
 	const cordoned = new Set(e.electors.flatMap((v) => v.cordoned || []));
@@ -1559,8 +1567,9 @@ function election(e, moveTo) {
 		e.leading ? pill(`${shortName(e.leading)} leads, term ${top}`, 'leader', e.leading) : pill('no leader', 'bad'),
 		leaders.size > 1 ? pill(['split: nodes follow ', nameList([...leaders])], 'bad') : answered.length && answered.every((v) => v.leader === e.leading) ? pill('all agree', 'up') : null,
 		answered.some((v) => v.term < top) ? pill('some nodes a term behind', 'warn') : null,
+		silent ? h('span', { class: 'muted' }, 'its leader serves no Inspector: it cannot be moved or cordoned from here') : null,
 	];
-	if (app.info.allow_writes && e.leading) {
+	if (writes) {
 		const to = h(
 			'select',
 			{ value: moveTo.get(e.cluster) || '', onchange: (ev) => moveTo.set(e.cluster, ev.target.value) },
@@ -1592,7 +1601,7 @@ function election(e, moveTo) {
 		{ t: 'Backoff', get: (v) => v.backoff },
 		{ t: 'Error', wrap: true, get: (v) => v.error },
 	];
-	if (app.info.allow_writes) {
+	if (writes) {
 		cols.push({
 			t: '',
 			get: (v) =>
@@ -1601,7 +1610,7 @@ function election(e, moveTo) {
 					: h('button', { type: 'button', class: 'danger', onclick: () => act(`cordoned ${v.node}`, '/api/leader', { cluster: e.cluster, op: 'cordon', node: v.node }, `Keep ${v.node} from leading ${e.cluster} until uncordoned?${v.node === e.leading ? ' It leads now, so it hands over.' : ''} It still votes.`) }, 'Cordon'),
 		});
 	}
-	return h('div', { class: 'election' }, h('div', { class: 'ehead' }, head), table(cols, e.electors, { rowClass: (v) => v.error && 'backlog' }));
+	return h('div', { class: 'election' }, h('div', { class: 'ehead' }, head), table(cols, e.electors, { rowClass: (v) => v.error && v.error !== NOT_INSPECTED && 'backlog' }));
 }
 
 const SAGA_STATUSES = ['active', 'stuck', 'done'];

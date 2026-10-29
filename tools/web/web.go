@@ -309,7 +309,8 @@ func (s *server) process(ctx context.Context, q url.Values) (any, error) {
 
 // events streams node's events, one JSON object per event. If the node
 // cannot be reached, or the Inspector ends the stream, a "failure" event says
-// why and the browser's EventSource connects again.
+// why and the browser's EventSource connects again; if it serves no
+// Inspector, an "end" event says so, and the browser stops.
 func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	rc := http.NewResponseController(w)
 	w.Header().Set("Content-Type", "text/event-stream")

@@ -222,8 +222,10 @@ through the same Inspector and refreshes every second:
 - **Cron** and **Elections**: every grpcproc/cron job and grpcproc/leader
   election on the nodes of the shared walk, found by their label (`cron`)
   and how electors are named, asking 32 nodes at a time; a node that
-  cannot be asked is listed with why. A cron process spawned with a label
-  of its own is shown by `grpcprocctl cron --node`, not here.
+  cannot be asked is listed with why, and one that serves no Inspector is
+  left out, but from an election whose electors name it. A cron process
+  spawned with a label of its own is shown by `grpcprocctl cron --node`,
+  not here.
 - **Groups**: the grpcproc/groups scopes the node runs, as its copy has
   them: each group's members on every node and on this one, by prefix, a
   group's members once picked, and the other nodes of the scope with their

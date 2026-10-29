@@ -109,7 +109,7 @@ var kinds = func() []string {
 // Node describes one node; "" is the node serving the Inspector.
 func (c *Client) Node(ctx context.Context, node string) (NodeView, error) {
 	v, _, err := c.node(ctx, &inspectv1.GetNodeRequest{Node: node}, nil)
-	if node != "" && uninspected(err, node) {
+	if uninspected(err, node) {
 		// Described as the Inspector's node's Membership has it, if at all.
 		u := NodeView{Name: node, NoInspector: true}
 		first, _, _ := c.node(ctx, &inspectv1.GetNodeRequest{ExcludeLinks: true}, nil)

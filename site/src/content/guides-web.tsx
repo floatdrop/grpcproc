@@ -74,7 +74,8 @@ grpcprocctl --plaintext --addr 10.0.0.5:9000 web   # http://localhost:9911`}</Co
 								<>
 									Every <A to="guides/cron/">cron job</A> and{' '}
 									<A to="guides/leader/">leader election</A> on the nodes the cluster walk finds, asking
-									32 at a time; a node that cannot be asked is listed with why. A cron process spawned
+									32 at a time; a node that cannot be asked is listed with why, and one that serves no
+									Inspector is left out, but from an election whose electors name it. A cron process spawned
 									with a label of its own is shown by <C>grpcprocctl cron --node</C>, not here.
 								</>
 							],

@@ -1029,7 +1029,9 @@ members. A node the walk's time ran out on is unanswered, not down; one
 that answers with gRPC's unknown service for the Inspector serves none, and
 is up, not described, and left out of what is asked of every node: an
 election lists it only where the others name it, as one that cannot be
-asked, and it leads where a node of the latest term follows it. 2,700
+asked, and names it the leader when, of the leaders the nodes that answer
+know, it is the one of the latest term: they follow it, and it cannot say
+so. 2,700
 nodes in three data centers take 3 seconds and 1 MB.
 
 **`Query` reads a process without touching its mailbox.** `WithInspect`
